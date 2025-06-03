@@ -112,31 +112,31 @@
       "f.avocado_gem-8lb": {
         "picklist_sku": "avocado_gem-25x40",
         "actualqty": 13.0,
-        "Total_Pick_Weight": 8.1,
+        "Total_Pick_Weight": 8.125,
         "Pick_Type": "Fruit: Avocado, Gem"
       },
       "f.avocado_gem-sample-bab": {
         "picklist_sku": "avocado_gem-25x40",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.6,
+        "Total_Pick_Weight": 0.625,
         "Pick_Type": "Fruit: Avocado, Gem"
       },
       "f.avocado_hass-16lb": {
         "picklist_sku": "avocado_hass-60x25",
         "actualqty": 38.0,
-        "Total_Pick_Weight": 15.8,
+        "Total_Pick_Weight": 15.833,
         "Pick_Type": "Fruit: Avocado, Hass"
       },
       "f.avocado_hass-2lb": {
         "picklist_sku": "avocado_hass-60x25",
         "actualqty": 5.0,
-        "Total_Pick_Weight": 2.1,
+        "Total_Pick_Weight": 2.083,
         "Pick_Type": "Fruit: Avocado, Hass"
       },
       "f.avocado_hass-2lb_3-bab": {
         "picklist_sku": "avocado_hass-60x25",
         "actualqty": 5.0,
-        "Total_Pick_Weight": 2.1,
+        "Total_Pick_Weight": 2.083,
         "Pick_Type": "Fruit: Avocado, Hass"
       },
       "f.avocado_hass-5lb": {
@@ -148,13 +148,13 @@
       "f.avocado_hass-8lb": {
         "picklist_sku": "avocado_hass-60x25",
         "actualqty": 19.0,
-        "Total_Pick_Weight": 7.9,
+        "Total_Pick_Weight": 7.917,
         "Pick_Type": "Fruit: Avocado, Hass"
       },
       "f.avocado_hass-9lb": {
         "picklist_sku": "avocado_hass-60x25",
         "actualqty": 22.0,
-        "Total_Pick_Weight": 9.2,
+        "Total_Pick_Weight": 9.167,
         "Pick_Type": "Fruit: Avocado, Hass"
       },
       "f.avocado_reed-16lb": {
@@ -202,37 +202,37 @@
       "f.avocado_tropical-0.5lb-gift": {
         "picklist_sku": "avocado_tropical-25x22",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 1.1,
+        "Total_Pick_Weight": 1.136,
         "Pick_Type": "Fruit: Avocado, Tropical"
       },
       "f.avocado_tropical-2lb-bab": {
         "picklist_sku": "avocado_tropical-25x22",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 2.3,
+        "Total_Pick_Weight": 2.273,
         "Pick_Type": "Fruit: Avocado, Tropical"
       },
       "f.avocado_tropical-sample-bab": {
         "picklist_sku": "avocado_tropical-25x22",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 1.1,
+        "Total_Pick_Weight": 1.136,
         "Pick_Type": "Fruit: Avocado, Tropical"
       },
       "f.avocado_variety-16lb": {
         "picklist_sku": "avocado_gem-25x40",
         "actualqty": 14.0,
-        "Total_Pick_Weight": 8.8,
+        "Total_Pick_Weight": 8.75,
         "Pick_Type": "Fruit: Avocado, Gem"
       },
       "f.avocado_variety-1lb": {
         "picklist_sku": "avocado_gem-25x40",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 1.3,
+        "Total_Pick_Weight": 1.25,
         "Pick_Type": "Fruit: Avocado, Gem"
       },
       "f.avocado_variety-2lb": {
         "picklist_sku": "avocado_gem-25x40",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 1.3,
+        "Total_Pick_Weight": 1.25,
         "Pick_Type": "Fruit: Avocado, Gem"
       },
       "f.avocado_variety-5lb": {
@@ -244,37 +244,37 @@
       "f.avocado_variety-8lb": {
         "picklist_sku": "avocado_gem-25x40",
         "actualqty": 7.0,
-        "Total_Pick_Weight": 4.4,
+        "Total_Pick_Weight": 4.375,
         "Pick_Type": "Fruit: Avocado, Gem"
       },
       "f.avocado_variety-9lb": {
         "picklist_sku": "avocado_gem-25x40",
         "actualqty": 7.0,
-        "Total_Pick_Weight": 4.4,
+        "Total_Pick_Weight": 4.375,
         "Pick_Type": "Fruit: Avocado, Gem"
       },
       "f.avocado-0.5lb-gift": {
         "picklist_sku": "avocado_gem-25x40",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 1.3,
+        "Total_Pick_Weight": 1.25,
         "Pick_Type": "Fruit: Avocado, Gem"
       },
       "f.avocado.tropical-2lb-addon": {
         "picklist_sku": "avocado_tropical-25x22",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 2.3,
+        "Total_Pick_Weight": 2.273,
         "Pick_Type": "Fruit: Avocado, Tropical"
       },
       "f.banana_variety-16lb": {
         "picklist_sku": "banana_apple-03x16",
         "actualqty": 6.0,
-        "Total_Pick_Weight": 1.1,
+        "Total_Pick_Weight": 1.125,
         "Pick_Type": "Fruit: Banana, Apple"
       },
       "f.banana_variety-2lb": {
         "picklist_sku": "banana_apple-03x16",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.2,
+        "Total_Pick_Weight": 0.188,
         "Pick_Type": "Fruit: Banana, Apple"
       },
       "f.banana_variety-3lb-bab": {
@@ -286,19 +286,19 @@
       "f.banana_variety-5lb": {
         "picklist_sku": "banana_apple-03x16",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 0.4,
+        "Total_Pick_Weight": 0.375,
         "Pick_Type": "Fruit: Banana, Apple"
       },
       "f.banana_variety-8lb": {
         "picklist_sku": "banana_apple-03x16",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 0.6,
+        "Total_Pick_Weight": 0.563,
         "Pick_Type": "Fruit: Banana, Apple"
       },
       "f.banana.variety-1lb": {
         "picklist_sku": "banana_burro-05x16",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.3,
+        "Total_Pick_Weight": 0.313,
         "Pick_Type": "Fruit: Banana, Burro"
       },
       "f.cacao-18lb": {
@@ -382,7 +382,7 @@
       "f.caviar_lime-2oz-gift": {
         "picklist_sku": "lime_caviar-BG0108",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.1,
+        "Total_Pick_Weight": 0.125,
         "Pick_Type": "Fruit: Lime, Caviar"
       },
       "f.cherimoya-0.5lb-gift": {
@@ -478,37 +478,37 @@
       "f.cocktail_grapefruit-16lb": {
         "picklist_sku": "grapefruit_ctail-03x04",
         "actualqty": 21.0,
-        "Total_Pick_Weight": 15.8,
+        "Total_Pick_Weight": 15.75,
         "Pick_Type": "Fruit: Grapefruit, Cocktail"
       },
       "f.cocktail_grapefruit-2lb": {
         "picklist_sku": "grapefruit_ctail-03x04",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 2.3,
+        "Total_Pick_Weight": 2.25,
         "Pick_Type": "Fruit: Grapefruit, Cocktail"
       },
       "f.cocktail_grapefruit-2lb-bab": {
         "picklist_sku": "grapefruit_ctail-03x04",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 2.3,
+        "Total_Pick_Weight": 2.25,
         "Pick_Type": "Fruit: Grapefruit, Cocktail"
       },
       "f.cocktail_grapefruit-5lb": {
         "picklist_sku": "grapefruit_ctail-03x04",
         "actualqty": 7.0,
-        "Total_Pick_Weight": 5.3,
+        "Total_Pick_Weight": 5.25,
         "Pick_Type": "Fruit: Grapefruit, Cocktail"
       },
       "f.cocktail_grapefruit-8lb": {
         "picklist_sku": "grapefruit_ctail-03x04",
         "actualqty": 11.0,
-        "Total_Pick_Weight": 8.3,
+        "Total_Pick_Weight": 8.25,
         "Pick_Type": "Fruit: Grapefruit, Cocktail"
       },
       "f.cocktail_grapefruit-sample-bab": {
         "picklist_sku": "grapefruit_ctail-03x04",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.8,
+        "Total_Pick_Weight": 0.75,
         "Pick_Type": "Fruit: Grapefruit, Cocktail"
       },
       "f.dates_medjool-16lb": {
@@ -556,163 +556,163 @@
       "f.dragonfruit_red-14lb": {
         "picklist_sku": "df_red-10x07",
         "actualqty": 10.0,
-        "Total_Pick_Weight": 14.3,
+        "Total_Pick_Weight": 14.286,
         "Pick_Type": "Fruit: Dragon Fruit, Red"
       },
       "f.dragonfruit_red-16lb": {
         "picklist_sku": "df_red-10x07",
         "actualqty": 11.0,
-        "Total_Pick_Weight": 15.7,
+        "Total_Pick_Weight": 15.714,
         "Pick_Type": "Fruit: Dragon Fruit, Red"
       },
       "f.dragonfruit_red-1lb": {
         "picklist_sku": "df_red-10x07",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 1.4,
+        "Total_Pick_Weight": 1.429,
         "Pick_Type": "Fruit: Dragon Fruit, Red"
       },
       "f.dragonfruit_red-2lb": {
         "picklist_sku": "df_red-10x07",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 2.9,
+        "Total_Pick_Weight": 2.857,
         "Pick_Type": "Fruit: Dragon Fruit, Red"
       },
       "f.dragonfruit_red-2lb-bab": {
         "picklist_sku": "df_red-10x07",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 2.9,
+        "Total_Pick_Weight": 2.857,
         "Pick_Type": "Fruit: Dragon Fruit, Red"
       },
       "f.dragonfruit_red-4lb": {
         "picklist_sku": "df_red-10x07",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 4.3,
+        "Total_Pick_Weight": 4.286,
         "Pick_Type": "Fruit: Dragon Fruit, Red"
       },
       "f.dragonfruit_red-5lb": {
         "picklist_sku": "df_red-10x07",
         "actualqty": 4.0,
-        "Total_Pick_Weight": 5.7,
+        "Total_Pick_Weight": 5.714,
         "Pick_Type": "Fruit: Dragon Fruit, Red"
       },
       "f.dragonfruit_red-7lb": {
         "picklist_sku": "df_red-10x07",
         "actualqty": 5.0,
-        "Total_Pick_Weight": 7.1,
+        "Total_Pick_Weight": 7.143,
         "Pick_Type": "Fruit: Dragon Fruit, Red"
       },
       "f.dragonfruit_red-8lb": {
         "picklist_sku": "df_red-10x07",
         "actualqty": 6.0,
-        "Total_Pick_Weight": 8.6,
+        "Total_Pick_Weight": 8.571,
         "Pick_Type": "Fruit: Dragon Fruit, Red"
       },
       "f.dragonfruit_red-sample-bab": {
         "picklist_sku": "df_red-10x07",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 1.4,
+        "Total_Pick_Weight": 1.429,
         "Pick_Type": "Fruit: Dragon Fruit, Red"
       },
       "f.dragonfruit_white-14lb": {
         "picklist_sku": "df_white-10x07",
         "actualqty": 10.0,
-        "Total_Pick_Weight": 14.3,
+        "Total_Pick_Weight": 14.286,
         "Pick_Type": "Fruit: Dragon Fruit, White"
       },
       "f.dragonfruit_white-16lb": {
         "picklist_sku": "df_white-10x07",
         "actualqty": 11.0,
-        "Total_Pick_Weight": 15.7,
+        "Total_Pick_Weight": 15.714,
         "Pick_Type": "Fruit: Dragon Fruit, White"
       },
       "f.dragonfruit_white-1lb": {
         "picklist_sku": "df_white-10x07",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 1.4,
+        "Total_Pick_Weight": 1.429,
         "Pick_Type": "Fruit: Dragon Fruit, White"
       },
       "f.dragonfruit_white-2lb": {
         "picklist_sku": "df_white-10x07",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 2.9,
+        "Total_Pick_Weight": 2.857,
         "Pick_Type": "Fruit: Dragon Fruit, White"
       },
       "f.dragonfruit_white-2lb_2-addon": {
         "picklist_sku": "df_white-10x07",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 2.9,
+        "Total_Pick_Weight": 2.857,
         "Pick_Type": "Fruit: Dragon Fruit, White"
       },
       "f.dragonfruit_white-2lb-bab": {
         "picklist_sku": "df_white-10x07",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 2.9,
+        "Total_Pick_Weight": 2.857,
         "Pick_Type": "Fruit: Dragon Fruit, White"
       },
       "f.dragonfruit_white-4lb": {
         "picklist_sku": "df_white-10x07",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 4.3,
+        "Total_Pick_Weight": 4.286,
         "Pick_Type": "Fruit: Dragon Fruit, White"
       },
       "f.dragonfruit_white-5lb": {
         "picklist_sku": "df_white-10x07",
         "actualqty": 4.0,
-        "Total_Pick_Weight": 5.7,
+        "Total_Pick_Weight": 5.714,
         "Pick_Type": "Fruit: Dragon Fruit, White"
       },
       "f.dragonfruit_white-7lb": {
         "picklist_sku": "df_white-10x07",
         "actualqty": 5.0,
-        "Total_Pick_Weight": 7.1,
+        "Total_Pick_Weight": 7.143,
         "Pick_Type": "Fruit: Dragon Fruit, White"
       },
       "f.dragonfruit_white-8lb": {
         "picklist_sku": "df_white-10x07",
         "actualqty": 6.0,
-        "Total_Pick_Weight": 8.6,
+        "Total_Pick_Weight": 8.571,
         "Pick_Type": "Fruit: Dragon Fruit, White"
       },
       "f.dragonfruit_white-sample-bab": {
         "picklist_sku": "df_white-10x07",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 1.4,
+        "Total_Pick_Weight": 1.429,
         "Pick_Type": "Fruit: Dragon Fruit, White"
       },
       "f.dragonfruit_yellow-14lb": {
         "picklist_sku": "df_yellow-05x07",
         "actualqty": 18.0,
-        "Total_Pick_Weight": 14.1,
+        "Total_Pick_Weight": 14.143,
         "Pick_Type": "Fruit: Dragon Fruit, Yellow"
       },
       "f.dragonfruit_yellow-16lb": {
         "picklist_sku": "df_yellow-05x07",
         "actualqty": 20.0,
-        "Total_Pick_Weight": 15.7,
+        "Total_Pick_Weight": 15.714,
         "Pick_Type": "Fruit: Dragon Fruit, Yellow"
       },
       "f.dragonfruit_yellow-1lb": {
         "picklist_sku": "df_yellow-05x07",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 1.6,
+        "Total_Pick_Weight": 1.571,
         "Pick_Type": "Fruit: Dragon Fruit, Yellow"
       },
       "f.dragonfruit_yellow-2lb": {
         "picklist_sku": "df_yellow-05x07",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 2.4,
+        "Total_Pick_Weight": 2.357,
         "Pick_Type": "Fruit: Dragon Fruit, Yellow"
       },
       "f.dragonfruit_yellow-2lb-bab": {
         "picklist_sku": "df_yellow-05x07",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 2.4,
+        "Total_Pick_Weight": 2.357,
         "Pick_Type": "Fruit: Dragon Fruit, Yellow"
       },
       "f.dragonfruit_yellow-4lb": {
         "picklist_sku": "df_yellow-05x07",
         "actualqty": 5.0,
-        "Total_Pick_Weight": 3.9,
+        "Total_Pick_Weight": 3.929,
         "Pick_Type": "Fruit: Dragon Fruit, Yellow"
       },
       "f.dragonfruit_yellow-5lb": {
@@ -724,19 +724,19 @@
       "f.dragonfruit_yellow-7lb": {
         "picklist_sku": "df_yellow-05x07",
         "actualqty": 9.0,
-        "Total_Pick_Weight": 7.1,
+        "Total_Pick_Weight": 7.071,
         "Pick_Type": "Fruit: Dragon Fruit, Yellow"
       },
       "f.dragonfruit_yellow-8lb": {
         "picklist_sku": "df_yellow-05x07",
         "actualqty": 10.0,
-        "Total_Pick_Weight": 7.9,
+        "Total_Pick_Weight": 7.857,
         "Pick_Type": "Fruit: Dragon Fruit, Yellow"
       },
       "f.dragonfruit_yellow-sample-bab": {
         "picklist_sku": "df_yellow-05x07",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.8,
+        "Total_Pick_Weight": 0.786,
         "Pick_Type": "Fruit: Dragon Fruit, Yellow"
       },
       "f.exoticfruit-2lb-bab": {
@@ -748,85 +748,85 @@
       "f.flower_spoon-4pc-gift": {
         "picklist_sku": "flower_spoon-04x01",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.3,
+        "Total_Pick_Weight": 0.25,
         "Pick_Type": "Other: Spoons"
       },
       "f.gift_wrap-birthday": {
         "picklist_sku": "gift_note_bday",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.0,
+        "Total_Pick_Weight": 0.001,
         "Pick_Type": "Gift Note"
       },
       "f.gift_wrap-holiday": {
         "picklist_sku": "gift_note_holiday",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.0,
+        "Total_Pick_Weight": 0.001,
         "Pick_Type": "Gift Note"
       },
       "f.gift_wrap-standard": {
         "picklist_sku": "gift_note",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.0,
+        "Total_Pick_Weight": 0.001,
         "Pick_Type": "Gift Note"
       },
       "f.grapefruit_rubyred-7lb": {
         "picklist_sku": "pomelo_red-22x08",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 8.3,
+        "Total_Pick_Weight": 8.25,
         "Pick_Type": "Fruit: Pomelo, Red"
       },
       "f.guava_pink-16lb": {
         "picklist_sku": "guava_pink-10x15",
         "actualqty": 24.0,
-        "Total_Pick_Weight": 15.8,
+        "Total_Pick_Weight": 15.84,
         "Pick_Type": "Fruit: Guava, Pink"
       },
       "f.guava_pink-1lb": {
         "picklist_sku": "guava_pink-10x15",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 1.3,
+        "Total_Pick_Weight": 1.32,
         "Pick_Type": "Fruit: Guava, Pink"
       },
       "f.guava_pink-1lb-addon": {
         "picklist_sku": "guava_pink-10x15",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 1.3,
+        "Total_Pick_Weight": 1.32,
         "Pick_Type": "Fruit: Guava, Pink"
       },
       "f.guava_pink-2lb": {
         "picklist_sku": "guava_pink-10x15",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 2.0,
+        "Total_Pick_Weight": 1.98,
         "Pick_Type": "Fruit: Guava, Pink"
       },
       "f.guava_pink-2lb-bab": {
         "picklist_sku": "guava_pink-10x15",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 2.0,
+        "Total_Pick_Weight": 1.98,
         "Pick_Type": "Fruit: Guava, Pink"
       },
       "f.guava_pink-4lb": {
         "picklist_sku": "guava_pink-10x15",
         "actualqty": 6.0,
-        "Total_Pick_Weight": 4.0,
+        "Total_Pick_Weight": 3.96,
         "Pick_Type": "Fruit: Guava, Pink"
       },
       "f.guava_pink-5lb": {
         "picklist_sku": "guava_pink-10x15",
         "actualqty": 8.0,
-        "Total_Pick_Weight": 5.3,
+        "Total_Pick_Weight": 5.28,
         "Pick_Type": "Fruit: Guava, Pink"
       },
       "f.guava_pink-7lb": {
         "picklist_sku": "guava_pink-10x15",
         "actualqty": 11.0,
-        "Total_Pick_Weight": 7.3,
+        "Total_Pick_Weight": 7.26,
         "Pick_Type": "Fruit: Guava, Pink"
       },
       "f.guava_pink-8lb": {
         "picklist_sku": "guava_pink-10x15",
         "actualqty": 12.0,
-        "Total_Pick_Weight": 7.9,
+        "Total_Pick_Weight": 7.92,
         "Pick_Type": "Fruit: Guava, Pink"
       },
       "f.guava_white-16lb_2": {
@@ -928,13 +928,13 @@
       "f.honey_mango-1lb-gift": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 1.1,
+        "Total_Pick_Weight": 1.125,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.honey.mango-2lb-addon": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 4.0,
-        "Total_Pick_Weight": 2.3,
+        "Total_Pick_Weight": 2.25,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.jujube-1lb": {
@@ -1054,19 +1054,19 @@
       "f.lemon_meyer-2lb": {
         "picklist_sku": "lemon_meyer-01x03",
         "actualqty": 6.0,
-        "Total_Pick_Weight": 2.0,
+        "Total_Pick_Weight": 1.98,
         "Pick_Type": "Fruit: Lemon, Meyer"
       },
       "f.lemon_meyer-9lb": {
         "picklist_sku": "lemon_meyer-01x03",
         "actualqty": 27.0,
-        "Total_Pick_Weight": 8.9,
+        "Total_Pick_Weight": 8.91,
         "Pick_Type": "Fruit: Lemon, Meyer"
       },
       "f.lime_caviar-0.25lb": {
         "picklist_sku": "lime_caviar-BG0104",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.3,
+        "Total_Pick_Weight": 0.25,
         "Pick_Type": "Fruit: Lime, Caviar"
       },
       "f.lime_caviar-0.5lb": {
@@ -1084,7 +1084,7 @@
       "f.lime_finger-sample-bab": {
         "picklist_sku": "lime_caviar-BG0108",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.1,
+        "Total_Pick_Weight": 0.125,
         "Pick_Type": "Fruit: Lime, Caviar"
       },
       "f.longan-16lb": {
@@ -1510,31 +1510,31 @@
       "f.mango_cherry-16lb": {
         "picklist_sku": "mango_cherry-09x08",
         "actualqty": 14.0,
-        "Total_Pick_Weight": 15.8,
+        "Total_Pick_Weight": 15.75,
         "Pick_Type": "Fruit: Mango, Cherry"
       },
       "f.mango_cherry-1lb": {
         "picklist_sku": "mango_cherry-09x08",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 1.1,
+        "Total_Pick_Weight": 1.125,
         "Pick_Type": "Fruit: Mango, Cherry"
       },
       "f.mango_cherry-2lb": {
         "picklist_sku": "mango_cherry-09x08",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 2.3,
+        "Total_Pick_Weight": 2.25,
         "Pick_Type": "Fruit: Mango, Cherry"
       },
       "f.mango_cherry-2lb-addon": {
         "picklist_sku": "mango_cherry-09x08",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 2.3,
+        "Total_Pick_Weight": 2.25,
         "Pick_Type": "Fruit: Mango, Cherry"
       },
       "f.mango_cherry-2lb-bab": {
         "picklist_sku": "mango_cherry-09x08",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 2.3,
+        "Total_Pick_Weight": 2.25,
         "Pick_Type": "Fruit: Mango, Cherry"
       },
       "f.mango_cherry-4lb": {
@@ -1546,25 +1546,25 @@
       "f.mango_cherry-5lb": {
         "picklist_sku": "mango_cherry-09x08",
         "actualqty": 5.0,
-        "Total_Pick_Weight": 5.6,
+        "Total_Pick_Weight": 5.625,
         "Pick_Type": "Fruit: Mango, Cherry"
       },
       "f.mango_cherry-7lb": {
         "picklist_sku": "mango_cherry-09x08",
         "actualqty": 6.0,
-        "Total_Pick_Weight": 6.8,
+        "Total_Pick_Weight": 6.75,
         "Pick_Type": "Fruit: Mango, Cherry"
       },
       "f.mango_cherry-8lb": {
         "picklist_sku": "mango_cherry-09x08",
         "actualqty": 7.0,
-        "Total_Pick_Weight": 7.9,
+        "Total_Pick_Weight": 7.875,
         "Pick_Type": "Fruit: Mango, Cherry"
       },
       "f.mango_cherry-sample-bab": {
         "picklist_sku": "mango_cherry-09x08",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 1.1,
+        "Total_Pick_Weight": 1.125,
         "Pick_Type": "Fruit: Mango, Cherry"
       },
       "f.mango_green-2lb": {
@@ -1594,79 +1594,79 @@
       "f.mango_honey-14lb": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 25.0,
-        "Total_Pick_Weight": 14.1,
+        "Total_Pick_Weight": 14.063,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.mango_honey-16lb": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 28.0,
-        "Total_Pick_Weight": 15.8,
+        "Total_Pick_Weight": 15.75,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.mango_honey-1lb": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 1.1,
+        "Total_Pick_Weight": 1.125,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.mango_honey-28lb": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 50.0,
-        "Total_Pick_Weight": 28.1,
+        "Total_Pick_Weight": 28.125,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.mango_honey-2lb": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 4.0,
-        "Total_Pick_Weight": 2.3,
+        "Total_Pick_Weight": 2.25,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.mango_honey-2lb-bab": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 4.0,
-        "Total_Pick_Weight": 2.3,
+        "Total_Pick_Weight": 2.25,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.mango_honey-4lb": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 7.0,
-        "Total_Pick_Weight": 3.9,
+        "Total_Pick_Weight": 3.938,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.mango_honey-5lb": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 9.0,
-        "Total_Pick_Weight": 5.1,
+        "Total_Pick_Weight": 5.063,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.mango_honey-7lb": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 12.0,
-        "Total_Pick_Weight": 6.8,
+        "Total_Pick_Weight": 6.75,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.mango_honey-8lb": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 14.0,
-        "Total_Pick_Weight": 7.9,
+        "Total_Pick_Weight": 7.875,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.mango_honey-sample-bab": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.6,
+        "Total_Pick_Weight": 0.563,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.mango-0.5lb-gift": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.6,
+        "Total_Pick_Weight": 0.563,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.mango-1lb-gift": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 1.1,
+        "Total_Pick_Weight": 1.125,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.mango.green-1lb": {
@@ -1738,31 +1738,31 @@
       "f.mystery_fruit-1lb-addon": {
         "picklist_sku": "mango_cherry-09x08",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 1.1,
+        "Total_Pick_Weight": 1.125,
         "Pick_Type": "Fruit: Mango, Cherry"
       },
       "f.nectarine-2lb": {
         "picklist_sku": "nectarine-22x72",
         "actualqty": 7.0,
-        "Total_Pick_Weight": 2.1,
+        "Total_Pick_Weight": 2.139,
         "Pick_Type": "Fruit: Nectarine"
       },
       "f.nectarine-2lb-bab": {
         "picklist_sku": "nectarine-22x72",
         "actualqty": 7.0,
-        "Total_Pick_Weight": 2.1,
+        "Total_Pick_Weight": 2.139,
         "Pick_Type": "Fruit: Nectarine"
       },
       "f.nectarine-5lb": {
         "picklist_sku": "nectarine-22x72",
         "actualqty": 16.0,
-        "Total_Pick_Weight": 4.9,
+        "Total_Pick_Weight": 4.889,
         "Pick_Type": "Fruit: Nectarine"
       },
       "f.nectarine-8lb": {
         "picklist_sku": "nectarine-22x72",
         "actualqty": 26.0,
-        "Total_Pick_Weight": 7.9,
+        "Total_Pick_Weight": 7.944,
         "Pick_Type": "Fruit: Nectarine"
       },
       "f.nuts_mix-1lb-addon": {
@@ -1840,7 +1840,7 @@
       "f.papapya_hawaiian-16lb": {
         "picklist_sku": "papaya_hawaiian-10x08",
         "actualqty": 13.0,
-        "Total_Pick_Weight": 16.3,
+        "Total_Pick_Weight": 16.25,
         "Pick_Type": "Fruit: Papaya, Hawaiian"
       },
       "f.papapya_hawaiian-18lb": {
@@ -1870,7 +1870,7 @@
       "f.papapya_hawaiian-36lb": {
         "picklist_sku": "papaya_hawaiian-10x08",
         "actualqty": 29.0,
-        "Total_Pick_Weight": 36.3,
+        "Total_Pick_Weight": 36.25,
         "Pick_Type": "Fruit: Papaya, Hawaiian"
       },
       "f.papapya_hawaiian-4lb": {
@@ -1888,19 +1888,19 @@
       "f.papapya_hawaiian-8lb": {
         "picklist_sku": "papaya_hawaiian-10x08",
         "actualqty": 7.0,
-        "Total_Pick_Weight": 8.8,
+        "Total_Pick_Weight": 8.75,
         "Pick_Type": "Fruit: Papaya, Hawaiian"
       },
       "f.papapya_hawaiian-9lb": {
         "picklist_sku": "papaya_hawaiian-10x08",
         "actualqty": 7.0,
-        "Total_Pick_Weight": 8.8,
+        "Total_Pick_Weight": 8.75,
         "Pick_Type": "Fruit: Papaya, Hawaiian"
       },
       "f.papaya_hawaiian-16lb": {
         "picklist_sku": "papaya_hawaiian-10x08",
         "actualqty": 13.0,
-        "Total_Pick_Weight": 16.3,
+        "Total_Pick_Weight": 16.25,
         "Pick_Type": "Fruit: Papaya, Hawaiian"
       },
       "f.papaya_hawaiian-2lb": {
@@ -1924,13 +1924,13 @@
       "f.papaya_hawaiian-8lb": {
         "picklist_sku": "papaya_hawaiian-10x08",
         "actualqty": 7.0,
-        "Total_Pick_Weight": 8.8,
+        "Total_Pick_Weight": 8.75,
         "Pick_Type": "Fruit: Papaya, Hawaiian"
       },
       "f.papaya-1lb": {
         "picklist_sku": "papaya_hawaiian-10x08",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 1.3,
+        "Total_Pick_Weight": 1.25,
         "Pick_Type": "Fruit: Papaya, Hawaiian"
       },
       "f.passion_fruit-1lb-gift": {
@@ -1942,7 +1942,7 @@
       "f.passion_fruit-6pc-gift": {
         "picklist_sku": "pf_purple-01x12",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 0.3,
+        "Total_Pick_Weight": 0.25,
         "Pick_Type": "Fruit: Passion Fruit, Purple"
       },
       "f.passionfruit_purple-16lb": {
@@ -1996,7 +1996,7 @@
       "f.passionfruit_purple-sample-bab": {
         "picklist_sku": "pf_purple-01x12",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 0.3,
+        "Total_Pick_Weight": 0.25,
         "Pick_Type": "Fruit: Passion Fruit, Purple"
       },
       "f.passionfruit-3lb": {
@@ -2008,37 +2008,37 @@
       "f.peach-2lb-bab": {
         "picklist_sku": "peach-22x64",
         "actualqty": 6.0,
-        "Total_Pick_Weight": 2.1,
+        "Total_Pick_Weight": 2.063,
         "Pick_Type": "Fruit: Peaches"
       },
       "f.peaches-2lb": {
         "picklist_sku": "peach-22x64",
         "actualqty": 6.0,
-        "Total_Pick_Weight": 2.1,
+        "Total_Pick_Weight": 2.063,
         "Pick_Type": "Fruit: Peaches"
       },
       "f.peaches-5lb": {
         "picklist_sku": "peach-22x64",
         "actualqty": 15.0,
-        "Total_Pick_Weight": 5.2,
+        "Total_Pick_Weight": 5.156,
         "Pick_Type": "Fruit: Peaches"
       },
       "f.peaches-8lb": {
         "picklist_sku": "peach-22x64",
         "actualqty": 23.0,
-        "Total_Pick_Weight": 7.9,
+        "Total_Pick_Weight": 7.906,
         "Pick_Type": "Fruit: Peaches"
       },
       "f.pear-bartlett-2lb": {
         "picklist_sku": "pear_bartlett-40x90",
         "actualqty": 5.0,
-        "Total_Pick_Weight": 2.2,
+        "Total_Pick_Weight": 2.222,
         "Pick_Type": "Fruit: Pear, Bartlett"
       },
       "f.pear-bartlett-5lb": {
         "picklist_sku": "pear_bartlett-40x90",
         "actualqty": 11.0,
-        "Total_Pick_Weight": 4.9,
+        "Total_Pick_Weight": 4.889,
         "Pick_Type": "Fruit: Pear, Bartlett"
       },
       "f.pear-bartlett-8lb": {
@@ -2122,7 +2122,7 @@
       "f.persimmon_fuyu-sample-bab": {
         "picklist_sku": "persimmon_fuyu-01x03",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 0.7,
+        "Total_Pick_Weight": 0.667,
         "Pick_Type": "Fruit: Persimmon, Fuyu"
       },
       "f.persimmon.chocolate-2lb-bab": {
@@ -2146,31 +2146,31 @@
       "f.pink-guava-sample-bab": {
         "picklist_sku": "guava_pink-10x15",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.7,
+        "Total_Pick_Weight": 0.66,
         "Pick_Type": "Fruit: Guava, Pink"
       },
       "f.plums-2lb": {
         "picklist_sku": "plum_black-22x64",
         "actualqty": 6.0,
-        "Total_Pick_Weight": 2.1,
+        "Total_Pick_Weight": 2.063,
         "Pick_Type": "Fruit: Plums"
       },
       "f.plums-2lb-bab": {
         "picklist_sku": "plum_black-22x64",
         "actualqty": 6.0,
-        "Total_Pick_Weight": 2.06,
+        "Total_Pick_Weight": 2.063,
         "Pick_Type": "Fruit: Plums"
       },
       "f.plums-5lb": {
         "picklist_sku": "plum_black-22x64",
         "actualqty": 15.0,
-        "Total_Pick_Weight": 5.2,
+        "Total_Pick_Weight": 5.156,
         "Pick_Type": "Fruit: Plums"
       },
       "f.plums-8lb": {
         "picklist_sku": "plum_black-22x64",
         "actualqty": 23.0,
-        "Total_Pick_Weight": 7.9,
+        "Total_Pick_Weight": 7.906,
         "Pick_Type": "Fruit: Plums"
       },
       "f.pomegranate-16lb": {
@@ -2236,7 +2236,7 @@
       "f.pomelo_red-14lb": {
         "picklist_sku": "pomelo_red-22x08",
         "actualqty": 5.0,
-        "Total_Pick_Weight": 13.8,
+        "Total_Pick_Weight": 13.75,
         "Pick_Type": "Fruit: Pomelo, Red"
       },
       "f.pomelo_red-16lb": {
@@ -2248,13 +2248,13 @@
       "f.pomelo_red-2lb": {
         "picklist_sku": "pomelo_red-22x08",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 2.8,
+        "Total_Pick_Weight": 2.75,
         "Pick_Type": "Fruit: Pomelo, Red"
       },
       "f.pomelo_red-2lb-bab": {
         "picklist_sku": "pomelo_red-22x08",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 2.8,
+        "Total_Pick_Weight": 2.75,
         "Pick_Type": "Fruit: Pomelo, Red"
       },
       "f.pomelo_red-4lb": {
@@ -2272,19 +2272,19 @@
       "f.pomelo_red-7lb": {
         "picklist_sku": "pomelo_red-22x08",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 8.3,
+        "Total_Pick_Weight": 8.25,
         "Pick_Type": "Fruit: Pomelo, Red"
       },
       "f.pomelo_red-8lb": {
         "picklist_sku": "pomelo_red-22x08",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 8.3,
+        "Total_Pick_Weight": 8.25,
         "Pick_Type": "Fruit: Pomelo, Red"
       },
       "f.pomelo-1lb": {
         "picklist_sku": "pomelo_red-22x08",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 2.8,
+        "Total_Pick_Weight": 2.75,
         "Pick_Type": "Fruit: Pomelo, Red"
       },
       "f.rambutan-16lb": {
@@ -2362,79 +2362,79 @@
       "f.raw_honey-1lb-addon": {
         "picklist_sku": "honey-04x16",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.8,
+        "Total_Pick_Weight": 0.75,
         "Pick_Type": "Addon: Honey"
       },
       "f.raw_honey-9oz-addon": {
         "picklist_sku": "honey-04x16",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.8,
+        "Total_Pick_Weight": 0.75,
         "Pick_Type": "Addon: Honey"
       },
       "f.red.dragon.fruit-2lb-addon": {
         "picklist_sku": "df_red-10x07",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 2.9,
+        "Total_Pick_Weight": 2.857,
         "Pick_Type": "Fruit: Dragon Fruit, Red"
       },
       "f.sapote_chico_16lb": {
         "picklist_sku": "sapote_chico-01x03",
         "actualqty": 48.0,
-        "Total_Pick_Weight": 15.8,
+        "Total_Pick_Weight": 15.84,
         "Pick_Type": "Fruit: Sapote, Chico"
       },
       "f.sapote_chico_8lb": {
         "picklist_sku": "sapote_chico-01x03",
         "actualqty": 24.0,
-        "Total_Pick_Weight": 7.9,
+        "Total_Pick_Weight": 7.92,
         "Pick_Type": "Fruit: Sapote, Chico"
       },
       "f.sapote_chico-.5lb-sample-bab": {
         "picklist_sku": "sapote_chico-01x03",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 0.7,
+        "Total_Pick_Weight": 0.66,
         "Pick_Type": "Fruit: Sapote, Chico"
       },
       "f.sapote_chico-1lb": {
         "picklist_sku": "sapote_chico-01x03",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 1.0,
+        "Total_Pick_Weight": 0.99,
         "Pick_Type": "Fruit: Sapote, Chico"
       },
       "f.sapote_chico-28lb": {
         "picklist_sku": "sapote_chico-01x03",
         "actualqty": 85.0,
-        "Total_Pick_Weight": 28.1,
+        "Total_Pick_Weight": 28.05,
         "Pick_Type": "Fruit: Sapote, Chico"
       },
       "f.sapote_chico-2lb": {
         "picklist_sku": "sapote_chico-01x03",
         "actualqty": 6.0,
-        "Total_Pick_Weight": 2.0,
+        "Total_Pick_Weight": 1.98,
         "Pick_Type": "Fruit: Sapote, Chico"
       },
       "f.sapote_chico-2lb-bab": {
         "picklist_sku": "sapote_chico-01x03",
         "actualqty": 6.0,
-        "Total_Pick_Weight": 2.0,
+        "Total_Pick_Weight": 1.98,
         "Pick_Type": "Fruit: Sapote, Chico"
       },
       "f.sapote_chico-4lb": {
         "picklist_sku": "sapote_chico-01x03",
         "actualqty": 12.0,
-        "Total_Pick_Weight": 4.0,
+        "Total_Pick_Weight": 3.96,
         "Pick_Type": "Fruit: Sapote, Chico"
       },
       "f.sapote_chico-5lb": {
         "picklist_sku": "sapote_chico-01x03",
         "actualqty": 15.0,
-        "Total_Pick_Weight": 5.0,
+        "Total_Pick_Weight": 4.95,
         "Pick_Type": "Fruit: Sapote, Chico"
       },
       "f.sapote_chico-7lb": {
         "picklist_sku": "sapote_chico-01x03",
         "actualqty": 21.0,
-        "Total_Pick_Weight": 6.9,
+        "Total_Pick_Weight": 6.93,
         "Pick_Type": "Fruit: Sapote, Chico"
       },
       "f.sapote_white-16lb": {
@@ -2494,7 +2494,7 @@
       "f.sapote_white-sample-bab": {
         "picklist_sku": "sapote_white-01x03",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.3,
+        "Total_Pick_Weight": 0.333,
         "Pick_Type": "Fruit: Sapote, White"
       },
       "f.soursop-4lb": {
@@ -2674,19 +2674,19 @@
       "f.yellow_dragonfruit-0.5lb-gift": {
         "picklist_sku": "df_yellow-05x07",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.79,
+        "Total_Pick_Weight": 0.786,
         "Pick_Type": "Fruit: Dragon Fruit, Yellow"
       },
       "f.yellow.dragon.fruit-1lb-gift": {
         "picklist_sku": "df_yellow-05x07",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 1.57,
+        "Total_Pick_Weight": 1.571,
         "Pick_Type": "Fruit: Dragon Fruit, Yellow"
       },
       "F.YELLOW.DRAGON.FRUIT-2LB-ADDON": {
         "picklist_sku": "df_yellow-05x07",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 2.36,
+        "Total_Pick_Weight": 2.357,
         "Pick_Type": "Fruit: Dragon Fruit, Yellow"
       },
       "m.cacao-gift": {
@@ -2950,7 +2950,7 @@
       "w.f.avocado_hass-36lb": {
         "picklist_sku": "avocado_hass-60x25",
         "actualqty": 86.0,
-        "Total_Pick_Weight": 35.83,
+        "Total_Pick_Weight": 35.833,
         "Pick_Type": "Fruit: Avocado, Hass"
       },
       "w.f.avocado_reed-36lb": {
@@ -2974,19 +2974,19 @@
       "w.f.dragonfruit_red-28lb": {
         "picklist_sku": "df_red-10x07",
         "actualqty": 20.0,
-        "Total_Pick_Weight": 28.57,
+        "Total_Pick_Weight": 28.571,
         "Pick_Type": "Fruit: Dragon Fruit, Red"
       },
       "w.f.dragonfruit_white-28lb": {
         "picklist_sku": "df_white-10x07",
         "actualqty": 20.0,
-        "Total_Pick_Weight": 28.57,
+        "Total_Pick_Weight": 28.571,
         "Pick_Type": "Fruit: Dragon Fruit, White"
       },
       "w.f.dragonfruit_yellow-28lb": {
         "picklist_sku": "df_yellow-05x07",
         "actualqty": 36.0,
-        "Total_Pick_Weight": 28.29,
+        "Total_Pick_Weight": 28.286,
         "Pick_Type": "Fruit: Dragon Fruit, Yellow"
       },
       "w.f.guava_pink-28lb": {
@@ -3046,7 +3046,7 @@
       "w.f.mango_cherry-28lb": {
         "picklist_sku": "mango_cherry-09x08",
         "actualqty": 25.0,
-        "Total_Pick_Weight": 28.13,
+        "Total_Pick_Weight": 28.125,
         "Pick_Type": "Fruit: Mango, Cherry"
       },
       "w.f.passionfruit_purple-24lb": {
@@ -3161,13 +3161,13 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.63,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         },
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.33,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
@@ -3205,7 +3205,7 @@
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.33,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
@@ -3237,7 +3237,7 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 3.0,
-          "weight": 1.88,
+          "weight": 1.875,
           "type": "Fruit: Avocado, Gem"
         },
         {
@@ -3287,7 +3287,7 @@
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.33,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
@@ -3343,7 +3343,7 @@
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.33,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
@@ -3453,7 +3453,7 @@
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.33,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
@@ -3493,19 +3493,19 @@
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.13,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
           "component_sku": "mango_honey-09x16",
           "actualqty": 1.0,
-          "weight": 0.56,
+          "weight": 0.563,
           "type": "Fruit: Mango, Honey"
         },
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.33,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
@@ -3523,7 +3523,7 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.63,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         },
         {
@@ -3555,7 +3555,7 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.63,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         },
         {
@@ -3597,13 +3597,13 @@
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.13,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.33,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
@@ -3623,7 +3623,7 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.63,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         },
         {
@@ -3665,13 +3665,13 @@
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.13,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.33,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
@@ -3703,7 +3703,7 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.63,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         },
         {
@@ -3715,7 +3715,7 @@
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.33,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
@@ -3751,7 +3751,7 @@
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.13,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
@@ -3777,7 +3777,7 @@
         {
           "component_sku": "mango_honey-09x16",
           "actualqty": 2.0,
-          "weight": 1.13,
+          "weight": 1.125,
           "type": "Fruit: Mango, Honey"
         },
         {
@@ -3807,13 +3807,13 @@
         {
           "component_sku": "df_white-10x07",
           "actualqty": 2.0,
-          "weight": 2.86,
+          "weight": 2.857,
           "type": "Fruit: Dragon Fruit, White"
         },
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.33,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
@@ -3825,7 +3825,7 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.63,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         },
         {
@@ -3845,13 +3845,13 @@
         {
           "component_sku": "mango_honey-09x16",
           "actualqty": 1.0,
-          "weight": 0.56,
+          "weight": 0.563,
           "type": "Fruit: Mango, Honey"
         },
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.13,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
@@ -3877,13 +3877,13 @@
         {
           "component_sku": "mango_honey-09x16",
           "actualqty": 1.0,
-          "weight": 0.56,
+          "weight": 0.563,
           "type": "Fruit: Mango, Honey"
         },
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.13,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
@@ -3915,13 +3915,13 @@
         {
           "component_sku": "mango_honey-09x16",
           "actualqty": 2.0,
-          "weight": 1.13,
+          "weight": 1.125,
           "type": "Fruit: Mango, Honey"
         },
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.13,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
@@ -3963,7 +3963,7 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.63,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         }
       ],
@@ -4087,7 +4087,7 @@
         {
           "component_sku": "df_red-10x07",
           "actualqty": 2.0,
-          "weight": 2.86,
+          "weight": 2.857,
           "type": "Fruit: Dragon Fruit, Red"
         },
         {
@@ -4099,7 +4099,7 @@
         {
           "component_sku": "sapote_white-01x03",
           "actualqty": 4.0,
-          "weight": 1.33,
+          "weight": 1.333,
           "type": "Fruit: Sapote, White"
         },
         {
@@ -4155,7 +4155,7 @@
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.33,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
@@ -4175,7 +4175,7 @@
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.33,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
@@ -4219,7 +4219,7 @@
         {
           "component_sku": "df_red-10x07",
           "actualqty": 1.0,
-          "weight": 1.43,
+          "weight": 1.429,
           "type": "Fruit: Dragon Fruit, Red"
         },
         {
@@ -4231,7 +4231,7 @@
         {
           "component_sku": "sapote_white-01x03",
           "actualqty": 1.0,
-          "weight": 0.33,
+          "weight": 0.333,
           "type": "Fruit: Sapote, White"
         },
         {
@@ -4287,13 +4287,13 @@
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.33,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
           "component_sku": "mango_honey-09x16",
           "actualqty": 2.0,
-          "weight": 1.13,
+          "weight": 1.125,
           "type": "Fruit: Mango, Honey"
         },
         {
@@ -4305,7 +4305,7 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.63,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         },
         {
@@ -4323,7 +4323,7 @@
         {
           "component_sku": "df_white-10x07",
           "actualqty": 1.0,
-          "weight": 1.43,
+          "weight": 1.429,
           "type": "Fruit: Dragon Fruit, White"
         },
         {
@@ -4367,19 +4367,19 @@
         {
           "component_sku": "df_red-10x07",
           "actualqty": 1.0,
-          "weight": 1.43,
+          "weight": 1.429,
           "type": "Fruit: Dragon Fruit, Red"
         },
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.33,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
           "component_sku": "mango_honey-09x16",
           "actualqty": 2.0,
-          "weight": 1.13,
+          "weight": 1.125,
           "type": "Fruit: Mango, Honey"
         },
         {
@@ -4409,7 +4409,7 @@
         {
           "component_sku": "df_white-10x07",
           "actualqty": 1.0,
-          "weight": 1.43,
+          "weight": 1.429,
           "type": "Fruit: Dragon Fruit, White"
         }
       ],
@@ -4417,7 +4417,7 @@
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.13,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         }
       ],
@@ -4431,7 +4431,7 @@
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.13,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
@@ -4443,7 +4443,7 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.63,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         },
         {
@@ -4457,13 +4457,13 @@
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.33,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.13,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
@@ -4501,13 +4501,13 @@
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.13,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.33,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
@@ -4531,7 +4531,7 @@
         {
           "component_sku": "df_yellow-05x07",
           "actualqty": 1.0,
-          "weight": 0.79,
+          "weight": 0.786,
           "type": "Fruit: Dragon Fruit, Yellow"
         }
       ],
@@ -4545,7 +4545,7 @@
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.13,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
@@ -4557,7 +4557,7 @@
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.33,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
@@ -4581,13 +4581,13 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.63,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         },
         {
           "component_sku": "mango_honey-09x16",
           "actualqty": 1.0,
-          "weight": 0.56,
+          "weight": 0.563,
           "type": "Fruit: Mango, Honey"
         }
       ],
@@ -4601,7 +4601,7 @@
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.13,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
@@ -4613,7 +4613,7 @@
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.33,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
@@ -4637,13 +4637,13 @@
         {
           "component_sku": "mango_honey-09x16",
           "actualqty": 1.0,
-          "weight": 0.56,
+          "weight": 0.563,
           "type": "Fruit: Mango, Honey"
         },
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.63,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         }
       ],
@@ -4691,7 +4691,7 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.63,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         },
         {
@@ -4715,7 +4715,7 @@
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.13,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
@@ -4727,7 +4727,7 @@
         {
           "component_sku": "mango_honey-09x16",
           "actualqty": 2.0,
-          "weight": 1.13,
+          "weight": 1.125,
           "type": "Fruit: Mango, Honey"
         },
         {
@@ -4759,7 +4759,7 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.63,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         },
         {
@@ -4801,13 +4801,13 @@
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.13,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
           "component_sku": "mango_honey-09x16",
           "actualqty": 2.0,
-          "weight": 1.13,
+          "weight": 1.125,
           "type": "Fruit: Mango, Honey"
         },
         {
@@ -4833,7 +4833,7 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.63,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         },
         {
@@ -4875,13 +4875,13 @@
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.13,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
           "component_sku": "mango_honey-09x16",
           "actualqty": 2.0,
-          "weight": 1.13,
+          "weight": 1.125,
           "type": "Fruit: Mango, Honey"
         },
         {
@@ -4901,13 +4901,13 @@
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.13,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.63,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         },
         {
@@ -4919,13 +4919,13 @@
         {
           "component_sku": "mango_honey-09x16",
           "actualqty": 1.0,
-          "weight": 0.56,
+          "weight": 0.563,
           "type": "Fruit: Mango, Honey"
         },
         {
           "component_sku": "sapote_white-01x03",
           "actualqty": 2.0,
-          "weight": 0.67,
+          "weight": 0.667,
           "type": "Fruit: Sapote, White"
         }
       ],
@@ -4939,7 +4939,7 @@
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.13,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
@@ -4951,7 +4951,7 @@
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.33,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
@@ -4969,19 +4969,19 @@
         {
           "component_sku": "sapote_white-01x03",
           "actualqty": 2.0,
-          "weight": 0.67,
+          "weight": 0.667,
           "type": "Fruit: Sapote, White"
         },
         {
           "component_sku": "mango_honey-09x16",
           "actualqty": 1.0,
-          "weight": 0.56,
+          "weight": 0.563,
           "type": "Fruit: Mango, Honey"
         },
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.63,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         }
       ],
@@ -4989,13 +4989,13 @@
         {
           "component_sku": "nectarine-22x72",
           "actualqty": 4.0,
-          "weight": 1.22,
+          "weight": 1.222,
           "type": "Fruit: Nectarine"
         },
         {
           "component_sku": "peach-22x64",
           "actualqty": 4.0,
-          "weight": 1.38,
+          "weight": 1.375,
           "type": "Fruit: Peaches"
         },
         {
@@ -5033,13 +5033,13 @@
         {
           "component_sku": "nectarine-22x72",
           "actualqty": 4.0,
-          "weight": 1.22,
+          "weight": 1.222,
           "type": "Fruit: Nectarine"
         },
         {
           "component_sku": "peach-22x64",
           "actualqty": 4.0,
-          "weight": 1.38,
+          "weight": 1.375,
           "type": "Fruit: Peaches"
         },
         {
@@ -5077,13 +5077,13 @@
         {
           "component_sku": "nectarine-22x72",
           "actualqty": 4.0,
-          "weight": 1.22,
+          "weight": 1.222,
           "type": "Fruit: Nectarine"
         },
         {
           "component_sku": "peach-22x64",
           "actualqty": 4.0,
-          "weight": 1.38,
+          "weight": 1.375,
           "type": "Fruit: Peaches"
         },
         {
@@ -5250,31 +5250,31 @@
       "f.avocado_gem-8lb": {
         "picklist_sku": "avocado_gem-25x40",
         "actualqty": 13.0,
-        "Total_Pick_Weight": 8.1,
+        "Total_Pick_Weight": 8.125,
         "Pick_Type": "Fruit: Avocado, Gem"
       },
       "f.avocado_gem-sample-bab": {
         "picklist_sku": "avocado_gem-25x40",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.6,
+        "Total_Pick_Weight": 0.625,
         "Pick_Type": "Fruit: Avocado, Gem"
       },
       "f.avocado_hass-16lb": {
         "picklist_sku": "avocado_hass-60x25",
         "actualqty": 38.0,
-        "Total_Pick_Weight": 15.8,
+        "Total_Pick_Weight": 15.833,
         "Pick_Type": "Fruit: Avocado, Hass"
       },
       "f.avocado_hass-2lb": {
         "picklist_sku": "avocado_hass-60x25",
         "actualqty": 5.0,
-        "Total_Pick_Weight": 2.1,
+        "Total_Pick_Weight": 2.083,
         "Pick_Type": "Fruit: Avocado, Hass"
       },
       "f.avocado_hass-2lb_3-bab": {
         "picklist_sku": "avocado_hass-60x25",
         "actualqty": 5.0,
-        "Total_Pick_Weight": 2.1,
+        "Total_Pick_Weight": 2.083,
         "Pick_Type": "Fruit: Avocado, Hass"
       },
       "f.avocado_hass-5lb": {
@@ -5286,13 +5286,13 @@
       "f.avocado_hass-8lb": {
         "picklist_sku": "avocado_hass-60x25",
         "actualqty": 19.0,
-        "Total_Pick_Weight": 7.9,
+        "Total_Pick_Weight": 7.917,
         "Pick_Type": "Fruit: Avocado, Hass"
       },
       "f.avocado_hass-9lb": {
         "picklist_sku": "avocado_hass-60x25",
         "actualqty": 22.0,
-        "Total_Pick_Weight": 9.2,
+        "Total_Pick_Weight": 9.167,
         "Pick_Type": "Fruit: Avocado, Hass"
       },
       "f.avocado_reed-16lb": {
@@ -5340,37 +5340,37 @@
       "f.avocado_tropical-0.5lb-gift": {
         "picklist_sku": "avocado_tropical-25x22",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 1.1,
+        "Total_Pick_Weight": 1.136,
         "Pick_Type": "Fruit: Avocado, Tropical"
       },
       "f.avocado_tropical-2lb-bab": {
         "picklist_sku": "avocado_tropical-25x22",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 2.3,
+        "Total_Pick_Weight": 2.273,
         "Pick_Type": "Fruit: Avocado, Tropical"
       },
       "f.avocado_tropical-sample-bab": {
         "picklist_sku": "avocado_tropical-25x22",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 1.1,
+        "Total_Pick_Weight": 1.136,
         "Pick_Type": "Fruit: Avocado, Tropical"
       },
       "f.avocado_variety-16lb": {
         "picklist_sku": "avocado_gem-25x40",
         "actualqty": 14.0,
-        "Total_Pick_Weight": 8.8,
+        "Total_Pick_Weight": 8.75,
         "Pick_Type": "Fruit: Avocado, Gem"
       },
       "f.avocado_variety-1lb": {
         "picklist_sku": "avocado_gem-25x40",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 1.3,
+        "Total_Pick_Weight": 1.25,
         "Pick_Type": "Fruit: Avocado, Gem"
       },
       "f.avocado_variety-2lb": {
         "picklist_sku": "avocado_gem-25x40",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 1.3,
+        "Total_Pick_Weight": 1.25,
         "Pick_Type": "Fruit: Avocado, Gem"
       },
       "f.avocado_variety-5lb": {
@@ -5382,37 +5382,37 @@
       "f.avocado_variety-8lb": {
         "picklist_sku": "avocado_gem-25x40",
         "actualqty": 7.0,
-        "Total_Pick_Weight": 4.4,
+        "Total_Pick_Weight": 4.375,
         "Pick_Type": "Fruit: Avocado, Gem"
       },
       "f.avocado_variety-9lb": {
         "picklist_sku": "avocado_gem-25x40",
         "actualqty": 7.0,
-        "Total_Pick_Weight": 4.4,
+        "Total_Pick_Weight": 4.375,
         "Pick_Type": "Fruit: Avocado, Gem"
       },
       "f.avocado-0.5lb-gift": {
         "picklist_sku": "avocado_gem-25x40",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 1.3,
+        "Total_Pick_Weight": 1.25,
         "Pick_Type": "Fruit: Avocado, Gem"
       },
       "f.avocado.tropical-2lb-addon": {
         "picklist_sku": "avocado_tropical-25x22",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 2.3,
+        "Total_Pick_Weight": 2.273,
         "Pick_Type": "Fruit: Avocado, Tropical"
       },
       "f.banana_variety-16lb": {
         "picklist_sku": "banana_apple-03x16",
         "actualqty": 6.0,
-        "Total_Pick_Weight": 1.1,
+        "Total_Pick_Weight": 1.125,
         "Pick_Type": "Fruit: Banana, Apple"
       },
       "f.banana_variety-2lb": {
         "picklist_sku": "banana_apple-03x16",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.2,
+        "Total_Pick_Weight": 0.188,
         "Pick_Type": "Fruit: Banana, Apple"
       },
       "f.banana_variety-3lb-bab": {
@@ -5424,19 +5424,19 @@
       "f.banana_variety-5lb": {
         "picklist_sku": "banana_apple-03x16",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 0.4,
+        "Total_Pick_Weight": 0.375,
         "Pick_Type": "Fruit: Banana, Apple"
       },
       "f.banana_variety-8lb": {
         "picklist_sku": "banana_apple-03x16",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 0.6,
+        "Total_Pick_Weight": 0.563,
         "Pick_Type": "Fruit: Banana, Apple"
       },
       "f.banana.variety-1lb": {
         "picklist_sku": "banana_burro-05x16",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.3,
+        "Total_Pick_Weight": 0.313,
         "Pick_Type": "Fruit: Banana, Burro"
       },
       "f.cacao-18lb": {
@@ -5520,7 +5520,7 @@
       "f.caviar_lime-2oz-gift": {
         "picklist_sku": "lime_caviar-BG0108",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.1,
+        "Total_Pick_Weight": 0.125,
         "Pick_Type": "Fruit: Lime, Caviar"
       },
       "f.cherimoya-0.5lb-gift": {
@@ -5616,37 +5616,37 @@
       "f.cocktail_grapefruit-16lb": {
         "picklist_sku": "grapefruit_ctail-03x04",
         "actualqty": 21.0,
-        "Total_Pick_Weight": 15.8,
+        "Total_Pick_Weight": 15.75,
         "Pick_Type": "Fruit: Grapefruit, Cocktail"
       },
       "f.cocktail_grapefruit-2lb": {
         "picklist_sku": "grapefruit_ctail-03x04",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 2.3,
+        "Total_Pick_Weight": 2.25,
         "Pick_Type": "Fruit: Grapefruit, Cocktail"
       },
       "f.cocktail_grapefruit-2lb-bab": {
         "picklist_sku": "grapefruit_ctail-03x04",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 2.3,
+        "Total_Pick_Weight": 2.25,
         "Pick_Type": "Fruit: Grapefruit, Cocktail"
       },
       "f.cocktail_grapefruit-5lb": {
         "picklist_sku": "grapefruit_ctail-03x04",
         "actualqty": 7.0,
-        "Total_Pick_Weight": 5.3,
+        "Total_Pick_Weight": 5.25,
         "Pick_Type": "Fruit: Grapefruit, Cocktail"
       },
       "f.cocktail_grapefruit-8lb": {
         "picklist_sku": "grapefruit_ctail-03x04",
         "actualqty": 11.0,
-        "Total_Pick_Weight": 8.3,
+        "Total_Pick_Weight": 8.25,
         "Pick_Type": "Fruit: Grapefruit, Cocktail"
       },
       "f.cocktail_grapefruit-sample-bab": {
         "picklist_sku": "grapefruit_ctail-03x04",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.8,
+        "Total_Pick_Weight": 0.75,
         "Pick_Type": "Fruit: Grapefruit, Cocktail"
       },
       "f.dates_medjool-16lb": {
@@ -5694,163 +5694,163 @@
       "f.dragonfruit_red-14lb": {
         "picklist_sku": "df_red-10x07",
         "actualqty": 10.0,
-        "Total_Pick_Weight": 14.3,
+        "Total_Pick_Weight": 14.286,
         "Pick_Type": "Fruit: Dragon Fruit, Red"
       },
       "f.dragonfruit_red-16lb": {
         "picklist_sku": "df_red-10x07",
         "actualqty": 11.0,
-        "Total_Pick_Weight": 15.7,
+        "Total_Pick_Weight": 15.714,
         "Pick_Type": "Fruit: Dragon Fruit, Red"
       },
       "f.dragonfruit_red-1lb": {
         "picklist_sku": "df_red-10x07",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 1.4,
+        "Total_Pick_Weight": 1.429,
         "Pick_Type": "Fruit: Dragon Fruit, Red"
       },
       "f.dragonfruit_red-2lb": {
         "picklist_sku": "df_red-10x07",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 2.9,
+        "Total_Pick_Weight": 2.857,
         "Pick_Type": "Fruit: Dragon Fruit, Red"
       },
       "f.dragonfruit_red-2lb-bab": {
         "picklist_sku": "df_red-10x07",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 2.9,
+        "Total_Pick_Weight": 2.857,
         "Pick_Type": "Fruit: Dragon Fruit, Red"
       },
       "f.dragonfruit_red-4lb": {
         "picklist_sku": "df_red-10x07",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 4.3,
+        "Total_Pick_Weight": 4.286,
         "Pick_Type": "Fruit: Dragon Fruit, Red"
       },
       "f.dragonfruit_red-5lb": {
         "picklist_sku": "df_red-10x07",
         "actualqty": 4.0,
-        "Total_Pick_Weight": 5.7,
+        "Total_Pick_Weight": 5.714,
         "Pick_Type": "Fruit: Dragon Fruit, Red"
       },
       "f.dragonfruit_red-7lb": {
         "picklist_sku": "df_red-10x07",
         "actualqty": 5.0,
-        "Total_Pick_Weight": 7.1,
+        "Total_Pick_Weight": 7.143,
         "Pick_Type": "Fruit: Dragon Fruit, Red"
       },
       "f.dragonfruit_red-8lb": {
         "picklist_sku": "df_red-10x07",
         "actualqty": 6.0,
-        "Total_Pick_Weight": 8.6,
+        "Total_Pick_Weight": 8.571,
         "Pick_Type": "Fruit: Dragon Fruit, Red"
       },
       "f.dragonfruit_red-sample-bab": {
         "picklist_sku": "df_red-10x07",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 1.4,
+        "Total_Pick_Weight": 1.429,
         "Pick_Type": "Fruit: Dragon Fruit, Red"
       },
       "f.dragonfruit_white-14lb": {
         "picklist_sku": "df_white-10x07",
         "actualqty": 10.0,
-        "Total_Pick_Weight": 14.3,
+        "Total_Pick_Weight": 14.286,
         "Pick_Type": "Fruit: Dragon Fruit, White"
       },
       "f.dragonfruit_white-16lb": {
         "picklist_sku": "df_white-10x07",
         "actualqty": 11.0,
-        "Total_Pick_Weight": 15.7,
+        "Total_Pick_Weight": 15.714,
         "Pick_Type": "Fruit: Dragon Fruit, White"
       },
       "f.dragonfruit_white-1lb": {
         "picklist_sku": "df_white-10x07",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 1.4,
+        "Total_Pick_Weight": 1.429,
         "Pick_Type": "Fruit: Dragon Fruit, White"
       },
       "f.dragonfruit_white-2lb": {
         "picklist_sku": "df_white-10x07",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 2.9,
+        "Total_Pick_Weight": 2.857,
         "Pick_Type": "Fruit: Dragon Fruit, White"
       },
       "f.dragonfruit_white-2lb_2-addon": {
         "picklist_sku": "df_white-10x07",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 2.9,
+        "Total_Pick_Weight": 2.857,
         "Pick_Type": "Fruit: Dragon Fruit, White"
       },
       "f.dragonfruit_white-2lb-bab": {
         "picklist_sku": "df_white-10x07",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 2.9,
+        "Total_Pick_Weight": 2.857,
         "Pick_Type": "Fruit: Dragon Fruit, White"
       },
       "f.dragonfruit_white-4lb": {
         "picklist_sku": "df_white-10x07",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 4.3,
+        "Total_Pick_Weight": 4.286,
         "Pick_Type": "Fruit: Dragon Fruit, White"
       },
       "f.dragonfruit_white-5lb": {
         "picklist_sku": "df_white-10x07",
         "actualqty": 4.0,
-        "Total_Pick_Weight": 5.7,
+        "Total_Pick_Weight": 5.714,
         "Pick_Type": "Fruit: Dragon Fruit, White"
       },
       "f.dragonfruit_white-7lb": {
         "picklist_sku": "df_white-10x07",
         "actualqty": 5.0,
-        "Total_Pick_Weight": 7.1,
+        "Total_Pick_Weight": 7.143,
         "Pick_Type": "Fruit: Dragon Fruit, White"
       },
       "f.dragonfruit_white-8lb": {
         "picklist_sku": "df_white-10x07",
         "actualqty": 6.0,
-        "Total_Pick_Weight": 8.6,
+        "Total_Pick_Weight": 8.571,
         "Pick_Type": "Fruit: Dragon Fruit, White"
       },
       "f.dragonfruit_white-sample-bab": {
         "picklist_sku": "df_white-10x07",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 1.4,
+        "Total_Pick_Weight": 1.429,
         "Pick_Type": "Fruit: Dragon Fruit, White"
       },
       "f.dragonfruit_yellow-14lb": {
         "picklist_sku": "df_yellow-05x07",
         "actualqty": 18.0,
-        "Total_Pick_Weight": 14.1,
+        "Total_Pick_Weight": 14.143,
         "Pick_Type": "Fruit: Dragon Fruit, Yellow"
       },
       "f.dragonfruit_yellow-16lb": {
         "picklist_sku": "df_yellow-05x07",
         "actualqty": 20.0,
-        "Total_Pick_Weight": 15.7,
+        "Total_Pick_Weight": 15.714,
         "Pick_Type": "Fruit: Dragon Fruit, Yellow"
       },
       "f.dragonfruit_yellow-1lb": {
         "picklist_sku": "df_yellow-05x07",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 1.6,
+        "Total_Pick_Weight": 1.571,
         "Pick_Type": "Fruit: Dragon Fruit, Yellow"
       },
       "f.dragonfruit_yellow-2lb": {
         "picklist_sku": "df_yellow-05x07",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 2.4,
+        "Total_Pick_Weight": 2.357,
         "Pick_Type": "Fruit: Dragon Fruit, Yellow"
       },
       "f.dragonfruit_yellow-2lb-bab": {
         "picklist_sku": "df_yellow-05x07",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 2.4,
+        "Total_Pick_Weight": 2.357,
         "Pick_Type": "Fruit: Dragon Fruit, Yellow"
       },
       "f.dragonfruit_yellow-4lb": {
         "picklist_sku": "df_yellow-05x07",
         "actualqty": 5.0,
-        "Total_Pick_Weight": 3.9,
+        "Total_Pick_Weight": 3.929,
         "Pick_Type": "Fruit: Dragon Fruit, Yellow"
       },
       "f.dragonfruit_yellow-5lb": {
@@ -5862,19 +5862,19 @@
       "f.dragonfruit_yellow-7lb": {
         "picklist_sku": "df_yellow-05x07",
         "actualqty": 9.0,
-        "Total_Pick_Weight": 7.1,
+        "Total_Pick_Weight": 7.071,
         "Pick_Type": "Fruit: Dragon Fruit, Yellow"
       },
       "f.dragonfruit_yellow-8lb": {
         "picklist_sku": "df_yellow-05x07",
         "actualqty": 10.0,
-        "Total_Pick_Weight": 7.9,
+        "Total_Pick_Weight": 7.857,
         "Pick_Type": "Fruit: Dragon Fruit, Yellow"
       },
       "f.dragonfruit_yellow-sample-bab": {
         "picklist_sku": "df_yellow-05x07",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.8,
+        "Total_Pick_Weight": 0.786,
         "Pick_Type": "Fruit: Dragon Fruit, Yellow"
       },
       "f.exoticfruit-2lb-bab": {
@@ -5886,85 +5886,85 @@
       "f.flower_spoon-4pc-gift": {
         "picklist_sku": "flower_spoon-04x01",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.3,
+        "Total_Pick_Weight": 0.25,
         "Pick_Type": "Other: Spoons"
       },
       "f.gift_wrap-birthday": {
         "picklist_sku": "gift_note_bday",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.0,
+        "Total_Pick_Weight": 0.001,
         "Pick_Type": "Gift Note"
       },
       "f.gift_wrap-holiday": {
         "picklist_sku": "gift_note_holiday",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.0,
+        "Total_Pick_Weight": 0.001,
         "Pick_Type": "Gift Note"
       },
       "f.gift_wrap-standard": {
         "picklist_sku": "gift_note",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.0,
+        "Total_Pick_Weight": 0.001,
         "Pick_Type": "Gift Note"
       },
       "f.grapefruit_rubyred-7lb": {
         "picklist_sku": "pomelo_red-22x08",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 8.3,
+        "Total_Pick_Weight": 8.25,
         "Pick_Type": "Fruit: Pomelo, Red"
       },
       "f.guava_pink-16lb": {
         "picklist_sku": "guava_pink-10x15",
         "actualqty": 24.0,
-        "Total_Pick_Weight": 15.8,
+        "Total_Pick_Weight": 15.84,
         "Pick_Type": "Fruit: Guava, Pink"
       },
       "f.guava_pink-1lb": {
         "picklist_sku": "guava_pink-10x15",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 1.3,
+        "Total_Pick_Weight": 1.32,
         "Pick_Type": "Fruit: Guava, Pink"
       },
       "f.guava_pink-1lb-addon": {
         "picklist_sku": "guava_pink-10x15",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 1.3,
+        "Total_Pick_Weight": 1.32,
         "Pick_Type": "Fruit: Guava, Pink"
       },
       "f.guava_pink-2lb": {
         "picklist_sku": "guava_pink-10x15",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 2.0,
+        "Total_Pick_Weight": 1.98,
         "Pick_Type": "Fruit: Guava, Pink"
       },
       "f.guava_pink-2lb-bab": {
         "picklist_sku": "guava_pink-10x15",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 2.0,
+        "Total_Pick_Weight": 1.98,
         "Pick_Type": "Fruit: Guava, Pink"
       },
       "f.guava_pink-4lb": {
         "picklist_sku": "guava_pink-10x15",
         "actualqty": 6.0,
-        "Total_Pick_Weight": 4.0,
+        "Total_Pick_Weight": 3.96,
         "Pick_Type": "Fruit: Guava, Pink"
       },
       "f.guava_pink-5lb": {
         "picklist_sku": "guava_pink-10x15",
         "actualqty": 8.0,
-        "Total_Pick_Weight": 5.3,
+        "Total_Pick_Weight": 5.28,
         "Pick_Type": "Fruit: Guava, Pink"
       },
       "f.guava_pink-7lb": {
         "picklist_sku": "guava_pink-10x15",
         "actualqty": 11.0,
-        "Total_Pick_Weight": 7.3,
+        "Total_Pick_Weight": 7.26,
         "Pick_Type": "Fruit: Guava, Pink"
       },
       "f.guava_pink-8lb": {
         "picklist_sku": "guava_pink-10x15",
         "actualqty": 12.0,
-        "Total_Pick_Weight": 7.9,
+        "Total_Pick_Weight": 7.92,
         "Pick_Type": "Fruit: Guava, Pink"
       },
       "f.guava_white-16lb_2": {
@@ -6066,13 +6066,13 @@
       "f.honey_mango-1lb-gift": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 1.1,
+        "Total_Pick_Weight": 1.125,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.honey.mango-2lb-addon": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 4.0,
-        "Total_Pick_Weight": 2.3,
+        "Total_Pick_Weight": 2.25,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.jujube-1lb": {
@@ -6192,19 +6192,19 @@
       "f.lemon_meyer-2lb": {
         "picklist_sku": "lemon_meyer-01x03",
         "actualqty": 6.0,
-        "Total_Pick_Weight": 2.0,
+        "Total_Pick_Weight": 1.98,
         "Pick_Type": "Fruit: Lemon, Meyer"
       },
       "f.lemon_meyer-9lb": {
         "picklist_sku": "lemon_meyer-01x03",
         "actualqty": 27.0,
-        "Total_Pick_Weight": 8.9,
+        "Total_Pick_Weight": 8.91,
         "Pick_Type": "Fruit: Lemon, Meyer"
       },
       "f.lime_caviar-0.25lb": {
         "picklist_sku": "lime_caviar-BG0104",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.3,
+        "Total_Pick_Weight": 0.25,
         "Pick_Type": "Fruit: Lime, Caviar"
       },
       "f.lime_caviar-0.5lb": {
@@ -6222,7 +6222,7 @@
       "f.lime_finger-sample-bab": {
         "picklist_sku": "lime_caviar-BG0108",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.1,
+        "Total_Pick_Weight": 0.125,
         "Pick_Type": "Fruit: Lime, Caviar"
       },
       "f.longan-16lb": {
@@ -6648,31 +6648,31 @@
       "f.mango_cherry-16lb": {
         "picklist_sku": "mango_cherry-09x08",
         "actualqty": 14.0,
-        "Total_Pick_Weight": 15.8,
+        "Total_Pick_Weight": 15.75,
         "Pick_Type": "Fruit: Mango, Cherry"
       },
       "f.mango_cherry-1lb": {
         "picklist_sku": "mango_cherry-09x08",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 1.1,
+        "Total_Pick_Weight": 1.125,
         "Pick_Type": "Fruit: Mango, Cherry"
       },
       "f.mango_cherry-2lb": {
         "picklist_sku": "mango_cherry-09x08",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 2.3,
+        "Total_Pick_Weight": 2.25,
         "Pick_Type": "Fruit: Mango, Cherry"
       },
       "f.mango_cherry-2lb-addon": {
         "picklist_sku": "mango_cherry-09x08",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 2.3,
+        "Total_Pick_Weight": 2.25,
         "Pick_Type": "Fruit: Mango, Cherry"
       },
       "f.mango_cherry-2lb-bab": {
         "picklist_sku": "mango_cherry-09x08",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 2.3,
+        "Total_Pick_Weight": 2.25,
         "Pick_Type": "Fruit: Mango, Cherry"
       },
       "f.mango_cherry-4lb": {
@@ -6684,25 +6684,25 @@
       "f.mango_cherry-5lb": {
         "picklist_sku": "mango_cherry-09x08",
         "actualqty": 5.0,
-        "Total_Pick_Weight": 5.6,
+        "Total_Pick_Weight": 5.625,
         "Pick_Type": "Fruit: Mango, Cherry"
       },
       "f.mango_cherry-7lb": {
         "picklist_sku": "mango_cherry-09x08",
         "actualqty": 6.0,
-        "Total_Pick_Weight": 6.8,
+        "Total_Pick_Weight": 6.75,
         "Pick_Type": "Fruit: Mango, Cherry"
       },
       "f.mango_cherry-8lb": {
         "picklist_sku": "mango_cherry-09x08",
         "actualqty": 7.0,
-        "Total_Pick_Weight": 7.9,
+        "Total_Pick_Weight": 7.875,
         "Pick_Type": "Fruit: Mango, Cherry"
       },
       "f.mango_cherry-sample-bab": {
         "picklist_sku": "mango_cherry-09x08",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 1.1,
+        "Total_Pick_Weight": 1.125,
         "Pick_Type": "Fruit: Mango, Cherry"
       },
       "f.mango_green-2lb": {
@@ -6732,79 +6732,79 @@
       "f.mango_honey-14lb": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 25.0,
-        "Total_Pick_Weight": 14.1,
+        "Total_Pick_Weight": 14.063,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.mango_honey-16lb": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 28.0,
-        "Total_Pick_Weight": 15.8,
+        "Total_Pick_Weight": 15.75,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.mango_honey-1lb": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 1.1,
+        "Total_Pick_Weight": 1.125,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.mango_honey-28lb": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 50.0,
-        "Total_Pick_Weight": 28.1,
+        "Total_Pick_Weight": 28.125,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.mango_honey-2lb": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 4.0,
-        "Total_Pick_Weight": 2.3,
+        "Total_Pick_Weight": 2.25,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.mango_honey-2lb-bab": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 4.0,
-        "Total_Pick_Weight": 2.3,
+        "Total_Pick_Weight": 2.25,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.mango_honey-4lb": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 7.0,
-        "Total_Pick_Weight": 3.9,
+        "Total_Pick_Weight": 3.938,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.mango_honey-5lb": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 9.0,
-        "Total_Pick_Weight": 5.1,
+        "Total_Pick_Weight": 5.063,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.mango_honey-7lb": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 12.0,
-        "Total_Pick_Weight": 6.8,
+        "Total_Pick_Weight": 6.75,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.mango_honey-8lb": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 14.0,
-        "Total_Pick_Weight": 7.9,
+        "Total_Pick_Weight": 7.875,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.mango_honey-sample-bab": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.6,
+        "Total_Pick_Weight": 0.563,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.mango-0.5lb-gift": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.6,
+        "Total_Pick_Weight": 0.563,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.mango-1lb-gift": {
         "picklist_sku": "mango_honey-09x16",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 1.1,
+        "Total_Pick_Weight": 1.125,
         "Pick_Type": "Fruit: Mango, Honey"
       },
       "f.mango.green-1lb": {
@@ -6876,31 +6876,31 @@
       "f.mystery_fruit-1lb-addon": {
         "picklist_sku": "mango_cherry-09x08",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 1.1,
+        "Total_Pick_Weight": 1.125,
         "Pick_Type": "Fruit: Mango, Cherry"
       },
       "f.nectarine-2lb": {
         "picklist_sku": "nectarine-22x72",
         "actualqty": 7.0,
-        "Total_Pick_Weight": 2.1,
+        "Total_Pick_Weight": 2.139,
         "Pick_Type": "Fruit: Nectarine"
       },
       "f.nectarine-2lb-bab": {
         "picklist_sku": "nectarine-22x72",
         "actualqty": 7.0,
-        "Total_Pick_Weight": 2.1,
+        "Total_Pick_Weight": 2.139,
         "Pick_Type": "Fruit: Nectarine"
       },
       "f.nectarine-5lb": {
         "picklist_sku": "nectarine-22x72",
         "actualqty": 16.0,
-        "Total_Pick_Weight": 4.9,
+        "Total_Pick_Weight": 4.889,
         "Pick_Type": "Fruit: Nectarine"
       },
       "f.nectarine-8lb": {
         "picklist_sku": "nectarine-22x72",
         "actualqty": 26.0,
-        "Total_Pick_Weight": 7.9,
+        "Total_Pick_Weight": 7.944,
         "Pick_Type": "Fruit: Nectarine"
       },
       "f.nuts_mix-1lb-addon": {
@@ -6978,7 +6978,7 @@
       "f.papapya_hawaiian-16lb": {
         "picklist_sku": "papaya_hawaiian-10x08",
         "actualqty": 13.0,
-        "Total_Pick_Weight": 16.3,
+        "Total_Pick_Weight": 16.25,
         "Pick_Type": "Fruit: Papaya, Hawaiian"
       },
       "f.papapya_hawaiian-18lb": {
@@ -7008,7 +7008,7 @@
       "f.papapya_hawaiian-36lb": {
         "picklist_sku": "papaya_hawaiian-10x08",
         "actualqty": 29.0,
-        "Total_Pick_Weight": 36.3,
+        "Total_Pick_Weight": 36.25,
         "Pick_Type": "Fruit: Papaya, Hawaiian"
       },
       "f.papapya_hawaiian-4lb": {
@@ -7026,19 +7026,19 @@
       "f.papapya_hawaiian-8lb": {
         "picklist_sku": "papaya_hawaiian-10x08",
         "actualqty": 7.0,
-        "Total_Pick_Weight": 8.8,
+        "Total_Pick_Weight": 8.75,
         "Pick_Type": "Fruit: Papaya, Hawaiian"
       },
       "f.papapya_hawaiian-9lb": {
         "picklist_sku": "papaya_hawaiian-10x08",
         "actualqty": 7.0,
-        "Total_Pick_Weight": 8.8,
+        "Total_Pick_Weight": 8.75,
         "Pick_Type": "Fruit: Papaya, Hawaiian"
       },
       "f.papaya_hawaiian-16lb": {
         "picklist_sku": "papaya_hawaiian-10x08",
         "actualqty": 13.0,
-        "Total_Pick_Weight": 16.3,
+        "Total_Pick_Weight": 16.25,
         "Pick_Type": "Fruit: Papaya, Hawaiian"
       },
       "f.papaya_hawaiian-2lb": {
@@ -7062,13 +7062,13 @@
       "f.papaya_hawaiian-8lb": {
         "picklist_sku": "papaya_hawaiian-10x08",
         "actualqty": 7.0,
-        "Total_Pick_Weight": 8.8,
+        "Total_Pick_Weight": 8.75,
         "Pick_Type": "Fruit: Papaya, Hawaiian"
       },
       "f.papaya-1lb": {
         "picklist_sku": "papaya_hawaiian-10x08",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 1.3,
+        "Total_Pick_Weight": 1.25,
         "Pick_Type": "Fruit: Papaya, Hawaiian"
       },
       "f.passion_fruit-1lb-gift": {
@@ -7080,7 +7080,7 @@
       "f.passion_fruit-6pc-gift": {
         "picklist_sku": "pf_purple-01x12",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 0.3,
+        "Total_Pick_Weight": 0.25,
         "Pick_Type": "Fruit: Passion Fruit, Purple"
       },
       "f.passionfruit_purple-16lb": {
@@ -7134,7 +7134,7 @@
       "f.passionfruit_purple-sample-bab": {
         "picklist_sku": "pf_purple-01x12",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 0.3,
+        "Total_Pick_Weight": 0.25,
         "Pick_Type": "Fruit: Passion Fruit, Purple"
       },
       "f.passionfruit-3lb": {
@@ -7146,37 +7146,37 @@
       "f.peach-2lb-bab": {
         "picklist_sku": "peach-22x64",
         "actualqty": 6.0,
-        "Total_Pick_Weight": 2.1,
+        "Total_Pick_Weight": 2.063,
         "Pick_Type": "Fruit: Peaches"
       },
       "f.peaches-2lb": {
         "picklist_sku": "peach-22x64",
         "actualqty": 6.0,
-        "Total_Pick_Weight": 2.1,
+        "Total_Pick_Weight": 2.063,
         "Pick_Type": "Fruit: Peaches"
       },
       "f.peaches-5lb": {
         "picklist_sku": "peach-22x64",
         "actualqty": 15.0,
-        "Total_Pick_Weight": 5.2,
+        "Total_Pick_Weight": 5.156,
         "Pick_Type": "Fruit: Peaches"
       },
       "f.peaches-8lb": {
         "picklist_sku": "peach-22x64",
         "actualqty": 23.0,
-        "Total_Pick_Weight": 7.9,
+        "Total_Pick_Weight": 7.906,
         "Pick_Type": "Fruit: Peaches"
       },
       "f.pear-bartlett-2lb": {
         "picklist_sku": "pear_bartlett-40x90",
         "actualqty": 5.0,
-        "Total_Pick_Weight": 2.2,
+        "Total_Pick_Weight": 2.222,
         "Pick_Type": "Fruit: Pear, Bartlett"
       },
       "f.pear-bartlett-5lb": {
         "picklist_sku": "pear_bartlett-40x90",
         "actualqty": 11.0,
-        "Total_Pick_Weight": 4.9,
+        "Total_Pick_Weight": 4.889,
         "Pick_Type": "Fruit: Pear, Bartlett"
       },
       "f.pear-bartlett-8lb": {
@@ -7260,7 +7260,7 @@
       "f.persimmon_fuyu-sample-bab": {
         "picklist_sku": "persimmon_fuyu-01x03",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 0.7,
+        "Total_Pick_Weight": 0.667,
         "Pick_Type": "Fruit: Persimmon, Fuyu"
       },
       "f.persimmon.chocolate-2lb-bab": {
@@ -7284,31 +7284,31 @@
       "f.pink-guava-sample-bab": {
         "picklist_sku": "guava_pink-10x15",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.7,
+        "Total_Pick_Weight": 0.66,
         "Pick_Type": "Fruit: Guava, Pink"
       },
       "f.plums-2lb": {
         "picklist_sku": "plum_black-22x64",
         "actualqty": 6.0,
-        "Total_Pick_Weight": 2.1,
+        "Total_Pick_Weight": 2.063,
         "Pick_Type": "Fruit: Plums"
       },
       "f.plums-2lb-bab": {
         "picklist_sku": "plum_black-22x64",
         "actualqty": 6.0,
-        "Total_Pick_Weight": 2.1,
+        "Total_Pick_Weight": 2.063,
         "Pick_Type": "Fruit: Plums"
       },
       "f.plums-5lb": {
         "picklist_sku": "plum_black-22x64",
         "actualqty": 15.0,
-        "Total_Pick_Weight": 5.2,
+        "Total_Pick_Weight": 5.156,
         "Pick_Type": "Fruit: Plums"
       },
       "f.plums-8lb": {
         "picklist_sku": "plum_black-22x64",
         "actualqty": 23.0,
-        "Total_Pick_Weight": 7.9,
+        "Total_Pick_Weight": 7.906,
         "Pick_Type": "Fruit: Plums"
       },
       "f.pomegranate-16lb": {
@@ -7374,7 +7374,7 @@
       "f.pomelo_red-14lb": {
         "picklist_sku": "pomelo_red-22x08",
         "actualqty": 5.0,
-        "Total_Pick_Weight": 13.8,
+        "Total_Pick_Weight": 13.75,
         "Pick_Type": "Fruit: Pomelo, Red"
       },
       "f.pomelo_red-16lb": {
@@ -7386,13 +7386,13 @@
       "f.pomelo_red-2lb": {
         "picklist_sku": "pomelo_red-22x08",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 2.8,
+        "Total_Pick_Weight": 2.75,
         "Pick_Type": "Fruit: Pomelo, Red"
       },
       "f.pomelo_red-2lb-bab": {
         "picklist_sku": "pomelo_red-22x08",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 2.8,
+        "Total_Pick_Weight": 2.75,
         "Pick_Type": "Fruit: Pomelo, Red"
       },
       "f.pomelo_red-4lb": {
@@ -7410,19 +7410,19 @@
       "f.pomelo_red-7lb": {
         "picklist_sku": "pomelo_red-22x08",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 8.3,
+        "Total_Pick_Weight": 8.25,
         "Pick_Type": "Fruit: Pomelo, Red"
       },
       "f.pomelo_red-8lb": {
         "picklist_sku": "pomelo_red-22x08",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 8.3,
+        "Total_Pick_Weight": 8.25,
         "Pick_Type": "Fruit: Pomelo, Red"
       },
       "f.pomelo-1lb": {
         "picklist_sku": "pomelo_red-22x08",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 2.8,
+        "Total_Pick_Weight": 2.75,
         "Pick_Type": "Fruit: Pomelo, Red"
       },
       "f.rambutan-16lb": {
@@ -7500,79 +7500,79 @@
       "f.raw_honey-1lb-addon": {
         "picklist_sku": "honey-04x16",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.8,
+        "Total_Pick_Weight": 0.75,
         "Pick_Type": "Addon: Honey"
       },
       "f.raw_honey-9oz-addon": {
         "picklist_sku": "honey-04x16",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.8,
+        "Total_Pick_Weight": 0.75,
         "Pick_Type": "Addon: Honey"
       },
       "f.red.dragon.fruit-2lb-addon": {
         "picklist_sku": "df_red-10x07",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 2.9,
+        "Total_Pick_Weight": 2.857,
         "Pick_Type": "Fruit: Dragon Fruit, Red"
       },
       "f.sapote_chico_16lb": {
         "picklist_sku": "sapote_chico-01x03",
         "actualqty": 48.0,
-        "Total_Pick_Weight": 15.8,
+        "Total_Pick_Weight": 15.84,
         "Pick_Type": "Fruit: Sapote, Chico"
       },
       "f.sapote_chico_8lb": {
         "picklist_sku": "sapote_chico-01x03",
         "actualqty": 24.0,
-        "Total_Pick_Weight": 7.9,
+        "Total_Pick_Weight": 7.92,
         "Pick_Type": "Fruit: Sapote, Chico"
       },
       "f.sapote_chico-.5lb-sample-bab": {
         "picklist_sku": "sapote_chico-01x03",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 0.7,
+        "Total_Pick_Weight": 0.66,
         "Pick_Type": "Fruit: Sapote, Chico"
       },
       "f.sapote_chico-1lb": {
         "picklist_sku": "sapote_chico-01x03",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 1.0,
+        "Total_Pick_Weight": 0.99,
         "Pick_Type": "Fruit: Sapote, Chico"
       },
       "f.sapote_chico-28lb": {
         "picklist_sku": "sapote_chico-01x03",
         "actualqty": 85.0,
-        "Total_Pick_Weight": 28.1,
+        "Total_Pick_Weight": 28.05,
         "Pick_Type": "Fruit: Sapote, Chico"
       },
       "f.sapote_chico-2lb": {
         "picklist_sku": "sapote_chico-01x03",
         "actualqty": 6.0,
-        "Total_Pick_Weight": 2.0,
+        "Total_Pick_Weight": 1.98,
         "Pick_Type": "Fruit: Sapote, Chico"
       },
       "f.sapote_chico-2lb-bab": {
         "picklist_sku": "sapote_chico-01x03",
         "actualqty": 6.0,
-        "Total_Pick_Weight": 2.0,
+        "Total_Pick_Weight": 1.98,
         "Pick_Type": "Fruit: Sapote, Chico"
       },
       "f.sapote_chico-4lb": {
         "picklist_sku": "sapote_chico-01x03",
         "actualqty": 12.0,
-        "Total_Pick_Weight": 4.0,
+        "Total_Pick_Weight": 3.96,
         "Pick_Type": "Fruit: Sapote, Chico"
       },
       "f.sapote_chico-5lb": {
         "picklist_sku": "sapote_chico-01x03",
         "actualqty": 15.0,
-        "Total_Pick_Weight": 5.0,
+        "Total_Pick_Weight": 4.95,
         "Pick_Type": "Fruit: Sapote, Chico"
       },
       "f.sapote_chico-7lb": {
         "picklist_sku": "sapote_chico-01x03",
         "actualqty": 21.0,
-        "Total_Pick_Weight": 6.9,
+        "Total_Pick_Weight": 6.93,
         "Pick_Type": "Fruit: Sapote, Chico"
       },
       "f.sapote_white-16lb": {
@@ -7632,7 +7632,7 @@
       "f.sapote_white-sample-bab": {
         "picklist_sku": "sapote_white-01x03",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.3,
+        "Total_Pick_Weight": 0.333,
         "Pick_Type": "Fruit: Sapote, White"
       },
       "f.soursop-4lb": {
@@ -7770,61 +7770,61 @@
       "f.sweetlemon_meyer-16lb": {
         "picklist_sku": "lemon_meyer-01x03",
         "actualqty": 48.0,
-        "Total_Pick_Weight": 15.8,
+        "Total_Pick_Weight": 15.84,
         "Pick_Type": "Fruit: Lemon, Meyer"
       },
       "f.sweetlemon_meyer-2lb": {
         "picklist_sku": "lemon_meyer-01x03",
         "actualqty": 6.0,
-        "Total_Pick_Weight": 2.0,
+        "Total_Pick_Weight": 1.98,
         "Pick_Type": "Fruit: Lemon, Meyer"
       },
       "f.sweetlemon_meyer-2lb-addon": {
         "picklist_sku": "lemon_meyer-01x03",
         "actualqty": 6.0,
-        "Total_Pick_Weight": 2.0,
+        "Total_Pick_Weight": 1.98,
         "Pick_Type": "Fruit: Lemon, Meyer"
       },
       "f.sweetlemon_meyer-2lb-bab": {
         "picklist_sku": "lemon_meyer-01x03",
         "actualqty": 6.0,
-        "Total_Pick_Weight": 2.0,
+        "Total_Pick_Weight": 1.98,
         "Pick_Type": "Fruit: Lemon, Meyer"
       },
       "f.sweetlemon_meyer-5lb": {
         "picklist_sku": "lemon_meyer-01x03",
         "actualqty": 15.0,
-        "Total_Pick_Weight": 5.0,
+        "Total_Pick_Weight": 4.95,
         "Pick_Type": "Fruit: Lemon, Meyer"
       },
       "f.sweetlemon_meyer-8lb": {
         "picklist_sku": "lemon_meyer-01x03",
         "actualqty": 24.0,
-        "Total_Pick_Weight": 7.9,
+        "Total_Pick_Weight": 7.92,
         "Pick_Type": "Fruit: Lemon, Meyer"
       },
       "f.sweetlemon_meyer-sample-bab": {
         "picklist_sku": "lemon_meyer-01x03",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.3,
+        "Total_Pick_Weight": 0.33,
         "Pick_Type": "Fruit: Lemon, Meyer"
       },
       "f.yellow_dragonfruit-0.5lb-gift": {
         "picklist_sku": "df_yellow-05x07",
         "actualqty": 1.0,
-        "Total_Pick_Weight": 0.8,
+        "Total_Pick_Weight": 0.786,
         "Pick_Type": "Fruit: Dragon Fruit, Yellow"
       },
       "f.yellow.dragon.fruit-1lb-gift": {
         "picklist_sku": "df_yellow-05x07",
         "actualqty": 2.0,
-        "Total_Pick_Weight": 1.6,
+        "Total_Pick_Weight": 1.571,
         "Pick_Type": "Fruit: Dragon Fruit, Yellow"
       },
       "F.YELLOW.DRAGON.FRUIT-2LB-ADDON": {
         "picklist_sku": "df_yellow-05x07",
         "actualqty": 3.0,
-        "Total_Pick_Weight": 2.4,
+        "Total_Pick_Weight": 2.357,
         "Pick_Type": "Fruit: Dragon Fruit, Yellow"
       },
       "m.cacao-gift": {
@@ -8088,7 +8088,7 @@
       "w.f.avocado_hass-36lb": {
         "picklist_sku": "avocado_hass-60x25",
         "actualqty": 86.0,
-        "Total_Pick_Weight": 35.8,
+        "Total_Pick_Weight": 35.833,
         "Pick_Type": "Fruit: Avocado, Hass"
       },
       "w.f.avocado_reed-36lb": {
@@ -8112,25 +8112,25 @@
       "w.f.dragonfruit_red-28lb": {
         "picklist_sku": "df_red-10x07",
         "actualqty": 20.0,
-        "Total_Pick_Weight": 28.6,
+        "Total_Pick_Weight": 28.571,
         "Pick_Type": "Fruit: Dragon Fruit, Red"
       },
       "w.f.dragonfruit_white-28lb": {
         "picklist_sku": "df_white-10x07",
         "actualqty": 20.0,
-        "Total_Pick_Weight": 28.6,
+        "Total_Pick_Weight": 28.571,
         "Pick_Type": "Fruit: Dragon Fruit, White"
       },
       "w.f.dragonfruit_yellow-28lb": {
         "picklist_sku": "df_yellow-05x07",
         "actualqty": 36.0,
-        "Total_Pick_Weight": 28.3,
+        "Total_Pick_Weight": 28.286,
         "Pick_Type": "Fruit: Dragon Fruit, Yellow"
       },
       "w.f.guava_pink-28lb": {
         "picklist_sku": "guava_pink-10x15",
         "actualqty": 42.0,
-        "Total_Pick_Weight": 27.7,
+        "Total_Pick_Weight": 27.72,
         "Pick_Type": "Fruit: Guava, Pink"
       },
       "w.f.guava_white-28lb": {
@@ -8160,7 +8160,7 @@
       "w.f.lemon_meyer-36lb": {
         "picklist_sku": "lemon_meyer-01x03",
         "actualqty": 109.0,
-        "Total_Pick_Weight": 36.0,
+        "Total_Pick_Weight": 35.97,
         "Pick_Type": "Fruit: Lemon, Meyer"
       },
       "w.f.lime_caviar-5lb": {
@@ -8178,13 +8178,13 @@
       "w.f.mango_cherry-16lb": {
         "picklist_sku": "mango_cherry-09x08",
         "actualqty": 14.0,
-        "Total_Pick_Weight": 15.8,
+        "Total_Pick_Weight": 15.75,
         "Pick_Type": "Fruit: Mango, Cherry"
       },
       "w.f.mango_cherry-28lb": {
         "picklist_sku": "mango_cherry-09x08",
         "actualqty": 25.0,
-        "Total_Pick_Weight": 28.1,
+        "Total_Pick_Weight": 28.125,
         "Pick_Type": "Fruit: Mango, Cherry"
       },
       "w.f.passionfruit_purple-24lb": {
@@ -8261,7 +8261,7 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 6.0,
-          "weight": 3.8,
+          "weight": 3.75,
           "type": "Fruit: Avocado, Gem"
         },
         {
@@ -8285,7 +8285,7 @@
         {
           "component_sku": "lemon_meyer-01x03",
           "actualqty": 4.0,
-          "weight": 1.3,
+          "weight": 1.32,
           "type": "Fruit: Lemon, Meyer"
         }
       ],
@@ -8299,31 +8299,31 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.6,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         },
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.3,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
           "component_sku": "blood_orange-01x04",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Fruit: Orange, Blood"
         },
         {
           "component_sku": "mandarin_satsuma-01x04",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Fruit: Mandarin, Satsuma"
         },
         {
           "component_sku": "lemon_meyer-01x03",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.33,
           "type": "Fruit: Lemon, Meyer"
         }
       ],
@@ -8337,19 +8337,19 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 2.0,
-          "weight": 1.3,
+          "weight": 1.25,
           "type": "Fruit: Avocado, Gem"
         },
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.3,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
           "component_sku": "blood_orange-01x04",
           "actualqty": 3.0,
-          "weight": 0.8,
+          "weight": 0.75,
           "type": "Fruit: Orange, Blood"
         },
         {
@@ -8361,7 +8361,7 @@
         {
           "component_sku": "lemon_meyer-01x03",
           "actualqty": 2.0,
-          "weight": 0.7,
+          "weight": 0.66,
           "type": "Fruit: Lemon, Meyer"
         }
       ],
@@ -8375,7 +8375,7 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 3.0,
-          "weight": 1.9,
+          "weight": 1.875,
           "type": "Fruit: Avocado, Gem"
         },
         {
@@ -8399,7 +8399,7 @@
         {
           "component_sku": "lemon_meyer-01x03",
           "actualqty": 2.0,
-          "weight": 0.7,
+          "weight": 0.66,
           "type": "Fruit: Lemon, Meyer"
         }
       ],
@@ -8419,13 +8419,13 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 2.0,
-          "weight": 1.3,
+          "weight": 1.25,
           "type": "Fruit: Avocado, Gem"
         },
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.3,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
@@ -8443,7 +8443,7 @@
         {
           "component_sku": "flower_spoon-04x01",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Other: Spoons"
         },
         {
@@ -8469,7 +8469,7 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 2.0,
-          "weight": 1.3,
+          "weight": 1.25,
           "type": "Fruit: Avocado, Gem"
         },
         {
@@ -8481,7 +8481,7 @@
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.3,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
@@ -8505,7 +8505,7 @@
         {
           "component_sku": "flower_spoon-04x01",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Other: Spoons"
         },
         {
@@ -8523,7 +8523,7 @@
         {
           "component_sku": "honey-04x16",
           "actualqty": 1.0,
-          "weight": 0.8,
+          "weight": 0.75,
           "type": "Addon: Honey"
         }
       ],
@@ -8537,7 +8537,7 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 2.0,
-          "weight": 1.3,
+          "weight": 1.25,
           "type": "Fruit: Avocado, Gem"
         },
         {
@@ -8561,13 +8561,13 @@
         {
           "component_sku": "honey-04x16",
           "actualqty": 1.0,
-          "weight": 0.8,
+          "weight": 0.75,
           "type": "Addon: Honey"
         },
         {
           "component_sku": "flower_spoon-04x01",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Other: Spoons"
         },
         {
@@ -8591,7 +8591,7 @@
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.3,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
@@ -8611,7 +8611,7 @@
         {
           "component_sku": "honey-04x16",
           "actualqty": 1.0,
-          "weight": 0.8,
+          "weight": 0.75,
           "type": "Addon: Honey"
         },
         {
@@ -8631,37 +8631,37 @@
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.1,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
           "component_sku": "mango_honey-09x16",
           "actualqty": 1.0,
-          "weight": 0.6,
+          "weight": 0.563,
           "type": "Fruit: Mango, Honey"
         },
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.3,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
           "component_sku": "blood_orange-01x04",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Fruit: Orange, Blood"
         },
         {
           "component_sku": "papaya_hawaiian-10x08",
           "actualqty": 1.0,
-          "weight": 1.3,
+          "weight": 1.25,
           "type": "Fruit: Papaya, Hawaiian"
         },
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.6,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         },
         {
@@ -8673,7 +8673,7 @@
         {
           "component_sku": "honey-04x16",
           "actualqty": 1.0,
-          "weight": 0.8,
+          "weight": 0.75,
           "type": "Addon: Honey"
         },
         {
@@ -8685,7 +8685,7 @@
         {
           "component_sku": "flower_spoon-04x01",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Other: Spoons"
         }
       ],
@@ -8693,13 +8693,13 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.6,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         },
         {
           "component_sku": "blood_orange-01x04",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Fruit: Orange, Blood"
         },
         {
@@ -8711,7 +8711,7 @@
         {
           "component_sku": "flower_spoon-04x01",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Other: Spoons"
         },
         {
@@ -8735,13 +8735,13 @@
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.1,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.3,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
@@ -8755,19 +8755,19 @@
         {
           "component_sku": "honey-04x16",
           "actualqty": 1.0,
-          "weight": 0.8,
+          "weight": 0.75,
           "type": "Addon: Honey"
         },
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.6,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         },
         {
           "component_sku": "blood_orange-01x04",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Fruit: Orange, Blood"
         },
         {
@@ -8779,7 +8779,7 @@
         {
           "component_sku": "flower_spoon-04x01",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Other: Spoons"
         },
         {
@@ -8803,13 +8803,13 @@
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.1,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.3,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
@@ -8841,19 +8841,19 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.6,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         },
         {
           "component_sku": "blood_orange-01x04",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Fruit: Orange, Blood"
         },
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.3,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
@@ -8865,7 +8865,7 @@
         {
           "component_sku": "flower_spoon-04x01",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Other: Spoons"
         },
         {
@@ -8889,7 +8889,7 @@
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.1,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
@@ -8901,7 +8901,7 @@
         {
           "component_sku": "honey-04x16",
           "actualqty": 1.0,
-          "weight": 0.8,
+          "weight": 0.75,
           "type": "Addon: Honey"
         },
         {
@@ -8915,13 +8915,13 @@
         {
           "component_sku": "mango_honey-09x16",
           "actualqty": 2.0,
-          "weight": 1.1,
+          "weight": 1.125,
           "type": "Fruit: Mango, Honey"
         },
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 2.0,
-          "weight": 2.3,
+          "weight": 2.25,
           "type": "Fruit: Mango, Cherry"
         },
         {
@@ -8933,7 +8933,7 @@
         {
           "component_sku": "mandarin_satsuma-01x04",
           "actualqty": 5.0,
-          "weight": 1.3,
+          "weight": 1.25,
           "type": "Fruit: Mandarin, Satsuma"
         },
         {
@@ -8945,25 +8945,25 @@
         {
           "component_sku": "df_white-10x07",
           "actualqty": 2.0,
-          "weight": 2.9,
+          "weight": 2.857,
           "type": "Fruit: Dragon Fruit, White"
         },
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.3,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
           "component_sku": "blood_orange-01x04",
           "actualqty": 5.0,
-          "weight": 1.3,
+          "weight": 1.25,
           "type": "Fruit: Orange, Blood"
         },
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.6,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         },
         {
@@ -8983,13 +8983,13 @@
         {
           "component_sku": "mango_honey-09x16",
           "actualqty": 1.0,
-          "weight": 0.6,
+          "weight": 0.563,
           "type": "Fruit: Mango, Honey"
         },
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.1,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
@@ -9001,7 +9001,7 @@
         {
           "component_sku": "mandarin_satsuma-01x04",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Fruit: Mandarin, Satsuma"
         }
       ],
@@ -9015,13 +9015,13 @@
         {
           "component_sku": "mango_honey-09x16",
           "actualqty": 1.0,
-          "weight": 0.6,
+          "weight": 0.563,
           "type": "Fruit: Mango, Honey"
         },
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.1,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
@@ -9039,7 +9039,7 @@
         {
           "component_sku": "papaya_hawaiian-10x08",
           "actualqty": 1.0,
-          "weight": 1.3,
+          "weight": 1.25,
           "type": "Fruit: Papaya, Hawaiian"
         },
         {
@@ -9053,13 +9053,13 @@
         {
           "component_sku": "mango_honey-09x16",
           "actualqty": 2.0,
-          "weight": 1.1,
+          "weight": 1.125,
           "type": "Fruit: Mango, Honey"
         },
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.1,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
@@ -9071,19 +9071,19 @@
         {
           "component_sku": "mandarin_satsuma-01x04",
           "actualqty": 3.0,
-          "weight": 0.8,
+          "weight": 0.75,
           "type": "Fruit: Mandarin, Satsuma"
         },
         {
           "component_sku": "papaya_hawaiian-10x08",
           "actualqty": 1.0,
-          "weight": 1.3,
+          "weight": 1.25,
           "type": "Fruit: Papaya, Hawaiian"
         },
         {
           "component_sku": "blood_orange-01x04",
           "actualqty": 3.0,
-          "weight": 0.8,
+          "weight": 0.75,
           "type": "Fruit: Orange, Blood"
         },
         {
@@ -9101,7 +9101,7 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.6,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         }
       ],
@@ -9127,7 +9127,7 @@
         {
           "component_sku": "lemon_meyer-01x03",
           "actualqty": 12.0,
-          "weight": 4.0,
+          "weight": 3.96,
           "type": "Fruit: Lemon, Meyer"
         }
       ],
@@ -9147,13 +9147,13 @@
         {
           "component_sku": "mandarin_satsuma-01x04",
           "actualqty": 3.0,
-          "weight": 0.8,
+          "weight": 0.75,
           "type": "Fruit: Mandarin, Satsuma"
         },
         {
           "component_sku": "lemon_meyer-01x03",
           "actualqty": 2.0,
-          "weight": 0.7,
+          "weight": 0.66,
           "type": "Fruit: Lemon, Meyer"
         }
       ],
@@ -9179,7 +9179,7 @@
         {
           "component_sku": "lemon_meyer-01x03",
           "actualqty": 3.0,
-          "weight": 1.0,
+          "weight": 0.99,
           "type": "Fruit: Lemon, Meyer"
         }
       ],
@@ -9205,7 +9205,7 @@
         {
           "component_sku": "lemon_meyer-01x03",
           "actualqty": 6.0,
-          "weight": 2.0,
+          "weight": 1.98,
           "type": "Fruit: Lemon, Meyer"
         }
       ],
@@ -9225,7 +9225,7 @@
         {
           "component_sku": "df_red-10x07",
           "actualqty": 2.0,
-          "weight": 2.9,
+          "weight": 2.857,
           "type": "Fruit: Dragon Fruit, Red"
         },
         {
@@ -9237,7 +9237,7 @@
         {
           "component_sku": "sapote_white-01x03",
           "actualqty": 4.0,
-          "weight": 1.3,
+          "weight": 1.333,
           "type": "Fruit: Sapote, White"
         },
         {
@@ -9267,7 +9267,7 @@
         {
           "component_sku": "blood_orange-01x04",
           "actualqty": 3.0,
-          "weight": 0.8,
+          "weight": 0.75,
           "type": "Fruit: Orange, Blood"
         }
       ],
@@ -9281,7 +9281,7 @@
         {
           "component_sku": "papaya_hawaiian-10x08",
           "actualqty": 1.0,
-          "weight": 1.3,
+          "weight": 1.25,
           "type": "Fruit: Papaya, Hawaiian"
         },
         {
@@ -9293,13 +9293,13 @@
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.3,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
           "component_sku": "blood_orange-01x04",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Fruit: Orange, Blood"
         }
       ],
@@ -9313,7 +9313,7 @@
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.3,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
@@ -9325,7 +9325,7 @@
         {
           "component_sku": "papaya_hawaiian-10x08",
           "actualqty": 1.0,
-          "weight": 1.3,
+          "weight": 1.25,
           "type": "Fruit: Papaya, Hawaiian"
         },
         {
@@ -9343,7 +9343,7 @@
         {
           "component_sku": "blood_orange-01x04",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Fruit: Orange, Blood"
         }
       ],
@@ -9357,7 +9357,7 @@
         {
           "component_sku": "df_red-10x07",
           "actualqty": 1.0,
-          "weight": 1.4,
+          "weight": 1.429,
           "type": "Fruit: Dragon Fruit, Red"
         },
         {
@@ -9369,7 +9369,7 @@
         {
           "component_sku": "sapote_white-01x03",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.333,
           "type": "Fruit: Sapote, White"
         },
         {
@@ -9387,7 +9387,7 @@
         {
           "component_sku": "papaya_hawaiian-10x08",
           "actualqty": 1.0,
-          "weight": 1.3,
+          "weight": 1.25,
           "type": "Fruit: Papaya, Hawaiian"
         },
         {
@@ -9419,19 +9419,19 @@
         {
           "component_sku": "papaya_hawaiian-10x08",
           "actualqty": 1.0,
-          "weight": 1.3,
+          "weight": 1.25,
           "type": "Fruit: Papaya, Hawaiian"
         },
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.3,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
           "component_sku": "mango_honey-09x16",
           "actualqty": 2.0,
-          "weight": 1.1,
+          "weight": 1.125,
           "type": "Fruit: Mango, Honey"
         },
         {
@@ -9443,7 +9443,7 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.6,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         },
         {
@@ -9461,13 +9461,13 @@
         {
           "component_sku": "df_white-10x07",
           "actualqty": 1.0,
-          "weight": 1.4,
+          "weight": 1.429,
           "type": "Fruit: Dragon Fruit, White"
         },
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 2.0,
-          "weight": 2.3,
+          "weight": 2.25,
           "type": "Fruit: Mango, Cherry"
         }
       ],
@@ -9475,7 +9475,7 @@
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 2.0,
-          "weight": 2.3,
+          "weight": 2.25,
           "type": "Fruit: Mango, Cherry"
         },
         {
@@ -9487,7 +9487,7 @@
         {
           "component_sku": "blood_orange-01x04",
           "actualqty": 3.0,
-          "weight": 0.8,
+          "weight": 0.75,
           "type": "Fruit: Orange, Blood"
         },
         {
@@ -9499,25 +9499,25 @@
         {
           "component_sku": "papaya_hawaiian-10x08",
           "actualqty": 1.0,
-          "weight": 1.3,
+          "weight": 1.25,
           "type": "Fruit: Papaya, Hawaiian"
         },
         {
           "component_sku": "df_red-10x07",
           "actualqty": 1.0,
-          "weight": 1.4,
+          "weight": 1.429,
           "type": "Fruit: Dragon Fruit, Red"
         },
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.3,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
           "component_sku": "mango_honey-09x16",
           "actualqty": 2.0,
-          "weight": 1.1,
+          "weight": 1.125,
           "type": "Fruit: Mango, Honey"
         },
         {
@@ -9529,7 +9529,7 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 2.0,
-          "weight": 1.3,
+          "weight": 1.25,
           "type": "Fruit: Avocado, Gem"
         },
         {
@@ -9547,7 +9547,7 @@
         {
           "component_sku": "df_white-10x07",
           "actualqty": 1.0,
-          "weight": 1.4,
+          "weight": 1.429,
           "type": "Fruit: Dragon Fruit, White"
         }
       ],
@@ -9555,7 +9555,7 @@
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.1,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         }
       ],
@@ -9569,19 +9569,19 @@
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.1,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
           "component_sku": "blood_orange-01x04",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Fruit: Orange, Blood"
         },
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.6,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         },
         {
@@ -9601,7 +9601,7 @@
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.1,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
@@ -9613,7 +9613,7 @@
         {
           "component_sku": "mandarin_satsuma-01x04",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Fruit: Mandarin, Satsuma"
         },
         {
@@ -9625,7 +9625,7 @@
         {
           "component_sku": "papaya_hawaiian-10x08",
           "actualqty": 1.0,
-          "weight": 1.3,
+          "weight": 1.25,
           "type": "Fruit: Papaya, Hawaiian"
         }
       ],
@@ -9639,25 +9639,25 @@
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.1,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.3,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
           "component_sku": "blood_orange-01x04",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Fruit: Orange, Blood"
         },
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.6,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         },
         {
@@ -9683,7 +9683,7 @@
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.1,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
@@ -9695,19 +9695,19 @@
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.3,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
           "component_sku": "blood_orange-01x04",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Fruit: Orange, Blood"
         },
         {
           "component_sku": "papaya_hawaiian-10x08",
           "actualqty": 1.0,
-          "weight": 1.3,
+          "weight": 1.25,
           "type": "Fruit: Papaya, Hawaiian"
         },
         {
@@ -9719,13 +9719,13 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.6,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         },
         {
           "component_sku": "mango_honey-09x16",
           "actualqty": 1.0,
-          "weight": 0.6,
+          "weight": 0.563,
           "type": "Fruit: Mango, Honey"
         }
       ],
@@ -9739,7 +9739,7 @@
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.1,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
@@ -9751,7 +9751,7 @@
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.3,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
@@ -9763,7 +9763,7 @@
         {
           "component_sku": "papaya_hawaiian-10x08",
           "actualqty": 1.0,
-          "weight": 1.3,
+          "weight": 1.25,
           "type": "Fruit: Papaya, Hawaiian"
         },
         {
@@ -9775,13 +9775,13 @@
         {
           "component_sku": "mango_honey-09x16",
           "actualqty": 1.0,
-          "weight": 0.6,
+          "weight": 0.563,
           "type": "Fruit: Mango, Honey"
         },
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.6,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         }
       ],
@@ -9789,7 +9789,7 @@
         {
           "component_sku": "honey-04x16",
           "actualqty": 1.0,
-          "weight": 0.8,
+          "weight": 0.75,
           "type": "Addon: Honey"
         },
         {
@@ -9809,7 +9809,7 @@
         {
           "component_sku": "honey-04x16",
           "actualqty": 1.0,
-          "weight": 0.8,
+          "weight": 0.75,
           "type": "Addon: Honey"
         },
         {
@@ -9829,13 +9829,13 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.6,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         },
         {
           "component_sku": "blood_orange-01x04",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Fruit: Orange, Blood"
         },
         {
@@ -9853,7 +9853,7 @@
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.1,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
@@ -9865,13 +9865,13 @@
         {
           "component_sku": "mango_honey-09x16",
           "actualqty": 2.0,
-          "weight": 1.1,
+          "weight": 1.125,
           "type": "Fruit: Mango, Honey"
         },
         {
           "component_sku": "mandarin_satsuma-01x04",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Fruit: Mandarin, Satsuma"
         },
         {
@@ -9883,7 +9883,7 @@
         {
           "component_sku": "flower_spoon-04x01",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Other: Spoons"
         }
       ],
@@ -9897,13 +9897,13 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.6,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         },
         {
           "component_sku": "blood_orange-01x04",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Fruit: Orange, Blood"
         },
         {
@@ -9915,7 +9915,7 @@
         {
           "component_sku": "flower_spoon-04x01",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Other: Spoons"
         },
         {
@@ -9933,19 +9933,19 @@
         {
           "component_sku": "mandarin_satsuma-01x04",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Fruit: Mandarin, Satsuma"
         },
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.1,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
           "component_sku": "mango_honey-09x16",
           "actualqty": 2.0,
-          "weight": 1.1,
+          "weight": 1.125,
           "type": "Fruit: Mango, Honey"
         },
         {
@@ -9971,13 +9971,13 @@
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.6,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         },
         {
           "component_sku": "blood_orange-01x04",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Fruit: Orange, Blood"
         },
         {
@@ -9989,7 +9989,7 @@
         {
           "component_sku": "flower_spoon-04x01",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Other: Spoons"
         },
         {
@@ -10007,19 +10007,19 @@
         {
           "component_sku": "mandarin_satsuma-01x04",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Fruit: Mandarin, Satsuma"
         },
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.1,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
           "component_sku": "mango_honey-09x16",
           "actualqty": 2.0,
-          "weight": 1.1,
+          "weight": 1.125,
           "type": "Fruit: Mango, Honey"
         },
         {
@@ -10039,31 +10039,31 @@
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.1,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.6,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         },
         {
           "component_sku": "papaya_hawaiian-10x08",
           "actualqty": 1.0,
-          "weight": 1.3,
+          "weight": 1.25,
           "type": "Fruit: Papaya, Hawaiian"
         },
         {
           "component_sku": "mango_honey-09x16",
           "actualqty": 1.0,
-          "weight": 0.6,
+          "weight": 0.563,
           "type": "Fruit: Mango, Honey"
         },
         {
           "component_sku": "sapote_white-01x03",
           "actualqty": 2.0,
-          "weight": 0.7,
+          "weight": 0.667,
           "type": "Fruit: Sapote, White"
         }
       ],
@@ -10077,7 +10077,7 @@
         {
           "component_sku": "mango_cherry-09x08",
           "actualqty": 1.0,
-          "weight": 1.1,
+          "weight": 1.125,
           "type": "Fruit: Mango, Cherry"
         },
         {
@@ -10089,37 +10089,37 @@
         {
           "component_sku": "pf_purple-01x12",
           "actualqty": 4.0,
-          "weight": 0.3,
+          "weight": 0.333,
           "type": "Fruit: Passion Fruit, Purple"
         },
         {
           "component_sku": "blood_orange-01x04",
           "actualqty": 1.0,
-          "weight": 0.3,
+          "weight": 0.25,
           "type": "Fruit: Orange, Blood"
         },
         {
           "component_sku": "papaya_hawaiian-10x08",
           "actualqty": 1.0,
-          "weight": 1.3,
+          "weight": 1.25,
           "type": "Fruit: Papaya, Hawaiian"
         },
         {
           "component_sku": "sapote_white-01x03",
           "actualqty": 2.0,
-          "weight": 0.7,
+          "weight": 0.667,
           "type": "Fruit: Sapote, White"
         },
         {
           "component_sku": "mango_honey-09x16",
           "actualqty": 1.0,
-          "weight": 0.6,
+          "weight": 0.563,
           "type": "Fruit: Mango, Honey"
         },
         {
           "component_sku": "avocado_gem-25x40",
           "actualqty": 1.0,
-          "weight": 0.6,
+          "weight": 0.625,
           "type": "Fruit: Avocado, Gem"
         }
       ],
@@ -10127,13 +10127,13 @@
         {
           "component_sku": "nectarine-22x72",
           "actualqty": 4.0,
-          "weight": 1.2,
+          "weight": 1.222,
           "type": "Fruit: Nectarine"
         },
         {
           "component_sku": "peach-22x64",
           "actualqty": 4.0,
-          "weight": 1.4,
+          "weight": 1.375,
           "type": "Fruit: Peaches"
         },
         {
@@ -10171,13 +10171,13 @@
         {
           "component_sku": "nectarine-22x72",
           "actualqty": 4.0,
-          "weight": 1.2,
+          "weight": 1.222,
           "type": "Fruit: Nectarine"
         },
         {
           "component_sku": "peach-22x64",
           "actualqty": 4.0,
-          "weight": 1.4,
+          "weight": 1.375,
           "type": "Fruit: Peaches"
         },
         {
@@ -10207,7 +10207,7 @@
         {
           "component_sku": "honey-04x16",
           "actualqty": 1.0,
-          "weight": 0.8,
+          "weight": 0.75,
           "type": "Addon: Honey"
         }
       ],
@@ -10215,13 +10215,13 @@
         {
           "component_sku": "nectarine-22x72",
           "actualqty": 4.0,
-          "weight": 1.2,
+          "weight": 1.222,
           "type": "Fruit: Nectarine"
         },
         {
           "component_sku": "peach-22x64",
           "actualqty": 4.0,
-          "weight": 1.4,
+          "weight": 1.375,
           "type": "Fruit: Peaches"
         },
         {
@@ -10251,7 +10251,7 @@
         {
           "component_sku": "honey-04x16",
           "actualqty": 1.0,
-          "weight": 0.8,
+          "weight": 0.75,
           "type": "Addon: Honey"
         },
         {
