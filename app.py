@@ -4,13 +4,11 @@ import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
-from constants.models import *
 from constants.shipping_zones import load_shipping_zones
 
 # Import utility modules
 from utils.data_processor import DataProcessor
-from utils.ui_components import render_header, render_rule_editor, render_summary_dashboard, render_inventory_analysis
-from utils.chat_widget import render_chat_widget
+from utils.ui_components import render_header, render_summary_dashboard, render_inventory_analysis
 
 # Load environment variables
 load_dotenv()
@@ -62,10 +60,6 @@ if "override_log" not in st.session_state:
     st.session_state.override_log = []
 if "sku_mappings" not in st.session_state:
     st.session_state.sku_mappings = None
-if "selected_model" not in st.session_state:
-    st.session_state.selected_model = GPT_4O
-if "selected_provider" not in st.session_state:
-    st.session_state.selected_provider = "OpenAI"
 
 
 def main():
@@ -74,35 +68,8 @@ def main():
     # Render header
     render_header()
     
-    # Render the floating chat widget
-    render_chat_widget()
-
-    # Sidebar for configuration and model selection
+    # Sidebar for configuration
     with st.sidebar:
-        st.title("🛠️ Configuration")
-
-        # Model selection
-        st.subheader("LLM Model")
-
-        # Group models by provider
-        selected_provider = st.selectbox(
-            "Select Provider",
-            options=list(MODEL_GROUPS.keys()),
-            index=list(MODEL_GROUPS.keys()).index(st.session_state.selected_provider),
-        )
-        st.session_state.selected_provider = selected_provider
-
-        # Show models for selected provider
-        selected_model = st.selectbox(
-            "Select Model",
-            options=MODEL_GROUPS[selected_provider],
-            format_func=lambda x: MODEL_DISPLAY_NAMES[x],
-            index=0
-            if st.session_state.selected_model not in MODEL_GROUPS[selected_provider]
-            else MODEL_GROUPS[selected_provider].index(st.session_state.selected_model),
-        )
-        st.session_state.selected_model = selected_model
-
         # API key configuration
         api_key = os.getenv("OPENROUTER_API_KEY", "")
         if not api_key:
@@ -159,15 +126,8 @@ def main():
                         # Load SKU mappings if not already loaded
                         if st.session_state.sku_mappings is None:
                             st.session_state.sku_mappings = data_processor.load_sku_mappings()
-                            if st.session_state.sku_mappings:
-                                oxnard_count = len(st.session_state.sku_mappings.get("Oxnard", {}))
-                                wheeling_count = len(
-                                    st.session_state.sku_mappings.get("Wheeling", {})
-                                )
-                                st.success(
-                                    f"✅ Loaded SKU mappings: {oxnard_count} for Moorpark (CA), {wheeling_count} for Wheeling (IL)"
-                                )
-                            else:
+                            # Only show warning if mappings couldn't be loaded
+                            if not st.session_state.sku_mappings:
                                 st.warning(
                                     "⚠️ SKU mappings could not be loaded. Some SKUs may not be properly matched."
                                 )
@@ -192,7 +152,7 @@ def main():
     # Main content area
     if st.session_state.orders_df is not None and st.session_state.inventory_df is not None:
         # Create tabs for different sections
-        tab1, tab2, tab3 = st.tabs(["📜 Orders", "📈 Dashboard", "⚙️ Rules"])
+        tab1, tab2, tab3, tab4 = st.tabs(["📜 Orders", "📦 Inventory", "📈 Dashboard", "⚙️ Rules"])
 
         with tab1:
             st.header("📜 Processed Orders")
@@ -282,20 +242,47 @@ def main():
                         key="download_updated",
                     )
         with tab2:            
-            # Add inventory analysis section at the top
+            # Move inventory shortages to the inventory tab
+            if "shortage_summary" in st.session_state and not st.session_state.shortage_summary.empty:
+                with st.expander(f"⚠️ INVENTORY SHORTAGES DETECTED: {len(st.session_state.shortage_summary)} items", expanded=True):
+                    if "grouped_shortage_summary" in st.session_state and not st.session_state.grouped_shortage_summary.empty:
+                        grouped_df = st.session_state.grouped_shortage_summary.copy()
+                        
+                        # Format the order_ids list to be more readable
+                        if 'order_ids' in grouped_df.columns:
+                            grouped_df['order_ids'] = grouped_df['order_ids'].apply(lambda x: ', '.join(map(str, x)) if isinstance(x, list) else x)
+                        
+                        if 'issue' in grouped_df.columns:
+                            # Highlight rows with issues
+                            st.markdown("**⚠️ Rows with issues are highlighted**")
+                            # Create a styled dataframe
+                            styled_df = grouped_df.style.apply(
+                                lambda row: ['background-color: #ffcccc' if row['issue'] else '' for _ in row],
+                                axis=1
+                            )
+                            st.dataframe(styled_df)
+                        else:
+                            st.dataframe(grouped_df)
+                        
+                        # Provide download button for grouped shortage summary
+                        csv = st.session_state.grouped_shortage_summary.to_csv(index=False)
+                        st.download_button(
+                            label="Download Grouped Shortage Summary",
+                            data=csv,
+                            file_name="grouped_shortage_summary.csv",
+                            mime="text/csv",
+                        )
+            
+            # Add inventory analysis section
             render_inventory_analysis(
                 st.session_state.processed_orders, st.session_state.inventory_df
             )
             
+        with tab3:
+            
             # Original dashboard content
             render_summary_dashboard(
                 st.session_state.processed_orders, st.session_state.inventory_df
-            )
-
-        with tab3:
-            st.header("⚙️ Rules Management")
-            render_rule_editor(
-                st.session_state.rules, st.session_state.bundles, st.session_state.override_log
             )
     else:
         # Welcome screen
@@ -312,14 +299,6 @@ def main():
         To get started, please upload your order and inventory CSV files using the sidebar.
         """
         )
-
-        # Sample images or placeholders
-        col1, col2 = st.columns(2)
-        with col1:
-            st.info("📊 View order statistics and fulfillment metrics")
-        with col2:
-            st.info("🧠 Get AI assistance for fulfillment decisions")
-
 
 if __name__ == "__main__":
     main()

@@ -471,12 +471,30 @@ class DataProcessor:
                 if df["AvailableQty"].dtype == object:
                     df["AvailableQty"] = df["AvailableQty"].astype(str).str.replace(",", "")
                 df["AvailableQty"] = pd.to_numeric(df["AvailableQty"], errors="coerce").fillna(0)
+                # Log sample of AvailableQty values for debugging
+                logger.info(f"Sample AvailableQty values after conversion: {df['AvailableQty'].head(5).tolist()}")
 
             # Handle Balance column which might have commas in numbers
             if "Balance" in df.columns:
+                # Make sure we're only using the Balance column from the main section
                 if df["Balance"].dtype == object:
                     df["Balance"] = df["Balance"].astype(str).str.replace(",", "")
                 df["Balance"] = pd.to_numeric(df["Balance"], errors="coerce").fillna(0)
+                # Log sample of Balance values for debugging
+                logger.info(f"Sample Balance values after conversion: {df['Balance'].head(5).tolist()}")
+                
+                # Fix: Use AvailableQty for Balance when Balance is 0 but AvailableQty is not
+                if "AvailableQty" in df.columns:
+                    mask = (df["Balance"] == 0) & (df["AvailableQty"] > 0)
+                    if mask.any():
+                        logger.info(f"Fixing {mask.sum()} rows where Balance is 0 but AvailableQty > 0")
+                        df.loc[mask, "Balance"] = df.loc[mask, "AvailableQty"]
+                        
+                # Log the updated Balance values
+                logger.info(f"Balance values after fixing zeros: {df['Balance'].head(10).tolist()}")
+                    
+                # Log the Balance values for debugging
+                logger.info(f"Balance values after fixing zeros: {df['Balance'].head(10).tolist()}")
 
             # Convert DaysOnHand to numeric
             if "DaysOnHand" in df.columns:
@@ -530,7 +548,9 @@ class DataProcessor:
                 if "AvailableQty" in df.columns:
                     agg_dict["AvailableQty"] = "sum"
                 if "Balance" in df.columns:
-                    agg_dict["Balance"] = "first"
+                    # Use max instead of sum for Balance to avoid double-counting
+                    # This ensures we get the correct balance for each SKU
+                    agg_dict["Balance"] = "max"  # Use max instead of sum to avoid double-counting
                 if "Name" in df.columns:
                     agg_dict["Name"] = "first"
                 if "Type" in df.columns:
@@ -539,7 +559,13 @@ class DataProcessor:
                     agg_dict["DaysOnHand"] = "mean"
 
                 if agg_dict:  # Only aggregate if we have columns to aggregate
+                    # Log before aggregation
+                    logger.info(f"Pre-aggregation Balance values for first 5 rows: {df[['Sku', 'Balance']].head(5).to_dict('records')}")
+                    
                     inventory_summary = df.groupby(group_columns).agg(agg_dict).reset_index()
+                    
+                    # Log after aggregation
+                    logger.info(f"Post-aggregation Balance values for first 5 rows: {inventory_summary[['Sku', 'Balance']].head(5).to_dict('records')}")
                 else:
                     inventory_summary = df.copy()
 
@@ -829,11 +855,20 @@ class DataProcessor:
                 if fc_column_exists:
                     group_columns.append('fulfillment_center')
                     
+                # Collect order IDs for each group
+                order_id_list = numeric_shortage_df.groupby(group_columns)['order_id'].apply(list)
+                
                 grouped_shortage_df = numeric_shortage_df.groupby(group_columns).agg({
                     'needed_qty': 'sum',
                     'shortage_qty': 'sum',
                     'order_id': 'count'  # Count of affected orders
                 }).reset_index()
+                
+                # Add the list of order IDs to the grouped dataframe
+                grouped_shortage_df = grouped_shortage_df.merge(
+                    order_id_list.reset_index().rename(columns={'order_id': 'order_ids'}),
+                    on=group_columns
+                )
                 
                 # Rename columns for clarity
                 grouped_shortage_df = grouped_shortage_df.rename(columns={
@@ -940,15 +975,35 @@ class DataProcessor:
                     warehouse = row[warehouse_column] if warehouse_column and warehouse_column in row else "Unknown"
                     shopify_sku = inv_to_shopify.get(sku, "")
                     
-                    # Get the balance from inventory
+                    # Get the balance from inventory - use only the main Balance column (columns 1-11)
                     balance = 0
-                    for col in row.index:
-                        if col.lower() in ["balance", "availableqty"]:
-                            try:
-                                balance = float(row[col]) if pd.notna(row[col]) else 0
-                                break
-                            except (ValueError, TypeError):
-                                pass
+                    
+                    # Use Balance column from the main section
+                    if 'Balance' in row.index:
+                        try:
+                            # Get value from the main Balance column
+                            bal_value = row['Balance']
+                            if isinstance(bal_value, str):
+                                bal_value = bal_value.replace(',', '')
+                            balance = float(bal_value) if pd.notna(bal_value) else 0
+                            logger.info(f"Using main Balance column for {sku}: {balance}")
+                        except (ValueError, TypeError) as e:
+                            logger.warning(f"Could not convert Balance value for {sku}: {row['Balance']} - Error: {e}")
+                            
+                    # Only use AvailableQty if Balance is not available
+                    if balance == 0 and 'AvailableQty' in row.index:
+                        try:
+                            avail_value = row['AvailableQty']
+                            if isinstance(avail_value, str):
+                                avail_value = avail_value.replace(',', '')
+                            avail_qty = float(avail_value) if pd.notna(avail_value) else 0
+                            balance = avail_qty
+                            logger.info(f"Using AvailableQty column for {sku} because Balance is not available: {balance}")
+                        except (ValueError, TypeError) as e:
+                            logger.warning(f"Could not convert AvailableQty value for {sku}: {row['AvailableQty']} - Error: {e}")
+                    
+                    # Log the final balance value
+                    logger.info(f"Final balance for {sku}: {balance}")
                     
                     inventory_summary.append({
                         "Warehouse": warehouse,
@@ -963,6 +1018,17 @@ class DataProcessor:
         if not summary_df.empty:
             # Sort by warehouse, then by whether it's a bundle component, then by SKU
             summary_df = summary_df.sort_values(["Warehouse", "Is Bundle Component", "Inventory SKU"])
+            
+            # Ensure Current Balance is numeric
+            summary_df["Current Balance"] = pd.to_numeric(summary_df["Current Balance"], errors="coerce").fillna(0)
+            
+            # Format Current Balance with commas for thousands
+            summary_df["Current Balance"] = summary_df["Current Balance"].apply(
+                lambda x: f"{int(x):,}" if x == int(x) else f"{x:,.2f}"
+            )
+            
+            # Log sample of Current Balance values for debugging
+            logger.info(f"Final Current Balance values in inventory summary: {summary_df['Current Balance'].head(5).tolist()}")
         
         return summary_df
     
@@ -1637,26 +1703,44 @@ class DataProcessor:
                 return running_balances[sku_value]
                 
             # If no running balance, check inventory
-            # Check if we have a balance column
-            if not balance_column or balance_column not in inventory_df.columns:
-                return 0
-                
-            # Look for the SKU in the Wheeling warehouse first (prioritize)
+            # Look for the SKU in Wheeling warehouse first
             wheeling_rows = inventory_df[
                 (inventory_df[sku_column] == sku_value) & 
-                (inventory_df['WarehouseName'].str.contains('Wheeling|IL', case=False, na=False))
+                (inventory_df['WarehouseName'].str.lower().str.contains('wheeling|il-wheeling', na=False))
             ]
             
+            # If found in Wheeling, check Balance
             if not wheeling_rows.empty:
-                balance_value = wheeling_rows.iloc[0][balance_column]
-                return float(balance_value) if pd.notna(balance_value) else 0
-                
-            # Then try any warehouse
-            all_rows = inventory_df[inventory_df[sku_column] == sku_value]
-            if not all_rows.empty:
-                balance_value = all_rows.iloc[0][balance_column]
-                return float(balance_value) if pd.notna(balance_value) else 0
-                
+                if 'Balance' in wheeling_rows.columns:
+                    try:
+                        balance_value = wheeling_rows.iloc[0]['Balance']
+                        if isinstance(balance_value, str):
+                            balance_value = balance_value.replace(',', '')
+                        balance = float(balance_value) if pd.notna(balance_value) else 0
+                        logger.info(f"Using Balance column for {sku_value} in Wheeling: {balance}")
+                        return balance
+                    except (ValueError, TypeError) as e:
+                        logger.warning(f"Could not convert Balance value for {sku_value}: {balance_value} - Error: {e}")
+                        
+            # If not found in Wheeling or no Balance, try Oxnard (Moorpark) warehouse
+            oxnard_rows = inventory_df[
+                (inventory_df[sku_column] == sku_value) & 
+                (inventory_df['WarehouseName'].str.lower().str.contains('oxnard|moorpark', na=False))
+            ]
+            if not other_rows.empty:
+                if 'Balance' in other_rows.columns:
+                    try:
+                        balance_value = other_rows.iloc[0]['Balance']
+                        if isinstance(balance_value, str):
+                            balance_value = balance_value.replace(',', '')
+                        balance = float(balance_value) if pd.notna(balance_value) else 0
+                        logger.info(f"Using Balance column for {sku_value} in other warehouse: {balance}")
+                        return balance
+                    except (ValueError, TypeError) as e:
+                        logger.warning(f"Could not convert Balance value for {sku_value}: {balance_value} - Error: {e}")
+            
+            # If we get here, no valid Balance found
+            logger.info(f"No valid Balance found for {sku_value}, returning 0")
             return 0
 
         # STEP 1: If we have a mapping from the JSON file, use it as highest priority
@@ -2157,9 +2241,16 @@ if __name__ == "__main__":
         
         # Also format numeric columns in inventory summary
         if 'Current Balance' in inventory_summary.columns:
+            # First ensure all values are numeric
+            inventory_summary['Current Balance'] = pd.to_numeric(inventory_summary['Current Balance'], errors='coerce').fillna(0)
+            
+            # Format the values for display - preserve commas for thousands
             inventory_summary['Current Balance'] = inventory_summary['Current Balance'].apply(lambda x: 
-                str(int(float(x))) if pd.notnull(x) and float(x) == int(float(x)) else 
-                ('{:.3f}'.format(float(x)).rstrip('0').rstrip('.') if pd.notnull(x) else x))
+                f"{int(x):,}" if pd.notnull(x) and x == int(x) else 
+                (f"{x:,.3f}".rstrip('0').rstrip('.') if pd.notnull(x) else '0'))
+            
+            # Log sample of formatted Current Balance values
+            logger.info(f"Sample formatted Current Balance values: {inventory_summary['Current Balance'].head(5).tolist()}")
         
         # Save processed orders to the output file
         orders_output_path = "output.csv"
@@ -2177,5 +2268,3 @@ if __name__ == "__main__":
             shortage_summary.to_csv(shortage_output_path, index=False)
             logger.info(f"Generated shortage summary with {len(shortage_summary)} items and saved to {shortage_output_path}")
             print(f"\nWARNING: {len(shortage_summary)} inventory shortages detected! See {shortage_output_path} for details.")
-        
-        # Note: docs/output_list_of_orders_to_fulfill.csv is an example file, not the output destination
