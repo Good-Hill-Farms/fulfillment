@@ -9,7 +9,8 @@ from constants.shipping_zones import load_shipping_zones
 
 # Import utility modules
 from utils.data_processor import DataProcessor
-from utils.ui_components import render_header, render_rule_editor, render_summary_dashboard
+from utils.ui_components import render_header, render_rule_editor, render_summary_dashboard, render_inventory_analysis
+from utils.chat_widget import render_chat_widget
 
 # Load environment variables
 load_dotenv()
@@ -47,6 +48,12 @@ if "shipping_zones_df" not in st.session_state:
     st.session_state.shipping_zones_df = None
 if "processed_orders" not in st.session_state:
     st.session_state.processed_orders = None
+if "inventory_summary" not in st.session_state:
+    st.session_state.inventory_summary = pd.DataFrame()
+if "shortage_summary" not in st.session_state:
+    st.session_state.shortage_summary = pd.DataFrame()
+if "grouped_shortage_summary" not in st.session_state:
+    st.session_state.grouped_shortage_summary = pd.DataFrame()
 if "rules" not in st.session_state:
     st.session_state.rules = []
 if "bundles" not in st.session_state:
@@ -66,6 +73,9 @@ def main():
 
     # Render header
     render_header()
+    
+    # Render the floating chat widget
+    render_chat_widget()
 
     # Sidebar for configuration and model selection
     with st.sidebar:
@@ -163,20 +173,26 @@ def main():
                                 )
 
                         # Process orders
-                        st.session_state.processed_orders = data_processor.process_orders(
+                        result = data_processor.process_orders(
                             st.session_state.orders_df,
                             st.session_state.inventory_df,
                             st.session_state.shipping_zones_df,
                             st.session_state.sku_mappings,
                         )
+                        
+                        # Store the results in session state
+                        st.session_state.processed_orders = result['orders']
+                        st.session_state.inventory_summary = result['inventory_summary']
+                        st.session_state.shortage_summary = result['shortage_summary']
+                        st.session_state.grouped_shortage_summary = result['grouped_shortage_summary']
 
                 st.success("✅ Files processed successfully!")
                 st.rerun()
 
     # Main content area
     if st.session_state.orders_df is not None and st.session_state.inventory_df is not None:
-        # Create tabs for dashboard content
-        tab1, tab2, tab3 = st.tabs(["📜 Orders", "📈 Summary", "⚙️ Rules"])
+        # Create tabs for different sections
+        tab1, tab2, tab3 = st.tabs(["📜 Orders", "📈 Dashboard", "⚙️ Rules"])
 
         with tab1:
             st.header("📜 Processed Orders")
@@ -199,12 +215,55 @@ def main():
                 if "edited_orders" not in st.session_state:
                     st.session_state.edited_orders = st.session_state.processed_orders.copy()
 
-                # Make the dataframe editable
+                # Use the original dataframe without custom filtering
+                # Streamlit's built-in filtering will handle this
+                filtered_df = st.session_state.edited_orders.copy()
+
+                # Create column configuration for data editor with improved formatting
+                column_config = {}
+
+                # Ensure externalorderid and id are treated as string to avoid type conflicts
+                for id_col in ['externalorderid', 'id']:
+                    if id_col in filtered_df.columns:
+                        filtered_df[id_col] = filtered_df[id_col].astype(str)
+                
+                # Configure columns with appropriate types and formats
+                for col in filtered_df.columns:
+                    # Format date columns
+                    if "date" in col.lower():
+                        column_config[col] = st.column_config.DatetimeColumn(
+                            col,
+                            format="YYYY-MM-DD HH:mm",
+                            required=False,
+                            help=f"Date/time for {col}",
+                        )
+                    # Handle order ID columns as text
+                    elif col == 'externalorderid' or col == 'id':
+                        column_config[col] = st.column_config.TextColumn(
+                            col,
+                            required=False,
+                            help=f"Order ID: {col}"
+                        )
+                    # Format numeric columns
+                    elif (
+                        filtered_df[col].dtype in ["int64", "float64"] or "quantity" in col.lower()
+                    ):
+                        column_config[col] = st.column_config.NumberColumn(
+                            col,
+                            format="%d" if filtered_df[col].dtype == "int64" else "%.2f",
+                            required=False,
+                        )
+
+                # Make the dataframe editable with Streamlit's built-in column configuration
                 edited_df = st.data_editor(
-                    st.session_state.edited_orders,
+                    filtered_df,
                     use_container_width=True,
                     num_rows="dynamic",
                     hide_index=False,
+                    column_config=column_config,
+                    height=500,
+                    disabled=False,
+                    key="main_table_editor",
                 )
 
                 # Save changes button
@@ -222,9 +281,13 @@ def main():
                         mime="text/csv",
                         key="download_updated",
                     )
-
-        with tab2:
-            st.header("📈 Order Fulfillment Dashboard")
+        with tab2:            
+            # Add inventory analysis section at the top
+            render_inventory_analysis(
+                st.session_state.processed_orders, st.session_state.inventory_df
+            )
+            
+            # Original dashboard content
             render_summary_dashboard(
                 st.session_state.processed_orders, st.session_state.inventory_df
             )
