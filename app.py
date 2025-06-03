@@ -160,14 +160,6 @@ def main():
                 # Convert processed orders to CSV
                 csv = st.session_state.processed_orders.to_csv(index=False)
 
-                # Provide download button
-                st.download_button(
-                    label="Download Processed Orders CSV",
-                    data=csv,
-                    file_name="processed_orders.csv",
-                    mime="text/csv",
-                )
-
                 # Display all processed orders in an editable table
                 st.subheader("All Processed Orders (Editable)")
 
@@ -232,15 +224,6 @@ def main():
                     st.session_state.edited_orders = edited_df.copy()
                     st.success("✅ Changes saved successfully!")
 
-                    # Update CSV download with the edited data
-                    csv = st.session_state.processed_orders.to_csv(index=False)
-                    st.download_button(
-                        label="Download Updated Orders CSV",
-                        data=csv,
-                        file_name="updated_processed_orders.csv",
-                        mime="text/csv",
-                        key="download_updated",
-                    )
         with tab2:            
             # Move inventory shortages to the inventory tab
             if "shortage_summary" in st.session_state and not st.session_state.shortage_summary.empty:
@@ -263,15 +246,6 @@ def main():
                             st.dataframe(styled_df)
                         else:
                             st.dataframe(grouped_df)
-                        
-                        # Provide download button for grouped shortage summary
-                        csv = st.session_state.grouped_shortage_summary.to_csv(index=False)
-                        st.download_button(
-                            label="Download Grouped Shortage Summary",
-                            data=csv,
-                            file_name="grouped_shortage_summary.csv",
-                            mime="text/csv",
-                        )
             
             # Add inventory analysis section
             render_inventory_analysis(
