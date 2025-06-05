@@ -10,6 +10,7 @@ import streamlit as st
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from constants.shipping_zones import load_shipping_zones
+from constants.schemas import SchemaManager
 
 logger = logging.getLogger(__name__)
 
@@ -19,9 +20,12 @@ class DataProcessor:
     Handles data loading, processing, and transformation for the fulfillment application.
     """
 
-    def __init__(self):
+    def __init__(self, use_airtable: bool = True):
         """
         Initialize the DataProcessor with required tracking variables.
+        
+        Args:
+            use_airtable (bool): Whether to use Airtable for schema data (default: True)
         """
         # Set to track which inventory issues have been logged to prevent duplicate log messages
         self._logged_inventory_issues = set()
@@ -31,6 +35,9 @@ class DataProcessor:
         self._recalculated_skus = set()
         # Track warehouse transformations for debugging
         self._warehouse_transformations = []
+        # Schema manager for Airtable integration
+        self.use_airtable = use_airtable
+        self.schema_manager = SchemaManager() if use_airtable else None
 
     def normalize_warehouse_name(self, warehouse_name, log_transformations=True):
         """
@@ -312,8 +319,8 @@ class DataProcessor:
 
     def load_sku_mappings(self):
         """
-        Load SKU mappings from JSON file for Oxnard, Moorpark, and Wheeling fulfillment centers
-        with fallback to CSV files if JSON is not available.
+        Load SKU mappings from Airtable or JSON file for Oxnard, Moorpark, and Wheeling fulfillment centers
+        with fallback to CSV files if neither is available.
 
         Handles both individual SKUs (using picklist_sku) and bundles (using component_sku).
         For bundles, all components and their quantities are stored in a structured format.
@@ -327,6 +334,17 @@ class DataProcessor:
             # Initialize mappings and bundle information dictionaries
             mappings = {"Oxnard": {}, "Wheeling": {}}
             bundle_info = {"Oxnard": {}, "Wheeling": {}}
+            
+            # Try Airtable first if enabled
+            if self.use_airtable and self.schema_manager:
+                try:
+                    airtable_result = self._load_sku_mappings_from_airtable()
+                    if airtable_result and any(len(airtable_result["mappings"][center]) > 0 for center in airtable_result["mappings"]):
+                        logger.info("Successfully loaded SKU mappings from Airtable")
+                        return airtable_result
+                except Exception as e:
+                    logger.warning(f"Failed to load SKU mappings from Airtable: {e}")
+                    logger.info("Falling back to JSON/CSV files...")
 
             # First try to load from JSON file
             json_path = os.path.join(
@@ -495,6 +513,57 @@ class DataProcessor:
         except Exception as e:
             logger.error(f"Error loading SKU mappings: {str(e)}")
             return {"Oxnard": {}, "Wheeling": {}}
+    
+    def _load_sku_mappings_from_airtable(self):
+        """
+        Load SKU mappings from Airtable.
+        
+        Returns:
+            dict: Dictionary containing mappings and bundle_info
+        """
+        logger.info("Loading SKU mappings from Airtable...")
+        
+        mappings = {"Oxnard": {}, "Wheeling": {}}
+        bundle_info = {"Oxnard": {}, "Wheeling": {}}
+        
+        for center in ["Oxnard", "Wheeling"]:
+            try:
+                # Get SKU mappings from Airtable for this warehouse
+                sku_mappings = self.schema_manager.get_sku_mappings(center)
+                
+                center_map = {}
+                
+                for mapping in sku_mappings:
+                    # Handle individual SKUs
+                    if mapping.picklist_sku:
+                        center_map[mapping.order_sku] = mapping.picklist_sku
+                    
+                    # Handle bundles if they have components
+                    bundle_components = mapping.get_bundle_components()
+                    if bundle_components:
+                        # Store bundle components
+                        bundle_info[center][mapping.order_sku] = [
+                            {
+                                "sku": comp.sku,
+                                "qty": comp.qty,
+                                "weight": 0.0,  # Weight not stored in current schema
+                                "type": "",     # Type not stored in current schema
+                            }
+                            for comp in bundle_components
+                        ]
+                        
+                        # Map bundle to first component for backward compatibility
+                        if bundle_components:
+                            center_map[mapping.order_sku] = bundle_components[0].sku
+                            logger.debug(f"Mapped bundle {mapping.order_sku} to component {bundle_components[0].sku}")
+                
+                mappings[center] = center_map
+                logger.info(f"Loaded {len(center_map)} SKU mappings for {center} from Airtable")
+                
+            except Exception as e:
+                logger.warning(f"Error loading SKU mappings for {center} from Airtable: {e}")
+        
+        return {"mappings": mappings, "bundle_info": bundle_info}
 
     def load_inventory(self, file):
         """

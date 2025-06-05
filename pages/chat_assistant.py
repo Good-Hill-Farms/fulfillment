@@ -37,45 +37,150 @@ def get_model_response(messages, model):
         prompt = next(msg["content"] for msg in reversed(messages) if msg["role"] == "user")
 
         # Get context from session state
-        context = {
-            # Raw data
-            "inventory": st.session_state.inventory_df.to_dict()
-            if "inventory_df" in st.session_state and st.session_state.inventory_df is not None
-            else {},
-            "orders": st.session_state.orders_df.to_dict()
-            if "orders_df" in st.session_state and st.session_state.orders_df is not None
-            else {},
-            # Processed data
-            "inventory_summary": st.session_state.inventory_summary.to_dict()
-            if "inventory_summary" in st.session_state
-            and not st.session_state.inventory_summary.empty
-            else {},
-            "processed_orders": st.session_state.processed_orders.to_dict()
-            if "processed_orders" in st.session_state
-            and st.session_state.processed_orders is not None
-            else {},
-            "shortage_summary": st.session_state.shortage_summary.to_dict()
-            if "shortage_summary" in st.session_state
-            and not st.session_state.shortage_summary.empty
-            else {},
-            "grouped_shortage_summary": st.session_state.grouped_shortage_summary.to_dict()
-            if "grouped_shortage_summary" in st.session_state
-            and not st.session_state.grouped_shortage_summary.empty
-            else {},
-            # Reference data
-            "shipping_zones": st.session_state.shipping_zones_df.to_dict()
-            if "shipping_zones_df" in st.session_state
-            and st.session_state.shipping_zones_df is not None
-            else {},
-            "sku_mappings": st.session_state.sku_mappings
-            if "sku_mappings" in st.session_state and st.session_state.sku_mappings is not None
-            else {},
-            "rules": st.session_state.rules if "rules" in st.session_state else [],
-            "bundles": st.session_state.bundles if "bundles" in st.session_state else {},
-            "override_log": st.session_state.override_log
-            if "override_log" in st.session_state
-            else [],
-        }
+        context = {}
+        
+        # Debug: Check what's actually in session state
+        debug_info = {}
+        for key in ['inventory_df', 'orders_df', 'inventory_summary', 'processed_orders', 'shortage_summary', 'grouped_shortage_summary']:
+            if key in st.session_state:
+                val = st.session_state[key]
+                if hasattr(val, 'empty'):  # DataFrame
+                    debug_info[key] = f"DataFrame with {len(val)} rows" if not val.empty else "Empty DataFrame"
+                elif val is not None:
+                    debug_info[key] = f"Data available ({type(val).__name__})"
+                else:
+                    debug_info[key] = "None"
+            else:
+                debug_info[key] = "Missing from session state"
+        
+        # Add debug info to context
+        context["debug_session_state"] = debug_info
+        
+        # Add ALL data - the LLM needs complete access for proper analysis
+        if "inventory_df" in st.session_state and st.session_state.inventory_df is not None:
+            df = st.session_state.inventory_df
+            context["inventory"] = df.to_dict('records')
+            context["inventory_total_count"] = len(df)
+        
+        if "orders_df" in st.session_state and st.session_state.orders_df is not None:
+            df = st.session_state.orders_df
+            context["orders"] = df.to_dict('records')
+            context["orders_total_count"] = len(df)
+            
+        if "inventory_summary" in st.session_state and not st.session_state.inventory_summary.empty:
+            df = st.session_state.inventory_summary
+            context["inventory_summary"] = df.to_dict('records')
+            context["inventory_summary_total_count"] = len(df)
+            
+        if "processed_orders" in st.session_state and st.session_state.processed_orders is not None:
+            df = st.session_state.processed_orders
+            context["processed_orders"] = df.to_dict('records')
+            context["processed_orders_total_count"] = len(df)
+            
+        if "shortage_summary" in st.session_state and not st.session_state.shortage_summary.empty:
+            df = st.session_state.shortage_summary
+            context["shortage_summary"] = df.to_dict('records')
+            context["shortage_count"] = len(df)
+            
+        if "grouped_shortage_summary" in st.session_state and not st.session_state.grouped_shortage_summary.empty:
+            df = st.session_state.grouped_shortage_summary
+            context["grouped_shortage_summary"] = df.to_dict('records')
+            context["grouped_shortage_total_count"] = len(df)
+            
+        # STAGED ORDERS - Critical data!
+        if "staged_orders" in st.session_state and not st.session_state.staged_orders.empty:
+            df = st.session_state.staged_orders
+            context["staged_orders"] = df.to_dict('records')
+            context["staged_orders_count"] = len(df)
+        else:
+            context["staged_orders"] = []
+            context["staged_orders_count"] = 0
+            
+        # STAGING HISTORY
+        if "staging_history" in st.session_state:
+            context["staging_history"] = st.session_state.staging_history
+        else:
+            context["staging_history"] = []
+            
+        # PROCESSING STATS
+        if "processing_stats" in st.session_state:
+            context["processing_stats"] = st.session_state.processing_stats
+        else:
+            context["processing_stats"] = {}
+            
+        # WAREHOUSE PERFORMANCE
+        if "warehouse_performance" in st.session_state:
+            context["warehouse_performance"] = st.session_state.warehouse_performance
+        else:
+            context["warehouse_performance"] = {}
+            
+        # INVENTORY COMPARISON
+        if "inventory_comparison" in st.session_state and not st.session_state.inventory_comparison.empty:
+            df = st.session_state.inventory_comparison
+            context["inventory_comparison"] = df.to_dict('records')
+            context["inventory_comparison_count"] = len(df)
+        else:
+            context["inventory_comparison"] = []
+            context["inventory_comparison_count"] = 0
+            
+        # Reference data
+        if "shipping_zones_df" in st.session_state and st.session_state.shipping_zones_df is not None:
+            context["shipping_zones"] = st.session_state.shipping_zones_df.to_dict('records')
+            
+        if "sku_mappings" in st.session_state and st.session_state.sku_mappings is not None:
+            context["sku_mappings"] = st.session_state.sku_mappings
+            
+        context["rules"] = st.session_state.get("rules", [])
+        context["bundles"] = st.session_state.get("bundles", {})
+        context["override_log"] = st.session_state.get("override_log", [])
+        
+        # Add Airtable data
+        try:
+            from utils.airtable_handler import AirtableHandler
+            airtable_handler = AirtableHandler()
+            
+            # Get ALL Airtable data - complete access needed
+            try:
+                sku_mappings = airtable_handler.get_sku_mappings()
+                if sku_mappings:
+                    context["airtable_sku_mappings"] = sku_mappings  # ALL records
+                    context["airtable_sku_count"] = len(sku_mappings)
+            except Exception as e:
+                context["airtable_sku_mappings"] = []
+                context["airtable_error_sku"] = str(e)
+            
+            # Get fulfillment zones from Airtable
+            try:
+                fulfillment_zones = airtable_handler.get_fulfillment_zones()
+                if fulfillment_zones:
+                    context["airtable_fulfillment_zones"] = fulfillment_zones  # ALL records
+                    context["airtable_zones_count"] = len(fulfillment_zones)
+            except Exception as e:
+                context["airtable_fulfillment_zones"] = []
+                context["airtable_error_zones"] = str(e)
+            
+            # Get delivery services from Airtable
+            try:
+                delivery_services = airtable_handler.get_delivery_services()
+                if delivery_services:
+                    context["airtable_delivery_services"] = delivery_services  # ALL records
+                    context["airtable_services_count"] = len(delivery_services)
+            except Exception as e:
+                context["airtable_delivery_services"] = []
+                context["airtable_error_services"] = str(e)
+                
+            # Get fulfillment centers from Airtable
+            try:
+                fulfillment_centers = airtable_handler.get_fulfillment_centers()
+                if fulfillment_centers:
+                    context["airtable_fulfillment_centers"] = fulfillment_centers  # ALL records
+                    context["airtable_centers_count"] = len(fulfillment_centers)
+            except Exception as e:
+                context["airtable_fulfillment_centers"] = []
+                context["airtable_error_centers"] = str(e)
+                
+        except Exception as e:
+            context["airtable_error_general"] = f"Could not load Airtable handler: {str(e)}"
 
         # Update LLM handler model
         llm_handler.model_name = model
@@ -115,6 +220,13 @@ def get_data_summary():
 
 def main():
     st.set_page_config(page_title="Inventory Chat", page_icon="📊", layout="wide")
+    
+    # Force session state reinitialization if data is missing
+    # This ensures data persists between page navigation
+    for key in ['orders_df', 'inventory_df', 'shipping_zones_df', 'processed_orders', 
+               'inventory_summary', 'shortage_summary', 'grouped_shortage_summary', 'sku_mappings']:
+        if key not in st.session_state:
+            st.session_state[key] = None if 'df' in key or key == 'processed_orders' or key == 'sku_mappings' else pd.DataFrame()
 
     # Sidebar for model selection
     with st.sidebar:
@@ -152,10 +264,63 @@ def main():
             st.error(f"⚠️ {len(st.session_state.shortage_summary)} items with shortages")
 
         # Add help text
-        st.info("💡 Upload data in the main app to use the chat assistant")
+        if (st.session_state.inventory_df is None or st.session_state.orders_df is None):
+            st.warning("⚠️ No data found! Please upload files in the main app first.")
+            if st.button("🏠 Go to Main App"):
+                st.switch_page("app.py")
+        else:
+            st.info("💡 All data loaded successfully!")
 
     # Main chat interface
     st.title("📊 Inventory Assistant")
+    
+    # DEBUG: Show session state
+    with st.expander("🔧 Debug Session State", expanded=False):
+        debug_info = {}
+        
+        # Check all data sources
+        data_keys = [
+            'shortage_summary', 'inventory_summary', 'processed_orders', 'grouped_shortage_summary',
+            'staged_orders', 'inventory_comparison', 'orders_df', 'inventory_df', 'shipping_zones_df'
+        ]
+        
+        for key in data_keys:
+            if key in st.session_state:
+                val = st.session_state[key]
+                if hasattr(val, 'empty'):
+                    debug_info[key] = f"DataFrame: {len(val)} rows" if not val.empty else "Empty DataFrame"
+                    if not val.empty:
+                        debug_info[f"{key}_columns"] = list(val.columns)
+                elif isinstance(val, list):
+                    debug_info[key] = f"List: {len(val)} items"
+                elif isinstance(val, dict):
+                    debug_info[key] = f"Dict: {len(val)} keys"
+                else:
+                    debug_info[key] = f"{type(val).__name__}: {val}"
+            else:
+                debug_info[key] = "Missing"
+        
+        # Check other important session state
+        other_keys = ['staging_history', 'processing_stats', 'warehouse_performance', 'sku_mappings', 'rules', 'bundles']
+        for key in other_keys:
+            if key in st.session_state:
+                val = st.session_state[key]
+                if isinstance(val, list):
+                    debug_info[key] = f"List: {len(val)} items"
+                elif isinstance(val, dict):
+                    debug_info[key] = f"Dict: {len(val)} keys"
+                else:
+                    debug_info[key] = f"{type(val).__name__}"
+            else:
+                debug_info[key] = "Missing"
+                
+        st.json(debug_info)
+    
+    # Show data availability status
+    if (st.session_state.inventory_df is None or st.session_state.orders_df is None):
+        st.error("❌ **No data available for chat assistant**")
+        st.info("Please go to the main app and upload your inventory and orders files first.")
+        st.stop()
 
     # Initialize chat
     if "messages" not in st.session_state:
@@ -307,6 +472,34 @@ def main():
         # Get AI response
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
+                # DEBUG: Show what data is being passed
+                with st.expander("🔍 Debug: Data Being Passed to LLM", expanded=False):
+                    debug_context = {}
+                    total_context_size = 0
+                    
+                    # Check session state data
+                    for key in ['shortage_summary', 'inventory_summary', 'processed_orders']:
+                        if key in st.session_state:
+                            val = st.session_state[key]
+                            if hasattr(val, 'empty') and not val.empty:
+                                records = val.to_dict('records')
+                                size_bytes = len(str(records))
+                                debug_context[key] = f"DataFrame: {len(val)} rows → {len(records)} records → {size_bytes:,} bytes"
+                                total_context_size += size_bytes
+                            elif val is not None:
+                                debug_context[key] = f"Available ({type(val).__name__})"
+                            else:
+                                debug_context[key] = "None"
+                        else:
+                            debug_context[key] = "Missing"
+                    
+                    # Check if we're hitting limits
+                    if total_context_size > 100000:  # 100KB threshold
+                        debug_context["⚠️ Warning"] = f"Large context size: {total_context_size:,} bytes - may hit API limits"
+                    
+                    debug_context["Total Context Size"] = f"{total_context_size:,} bytes"
+                    st.json(debug_context)
+                
                 response = get_model_response(st.session_state.messages, model_id)
                 if response:
                     st.markdown(response)

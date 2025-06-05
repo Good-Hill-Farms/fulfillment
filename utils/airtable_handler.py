@@ -41,7 +41,8 @@ class AirtableHandler:
             "data_batch": "DataBatch",
             "fulfillment_plan_line": "FulfillmentPlanLine",
             "shortage_log": "ShortageLog",
-            "priority_tag": "PriorityTag"
+            "priority_tag": "PriorityTag",
+            "fulfillment_rule": "FulfillmentRule"
         }
     
     def get_fulfillment_centers(self) -> List[Dict[str, Any]]:
@@ -598,6 +599,106 @@ class AirtableHandler:
             return True
         else:
             raise Exception(f"Failed to delete priority tag: {response.text}")
+    
+    # FulfillmentRule methods
+    def get_fulfillment_rules(self, rule_type: Optional[str] = None, active_only: bool = True) -> List[Dict[str, Any]]:
+        """
+        Retrieve fulfillment rules from Airtable, optionally filtered by type and active status.
+        
+        Args:
+            rule_type (Optional[str]): Filter by rule type
+            active_only (bool): Only return active rules
+            
+        Returns:
+            List[Dict[str, Any]]: List of fulfillment rule records
+        """
+        table_name = "FulfillmentRule"  # Use the actual table name directly
+        url = f"{self.base_url}/{table_name}"
+        
+        # Add filter if parameters are provided
+        filters = []
+        if rule_type:
+            filters.append(f"{{rule_type}} = '{rule_type}'")
+        if active_only:
+            filters.append("{is_active} = TRUE()")
+        
+        if filters:
+            filter_formula = "AND(" + ",".join(filters) + ")"
+            url += f"?filterByFormula={filter_formula}"
+        
+        response = requests.get(url, headers=self.headers)
+        
+        if response.status_code == 200:
+            data = response.json()
+            return [self._format_record(record) for record in data.get('records', [])]
+        else:
+            raise Exception(f"Failed to fetch fulfillment rules: {response.text}")
+    
+    def create_fulfillment_rule(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Create a new fulfillment rule record in Airtable.
+        
+        Args:
+            data (Dict[str, Any]): Fulfillment rule data
+            
+        Returns:
+            Dict[str, Any]: Created record
+        """
+        table_name = "FulfillmentRule"  # Use the actual table name directly
+        response = requests.post(
+            f"{self.base_url}/{table_name}",
+            headers=self.headers,
+            json={"fields": data}
+        )
+        
+        if response.status_code == 200:
+            return self._format_record(response.json())
+        else:
+            raise Exception(f"Failed to create fulfillment rule: {response.text}")
+    
+    def update_fulfillment_rule(self, record_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Update a fulfillment rule record in Airtable.
+        
+        Args:
+            record_id (str): Airtable record ID
+            data (Dict[str, Any]): Data to update
+            
+        Returns:
+            Dict[str, Any]: Updated record
+        """
+        table_name = "FulfillmentRule"  # Use the actual table name directly
+        response = requests.patch(
+            f"{self.base_url}/{table_name}/{record_id}",
+            headers=self.headers,
+            json={"fields": data}
+        )
+        
+        if response.status_code == 200:
+            return self._format_record(response.json())
+        else:
+            raise Exception(f"Failed to update fulfillment rule: {response.text}")
+    
+    def delete_fulfillment_rule(self, record_id: str) -> bool:
+        """
+        Delete a fulfillment rule record from Airtable.
+        
+        Args:
+            record_id (str): Airtable record ID
+            
+        Returns:
+            bool: True if deletion was successful
+        """
+        table_name = "FulfillmentRule"  # Use the actual table name directly
+        response = requests.delete(
+            f"{self.base_url}/{table_name}/{record_id}",
+            headers=self.headers
+        )
+        
+        if response.status_code == 200:
+            return True
+        else:
+            raise Exception(f"Failed to delete fulfillment rule: {response.text}")
 
 # Example usage
 if __name__ == "__main__":

@@ -25,7 +25,9 @@ def render_header():
 
 def create_aggrid_table(df, height=400, selection_mode='multiple', enable_enterprise_modules=False, 
                        fit_columns_on_grid_load=False, theme='alpine', key=None, groupable=True, 
-                       filterable=True, sortable=True, editable=False, show_hints=True, enable_download=True):
+                       filterable=True, sortable=True, editable=False, show_hints=True, enable_download=True,
+                       enable_sidebar=True, enable_pivot=True, enable_value_aggregation=True, 
+                       enhanced_menus=True):
     """
     Create an enhanced ag-Grid table with auto-sizing, filtering, grouping, sorting, and download capabilities.
     
@@ -43,6 +45,10 @@ def create_aggrid_table(df, height=400, selection_mode='multiple', enable_enterp
         editable: Enable cell editing
         show_hints: Show helpful hints to users
         enable_download: Enable download functionality
+        enable_sidebar: Enable sidebar for advanced grouping/filtering
+        enable_pivot: Enable pivot functionality
+        enable_value_aggregation: Enable value aggregation in groups
+        enhanced_menus: Enable enhanced context menus and column menu options
     
     Returns:
         dict: Contains AgGrid response and additional info
@@ -51,53 +57,94 @@ def create_aggrid_table(df, height=400, selection_mode='multiple', enable_enterp
         # Create GridOptionsBuilder with simplified configuration
         gb = GridOptionsBuilder.from_dataframe(df)
         
-        # Configure default column properties (simplified to avoid JSON serialization issues)
+        # Configure default column properties with enhanced filtering and grouping
         gb.configure_default_column(
             filterable=filterable,
             sortable=sortable,
             resizable=True,
-            editable=editable
+            editable=editable,
+            groupable=groupable,
+            enableRowGroup=groupable,
+            enablePivot=enable_pivot,
+            enableValue=enable_value_aggregation,
+            filter=True,
+            floatingFilter=True,  # Enable floating filters for better UX
+            suppressMenu=False,
+            menuTabs=['filterMenuTab', 'generalMenuTab', 'columnsMenuTab'] if filterable else []
         )
         
         # Configure selection
         if selection_mode != 'disabled':
             gb.configure_selection(selection_mode, use_checkbox=True)
         
-        # Configure side bar only if groupable and enterprise modules are enabled
-        if groupable and enable_enterprise_modules:
-            gb.configure_side_bar()
+        # Configure enhanced column types for better filtering and grouping
+        for col in df.columns:
+            if df[col].dtype in ['int64', 'float64']:
+                # Numeric columns with enhanced number filter and aggregation
+                gb.configure_column(
+                    col, 
+                    type=["numericColumn"],
+                    filter="agNumberColumnFilter",
+                    enableValue=True,  # Enable for aggregation
+                    aggFunc=['sum', 'avg', 'min', 'max', 'count'],
+                    floatingFilter=True
+                )
+            elif df[col].dtype == 'datetime64[ns]':
+                # Date columns with enhanced date filter
+                gb.configure_column(
+                    col,
+                    filter="agDateColumnFilter",
+                    type=["dateColumn"],
+                    floatingFilter=True
+                )
+            else:
+                # Text columns with enhanced text filter and grouping
+                gb.configure_column(
+                    col,
+                    filter="agTextColumnFilter",
+                    enableRowGroup=True,  # Enable for grouping
+                    floatingFilter=True
+                )
         
-        # Build grid options
-        grid_options = gb.build()
-        
-        # Show helpful hints if enabled (but skip if inside an expander to avoid nesting)
-        if show_hints:
+        # Configure sidebar with working configuration for streamlit-aggrid 1.0.5
+        if enable_sidebar:
             try:
-                with st.expander("💡 How to use this table", expanded=False):
-                    st.markdown("""
-                    **🔍 Filtering & Searching:**
-                    - Click the ⋮ menu in any column header to filter
-                    - Use the search box in filters for text matching
-                    - Set number ranges, date ranges, and exact matches
-                    
-                    **📊 Grouping & Sorting:**
-                    - Click column headers to sort (click again to reverse)
-                    - Hold Shift + click to sort by multiple columns
-                    
-                    **✅ Selection:**
-                    - Check boxes to select rows
-                    - Use Ctrl/Cmd + click for multiple selections
-                    - Selected data appears in summary below
-                    
-                    **🎛️ Column Management:**
-                    - Drag column borders to resize
-                    - Right-click columns for more options
-                    """)
-            except Exception:
-                # Skip hints if inside an expander (nested expanders not allowed)
+                # Use the correct method for streamlit-aggrid 1.0.5
+                gb.configure_side_bar()
+            except Exception as e:
+                print(f"Sidebar configuration failed: {e}")
                 pass
         
-        # Create the AgGrid with simplified configuration to avoid JSON serialization issues
+        # Configure basic grouping (simplified to avoid issues)
+        if groupable:
+            try:
+                gb.configure_grid_options(
+                    groupSelectsChildren=True,
+                    groupSelectsFiltered=True,
+                    suppressRowGroupHidesColumns=False,
+                    groupDefaultExpanded=1
+                )
+            except Exception as e:
+                print(f"Grouping configuration failed: {e}")
+                pass
+        
+        # Configure basic aggregation for numeric columns
+        if enable_value_aggregation:
+            for col in df.columns:
+                if df[col].dtype in ['int64', 'float64']:
+                    try:
+                        gb.configure_column(
+                            col,
+                            enableValue=True
+                        )
+                    except Exception as e:
+                        # Skip if column configuration causes issues
+                        pass
+        
+        # Build grid options
+        grid_options = gb.build()     
+        
+        # Create the AgGrid with simplified configuration  
         grid_response = AgGrid(
             df,
             gridOptions=grid_options,
@@ -107,6 +154,7 @@ def create_aggrid_table(df, height=400, selection_mode='multiple', enable_enterp
             fit_columns_on_grid_load=fit_columns_on_grid_load,
             theme=theme,
             enable_enterprise_modules=enable_enterprise_modules,
+            allow_unsafe_jscode=True,  # Allow JavaScript code to prevent serialization errors
             key=key
         )
         
@@ -125,67 +173,45 @@ def create_aggrid_table(df, height=400, selection_mode='multiple', enable_enterp
             'selected_data': []
         }
     
-    # Add download functionality if enabled
-    download_data = {}
-    if enable_download:
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            # Download all data
-            csv_all = df.to_csv(index=False)
-            st.download_button(
-                label="📥 Download All Data",
-                data=csv_all,
-                file_name=f"data_all_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv",
-                key=f"{key}_download_all" if key else "download_all"
-            )
-        
-        with col2:
-            # Download filtered data
-            if grid_response['data'] is not None and len(grid_response['data']) > 0:
-                filtered_df = pd.DataFrame(grid_response['data'])
-                csv_filtered = filtered_df.to_csv(index=False)
-                st.download_button(
-                    label="📥 Download Filtered Data",
-                    data=csv_filtered,
-                    file_name=f"data_filtered_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv",
-                    key=f"{key}_download_filtered" if key else "download_filtered"
-                )
-            else:
-                st.button("📥 Download Filtered Data", disabled=True, help="No filtered data available", key=f"{key}_download_filtered_disabled" if key else "download_filtered_disabled")
-        
-        with col3:
-            # Download selected data
-            if grid_response['selected_rows'] is not None and len(grid_response['selected_rows']) > 0:
-                selected_df = pd.DataFrame(grid_response['selected_rows'])
-                csv_selected = selected_df.to_csv(index=False)
-                st.download_button(
-                    label="📥 Download Selected Data",
-                    data=csv_selected,
-                    file_name=f"data_selected_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv",
-                    key=f"{key}_download_selected" if key else "download_selected"
-                )
-            else:
-                st.button("📥 Download Selected Data", disabled=True, help="No rows selected", key=f"{key}_download_selected_disabled" if key else "download_selected_disabled")
-        
-        # Store download data for external use
-        download_data = {
-            'all_data': df,
-            'filtered_data': pd.DataFrame(grid_response['data']) if grid_response['data'] is not None and len(grid_response['data']) > 0 else pd.DataFrame(),
-            'selected_data': pd.DataFrame(grid_response['selected_rows']) if grid_response['selected_rows'] is not None and len(grid_response['selected_rows']) > 0 else pd.DataFrame()
-        }
     
-    # Display selection summary
-    if grid_response['selected_rows'] is not None and len(grid_response['selected_rows']) > 0:
-        st.info(f"✅ Selected {len(grid_response['selected_rows'])} rows out of {len(df)} total rows")
+    # Display enhanced usage instructions and selection summary
+    if show_hints:
+        with st.expander("💡 AgGrid Usage Tips", expanded=False):
+            st.markdown("""
+            **🔍 Filtering & Searching:**
+            - Use the floating filter boxes below column headers for instant filtering
+            - Click the ⋮ menu on any column header for advanced filter options
+            - Use the sidebar (→) for drag-and-drop grouping and column management
+            
+            **📊 Grouping & Analysis:**
+            - Drag columns from the sidebar to "Row Groups" to group data
+            - Drag numeric columns to "Values" to see aggregations (sum, avg, min, max)
+            - Use "Pivot Mode" in the sidebar for cross-tabulation analysis
+            
+            **✅ Row Selection:**
+            - Use checkboxes to select individual rows
+            - Ctrl+A: Select all visible rows
+            - Ctrl+Click: Multi-select rows
+            - Selected row count is displayed below the grid
+            
+            **📥 Built-in Export Options:**
+            - **Right-click on the grid** to access export menu
+            - **Export to CSV**: Download filtered/selected data as CSV
+            - **Export to Excel**: Download filtered/selected data as Excel
+            - **Copy to Clipboard**: Copy data for pasting elsewhere
+            - **Print**: Print the current view of the data
+            
+            **⌨️ Advanced Features:**
+            - Right-click on the grid for context menu options
+            - Ctrl+Right-click for additional context menu
+            - Tab/Shift+Tab: Navigate between cells and filters
+            - Drag column borders to resize columns
+            """)
+    
     
     # Return comprehensive response
     return {
         'grid_response': grid_response,
-        'download_data': download_data,
         'selected_count': len(grid_response['selected_rows']) if grid_response['selected_rows'] is not None else 0,
         'filtered_count': len(grid_response['data']) if grid_response['data'] is not None else len(df)
     }
@@ -320,7 +346,12 @@ def render_inventory_analysis(processed_orders, inventory_df):
                 key="inventory_changes_grid",
                 theme="alpine",
                 show_hints=False,
-                enable_enterprise_modules=False  # Disable to prevent JSON serialization issues
+                enable_enterprise_modules=False,  # Disable to prevent JSON serialization issues
+                enable_sidebar=True,
+                enable_pivot=True,
+                enable_value_aggregation=True,
+                groupable=True,
+                filterable=True
             )
             
             # Show selection summary for inventory changes
@@ -355,7 +386,7 @@ def render_summary_dashboard(processed_orders, inventory_df, processing_stats=No
         processed_orders: DataFrame of processed orders
         inventory_df: DataFrame of inventory
         processing_stats: Dictionary of processing statistics
-        warehouse_performance: Dictionary of warehouse performance metrics
+        warehouse_performance: Dictionary of warehouse performance metrics (kept for compatibility)
     """
     if processed_orders is None or inventory_df is None:
         st.warning("No data available for dashboard")
@@ -444,190 +475,6 @@ def render_summary_dashboard(processed_orders, inventory_df, processing_stats=No
     fig.update_traces(texttemplate="%{text}", textposition="outside")
     st.plotly_chart(fig, use_container_width=True)
     
-    # Warehouse Performance Comparison
-    if warehouse_performance:
-        st.subheader("🏭 Warehouse Performance Comparison")
-        
-        # Create performance comparison dataframe
-        perf_data = []
-        for warehouse, metrics in warehouse_performance.items():
-            perf_data.append({
-                'Warehouse': warehouse,
-                'Total Orders': metrics.get('total_orders', 0),
-                'Line Items': metrics.get('total_line_items', 0),
-                'Unique SKUs': metrics.get('unique_skus', 0),
-                'Issue Rate (%)': metrics.get('issue_rate', 0),
-                'Avg Qty/Item': metrics.get('avg_quantity_per_item', 0),
-                'Inventory Balance': metrics.get('inventory_balance', 0),
-                'Inventory SKUs': metrics.get('inventory_sku_count', 0)
-            })
-        
-        if perf_data:
-            perf_df = pd.DataFrame(perf_data)
-            
-            st.write("**Warehouse Performance Metrics:** (Use sidebar to filter and compare)")
-            
-            # Create ag-Grid table for warehouse performance (disable hints to avoid nested expanders)
-            perf_table = create_aggrid_table(
-                perf_df,
-                height=300,
-                key="warehouse_performance_grid",
-                theme="alpine",
-                groupable=False,  # Disable grouping for this summary table
-                selection_mode='single',
-                show_hints=False,
-                enable_enterprise_modules=False  # Disable to prevent JSON serialization issues
-            )
-            
-            # Show selection info if warehouse is selected
-            if perf_table['selected_count'] > 0:
-                selected_warehouse = pd.DataFrame(perf_table['grid_response']['selected_rows'])
-                warehouse_name = selected_warehouse.iloc[0]['Warehouse']
-                st.info(f"📊 Selected: **{warehouse_name}** - Review detailed metrics above")
-            
-            # Issue rate comparison chart
-            fig_issues = px.bar(
-                perf_df,
-                x='Warehouse',
-                y='Issue Rate (%)',
-                title='Issue Rate by Warehouse (Lower is Better)',
-                color='Issue Rate (%)',
-                color_continuous_scale='RdYlGn_r',
-                text='Issue Rate (%)'
-            )
-            fig_issues.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
-            st.plotly_chart(fig_issues, use_container_width=True)
-
-    # Priority distribution
-    if "Priority" in processed_orders.columns and processed_orders["Priority"].any():
-        st.subheader("Orders by Priority")
-        priority_counts = (
-            processed_orders[processed_orders["Priority"] != ""]["Priority"]
-            .value_counts()
-            .reset_index()
-        )
-        priority_counts.columns = ["Priority", "Count"]
-
-        fig = px.pie(
-            priority_counts,
-            values="Count",
-            names="Priority",
-            title="Order Distribution by Priority",
-            hole=0.4,
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-    # Inventory utilization
-    st.subheader("Inventory Utilization")
-
-    # Calculate inventory usage
-    inventory_usage = (
-        processed_orders.groupby("sku")
-        .agg({"Transaction Quantity": "sum", "Starting Balance": "first"})
-        .reset_index()
-    )
-    # Avoid division by zero
-    # Convert to numeric first to ensure round() works properly
-    inventory_usage["Transaction Quantity"] = pd.to_numeric(
-        inventory_usage["Transaction Quantity"], errors="coerce"
-    )
-    inventory_usage["Starting Balance"] = pd.to_numeric(
-        inventory_usage["Starting Balance"], errors="coerce"
-    )
-
-    # Calculate usage percentage with safeguards
-    inventory_usage["Usage Percentage"] = inventory_usage.apply(
-        lambda row: min(
-            100, round((row["Transaction Quantity"] / row["Starting Balance"]) * 100, 1)
-        )
-        if row["Starting Balance"] > 0
-        else 0,
-        axis=1,
-    )
-
-    # Filter out rows with zero starting balance
-    inventory_usage = inventory_usage[inventory_usage["Starting Balance"] > 0]
-
-    # Sort by usage percentage
-    inventory_usage = inventory_usage.sort_values("Usage Percentage", ascending=False).head(10)
-
-    fig = px.bar(
-        inventory_usage,
-        x="sku",
-        y="Usage Percentage",
-        title="Top 10 SKUs by Inventory Usage (%)",
-        color="Usage Percentage",
-        color_continuous_scale="Viridis",
-    )
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Inventory Health & Alerts Section
-    st.subheader("🔔 Inventory Health & Alerts")
-    
-    # Critical inventory alerts
-    if processing_stats:
-        alert_col1, alert_col2, alert_col3 = st.columns(3)
-        
-        with alert_col1:
-            zero_balance = processing_stats.get('zero_balance_items', 0)
-            if zero_balance > 0:
-                st.error(f"🚨 {zero_balance} items are OUT OF STOCK")
-            else:
-                st.success("✅ No out-of-stock items")
-        
-        with alert_col2:
-            low_balance = processing_stats.get('low_balance_items', 0)
-            if low_balance > 0:
-                st.warning(f"⚠️ {low_balance} items have LOW STOCK (≤10)")
-            else:
-                st.success("✅ No low stock alerts")
-        
-        with alert_col3:
-            total_shortages = processing_stats.get('total_shortages', 0)
-            if total_shortages > 0:
-                st.error(f"❌ {total_shortages} shortage instances detected")
-            else:
-                st.success("✅ No shortages detected")
-    
-    # Decision Making Insights
-    st.subheader("💡 Decision Making Insights")
-    
-    insights = []
-    
-    # Warehouse efficiency insights
-    if warehouse_performance:
-        # Find best and worst performing warehouses
-        best_warehouse = min(warehouse_performance.items(), key=lambda x: x[1].get('issue_rate', 100))
-        worst_warehouse = max(warehouse_performance.items(), key=lambda x: x[1].get('issue_rate', 0))
-        
-        if best_warehouse[1].get('issue_rate', 0) != worst_warehouse[1].get('issue_rate', 0):
-            insights.append(f"🏆 **Best Performing Warehouse**: {best_warehouse[0]} (Issue Rate: {best_warehouse[1].get('issue_rate', 0):.1f}%)")
-            insights.append(f"🔧 **Needs Attention**: {worst_warehouse[0]} (Issue Rate: {worst_warehouse[1].get('issue_rate', 0):.1f}%)")
-    
-    # Volume distribution insights
-    if processing_stats and 'fulfillment_center_distribution' in processing_stats:
-        fc_dist = processing_stats['fulfillment_center_distribution']
-        total_items = sum(fc_dist.values())
-        
-        for fc, count in fc_dist.items():
-            percentage = (count / total_items) * 100
-            if percentage > 70:
-                insights.append(f"⚖️ **Load Imbalance**: {fc} is handling {percentage:.1f}% of orders")
-            elif percentage < 10 and len(fc_dist) > 1:
-                insights.append(f"📉 **Underutilized**: {fc} is only handling {percentage:.1f}% of orders - potential capacity available")
-    
-    # Shortage insights
-    if processing_stats and 'shortages_by_fulfillment_center' in processing_stats:
-        shortage_fc = processing_stats['shortages_by_fulfillment_center']
-        for fc, shortage_count in shortage_fc.items():
-            insights.append(f"📦 **Inventory Alert**: {fc} has {shortage_count} shortage instances - review restocking priorities")
-    
-    # Display insights
-    if insights:
-        for insight in insights:
-            st.info(insight)
-    else:
-        st.success("✅ No critical insights at this time - operations appear to be running smoothly")
     
     # Processing Summary
     if processing_stats:
