@@ -75,7 +75,13 @@ def create_aggrid_table(df, height=400, selection_mode='multiple', enable_enterp
         
         # Configure selection
         if selection_mode != 'disabled':
-            gb.configure_selection(selection_mode, use_checkbox=True)
+            gb.configure_selection(
+                selection_mode, 
+                use_checkbox=True,
+                header_checkbox=True,  # Adds select all checkbox in header
+                groupSelectsChildren=True,
+                groupSelectsFiltered=True
+            )
         
         # Configure enhanced column types for better filtering and grouping
         for col in df.columns:
@@ -189,9 +195,10 @@ def create_aggrid_table(df, height=400, selection_mode='multiple', enable_enterp
             - Use "Pivot Mode" in the sidebar for cross-tabulation analysis
             
             **✅ Row Selection:**
-            - Use checkboxes to select individual rows
-            - Ctrl+A: Select all visible rows
-            - Ctrl+Click: Multi-select rows
+            - **Header checkbox**: Click checkbox in header to select/deselect all visible rows
+            - **Individual checkboxes**: Use checkboxes to select individual rows  
+            - **Ctrl+A**: Select all visible rows
+            - **Ctrl+Click**: Multi-select rows
             - Selected row count is displayed below the grid
             
             **📥 Built-in Export Options:**
@@ -374,9 +381,50 @@ def render_inventory_analysis(processed_orders, inventory_df):
         else:
             st.info("No inventory changes detected from the orders")
     else:
-        st.dataframe(inventory_summary[['WarehouseName', 'Sku', 'AvailableQty', 'Balance']])
-        st.warning("Cannot calculate projected inventory - order data is missing required columns.")
         st.warning("Cannot calculate inventory changes - order data is missing required columns.")
+    
+    # Add complete inventory view
+    st.markdown("---")
+    st.subheader("📦 Complete Inventory")
+    st.write("**All inventory items across warehouses:** (Use sidebar to filter and group)")
+    
+    # Prepare full inventory for display
+    full_inventory_df = inventory_summary.copy()
+    
+    # Create ag-Grid table for full inventory
+    full_inventory_table = create_aggrid_table(
+        full_inventory_df,
+        height=500,
+        key="full_inventory_grid", 
+        theme="alpine",
+        selection_mode='multiple',
+        show_hints=False,
+        enable_enterprise_modules=False,
+        enable_sidebar=True,
+        enable_pivot=True,
+        enable_value_aggregation=True,
+        groupable=True,
+        filterable=True
+    )
+    
+    # Show selection summary for full inventory
+    if full_inventory_table['selected_count'] > 0:
+        selected_inventory = pd.DataFrame(full_inventory_table['grid_response']['selected_rows'])
+        st.info(f"📊 Selected {full_inventory_table['selected_count']} inventory items")
+        
+        # Show summary of selected inventory
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if 'AvailableQty' in selected_inventory.columns:
+                total_available = pd.to_numeric(selected_inventory['AvailableQty'], errors='coerce').sum()
+                st.metric("📦 Total Available Qty", f"{total_available:,.0f}")
+        with col2:
+            if 'Balance' in selected_inventory.columns:
+                total_balance = pd.to_numeric(selected_inventory['Balance'], errors='coerce').sum()
+                st.metric("⚖️ Total Balance", f"{total_balance:,.0f}")
+        with col3:
+            warehouses = selected_inventory['WarehouseName'].nunique() if 'WarehouseName' in selected_inventory.columns else 0
+            st.metric("🏭 Warehouses", warehouses)
 
 def render_summary_dashboard(processed_orders, inventory_df, processing_stats=None, warehouse_performance=None):
     """
@@ -391,6 +439,8 @@ def render_summary_dashboard(processed_orders, inventory_df, processing_stats=No
     if processed_orders is None or inventory_df is None:
         st.warning("No data available for dashboard")
         return
+        
+    # Note: warehouse_performance parameter kept for compatibility
         
     # Create a copy of processed_orders to avoid modifying the original
     processed_orders = processed_orders.copy()

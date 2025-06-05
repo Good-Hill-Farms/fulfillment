@@ -53,13 +53,33 @@ class AirtableHandler:
             List[Dict[str, Any]]: List of fulfillment centers with their zones
         """
         table_name = "FulfillmentCenter"  # Use the actual table name instead of the key
-        response = requests.get(f"{self.base_url}/{table_name}", headers=self.headers)
+        url = f"{self.base_url}/{table_name}"
         
-        if response.status_code == 200:
-            data = response.json()
-            return [self._format_record(record) for record in data.get('records', [])]
-        else:
-            raise Exception(f"Failed to fetch fulfillment centers: {response.text}")
+        all_records = []
+        offset = None
+        
+        # Loop to handle pagination
+        while True:
+            # Add offset parameter if we have one from a previous request
+            params = {}
+            if offset:
+                params['offset'] = offset
+                
+            # Make the request
+            response = requests.get(url, headers=self.headers, params=params)
+            
+            if response.status_code == 200:
+                data = response.json()
+                all_records.extend([self._format_record(record) for record in data.get('records', [])])
+                
+                # Check if there are more records to fetch
+                offset = data.get('offset')
+                if not offset:
+                    break  # No more pages
+            else:
+                raise Exception(f"Failed to fetch fulfillment centers: {response.text}")
+        
+        return all_records
     
     def get_delivery_services(self, zip_prefix: Optional[str] = None) -> List[Dict[str, Any]]:
         """
@@ -74,18 +94,38 @@ class AirtableHandler:
         table_name = "DeliveryService"
         url = f"{self.base_url}/{table_name}"
         
+        # Prepare parameters
+        params = {}
+        
         # Add filter if zip_prefix is provided
         if zip_prefix:
             filter_formula = f"FIND('{zip_prefix}', {{destination_zip_short}}) = 1"
-            url += f"?filterByFormula={filter_formula}"
+            params['filterByFormula'] = filter_formula
         
-        response = requests.get(url, headers=self.headers)
+        all_records = []
+        offset = None
         
-        if response.status_code == 200:
-            data = response.json()
-            return [self._format_record(record) for record in data.get('records', [])]
-        else:
-            raise Exception(f"Failed to fetch delivery services: {response.text}")
+        # Loop to handle pagination
+        while True:
+            # Add offset parameter if we have one from a previous request
+            if offset:
+                params['offset'] = offset
+                
+            # Make the request
+            response = requests.get(url, headers=self.headers, params=params)
+            
+            if response.status_code == 200:
+                data = response.json()
+                all_records.extend([self._format_record(record) for record in data.get('records', [])])
+                
+                # Check if there are more records to fetch
+                offset = data.get('offset')
+                if not offset:
+                    break  # No more pages
+            else:
+                raise Exception(f"Failed to fetch delivery services: {response.text}")
+        
+        return all_records
     
     def get_fulfillment_zones(self) -> List[Dict[str, Any]]:
         """
@@ -95,13 +135,33 @@ class AirtableHandler:
             List[Dict[str, Any]]: List of fulfillment zones
         """
         table_name = "FulfillmentZone"  # Use the actual table name directly
-        response = requests.get(f"{self.base_url}/{table_name}", headers=self.headers)
+        url = f"{self.base_url}/{table_name}"
         
-        if response.status_code == 200:
-            data = response.json()
-            return [self._format_record(record) for record in data.get('records', [])]
-        else:
-            raise Exception(f"Failed to fetch fulfillment zones: {response.text}")
+        all_records = []
+        offset = None
+        
+        # Loop to handle pagination
+        while True:
+            # Add offset parameter if we have one from a previous request
+            params = {}
+            if offset:
+                params['offset'] = offset
+                
+            # Make the request
+            response = requests.get(url, headers=self.headers, params=params)
+            
+            if response.status_code == 200:
+                data = response.json()
+                all_records.extend([self._format_record(record) for record in data.get('records', [])])
+                
+                # Check if there are more records to fetch
+                offset = data.get('offset')
+                if not offset:
+                    break  # No more pages
+            else:
+                raise Exception(f"Failed to fetch fulfillment zones: {response.text}")
+        
+        return all_records
     
     def create_fulfillment_zone(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -302,18 +362,38 @@ class AirtableHandler:
         table_name = "SKUMapping"  # Use the actual table name directly
         url = f"{self.base_url}/{table_name}"
         
+        # Prepare parameters
+        params = {}
+        
         # Add filter if warehouse is provided
         if warehouse:
             filter_formula = f"{{warehouse}} = '{warehouse}'"
-            url += f"?filterByFormula={filter_formula}"
+            params['filterByFormula'] = filter_formula
         
-        response = requests.get(url, headers=self.headers)
+        all_records = []
+        offset = None
         
-        if response.status_code == 200:
-            data = response.json()
-            return [self._format_record(record) for record in data.get('records', [])]
-        else:
-            raise Exception(f"Failed to fetch SKU mappings: {response.text}")
+        # Loop to handle pagination
+        while True:
+            # Add offset parameter if we have one from a previous request
+            if offset:
+                params['offset'] = offset
+                
+            # Make the request
+            response = requests.get(url, headers=self.headers, params=params)
+            
+            if response.status_code == 200:
+                data = response.json()
+                all_records.extend([self._format_record(record) for record in data.get('records', [])])
+                
+                # Check if there are more records to fetch
+                offset = data.get('offset')
+                if not offset:
+                    break  # No more pages
+            else:
+                raise Exception(f"Failed to fetch SKU mappings: {response.text}")
+        
+        return all_records
     
     def create_sku_mapping(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """

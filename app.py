@@ -282,29 +282,110 @@ def main():
                 
                 # Display additional information about selected rows
                 if table_result['selected_count'] > 0:
-                    # Show selected rows summary
-                    with st.expander("Selected Rows Summary", expanded=False):
-                        selected_df = pd.DataFrame(grid_response['selected_rows'])
-                        
-                        # Quick metrics at the top
-                        col1, col2, col3, col4 = st.columns(4)
-                        with col1:
-                            st.metric("📦 Selected Items", len(selected_df))
-                        with col2:
-                            if 'ordernumber' in selected_df.columns:
-                                unique_orders = selected_df['ordernumber'].nunique()
-                                st.metric("📋 Unique Orders", unique_orders)
-                        with col3:
-                            if 'Transaction Quantity' in selected_df.columns:
-                                total_qty = pd.to_numeric(selected_df['Transaction Quantity'], errors='coerce').sum()
-                                st.metric("📊 Total Quantity", f"{total_qty:,.0f}")
-                        with col4:
-                            if 'Fulfillment Center' in selected_df.columns:
-                                unique_warehouses = selected_df['Fulfillment Center'].nunique()
-                                st.metric("🏭 Warehouses", unique_warehouses)
-                        
-                        st.markdown("---")
-                        
+                    selected_df = pd.DataFrame(grid_response['selected_rows'])
+                    
+                    # Quick metrics always visible
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("📦 Selected Items", len(selected_df))
+                    with col2:
+                        if 'ordernumber' in selected_df.columns:
+                            unique_orders = selected_df['ordernumber'].nunique()
+                            st.metric("📋 Unique Orders", unique_orders)
+                    with col3:
+                        if 'Transaction Quantity' in selected_df.columns:
+                            total_qty = pd.to_numeric(selected_df['Transaction Quantity'], errors='coerce').sum()
+                            st.metric("📊 Total Quantity", f"{total_qty:,.0f}")
+                    with col4:
+                        if 'Fulfillment Center' in selected_df.columns:
+                            unique_warehouses = selected_df['Fulfillment Center'].nunique()
+                            st.metric("🏭 Warehouses", unique_warehouses)
+                    
+                    # Staging functionality always visible
+                    st.markdown("**📋 Order Staging**")
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        if st.button("🎯 Add Selected to Staging", key="add_to_staging"):
+                            # Add selected orders to staging using boolean column approach
+                            if len(selected_df) > 0:
+                                # Find the best ID column to use for matching
+                                id_col = None
+                                for col in ['ordernumber', 'externalorderid', 'id']:
+                                    if col in selected_df.columns and col in st.session_state.processed_orders.columns:
+                                        id_col = col
+                                        break
+                                
+                                if id_col:
+                                    # Add staged column if it doesn't exist
+                                    if 'staged' not in st.session_state.processed_orders.columns:
+                                        st.session_state.processed_orders['staged'] = False
+                                    
+                                    # Convert ID columns to strings for consistent comparison
+                                    selected_df[id_col] = selected_df[id_col].astype(str)
+                                    st.session_state.processed_orders[id_col] = st.session_state.processed_orders[id_col].astype(str)
+                                    
+                                    staged_ids = selected_df[id_col].tolist()
+                                    
+                                    # Since selected_df comes from filtered display (non-staged only), 
+                                    # all selected orders should be stageable
+                                    mask = st.session_state.processed_orders[id_col].isin(staged_ids)
+                                    
+                                    # Double-check: make sure none are already staged
+                                    already_staged_mask = mask & (st.session_state.processed_orders['staged'] == True)
+                                    new_to_stage_mask = mask & (st.session_state.processed_orders['staged'] == False)
+                                    
+                                    already_staged_count = already_staged_mask.sum()
+                                    new_to_stage_count = new_to_stage_mask.sum()
+                                    
+                                    if already_staged_count > 0:
+                                        st.warning(f"⚠️ {already_staged_count} orders are already staged (skipped)")
+                                    
+                                    if new_to_stage_count > 0:
+                                        # Mark new orders as staged
+                                        st.session_state.processed_orders.loc[new_to_stage_mask, 'staged'] = True
+                                        st.session_state.processed_orders.loc[new_to_stage_mask, 'staged_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                        
+                                        # Add to staging history
+                                        st.session_state.staging_history.append({
+                                            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                            'action': 'staged',
+                                            'count': new_to_stage_count,
+                                            'orders': staged_ids
+                                        })
+                                        
+                                        st.success(f"✅ Added {new_to_stage_count} new orders to staging!")
+                                    else:
+                                        st.info("ℹ️ All selected orders are already staged.")
+                                    
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Cannot stage orders: No suitable ID column found for matching.")
+                            else:
+                                st.warning("⚠️ No orders selected for staging.")
+                    
+                    with col2:
+                        if st.session_state.processed_orders is not None and 'staged' in st.session_state.processed_orders.columns:
+                            staged_count = (st.session_state.processed_orders['staged'] == True).sum()
+                        else:
+                            staged_count = 0
+                        st.metric("📋 Orders in Staging", staged_count)
+                    
+                    with col3:
+                        if staged_count > 0:
+                            # Download staged orders using boolean column
+                            staged_orders_df = st.session_state.processed_orders[st.session_state.processed_orders['staged'] == True]
+                            staged_csv = staged_orders_df.to_csv(index=False)
+                            st.download_button(
+                                label="💾 Download Staged Orders",
+                                data=staged_csv,
+                                file_name=f"staged_orders_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                                mime="text/csv",
+                                key="download_staged_from_orders_tab"
+                            )
+                    
+                    # Detailed information in collapsible expander
+                    with st.expander("📋 Detailed Selection Summary", expanded=False):
                         # Order ID Summary
                         if 'ordernumber' in selected_df.columns:
                             st.write("**📋 Order IDs in Selection:**")
@@ -352,91 +433,6 @@ def main():
                                         unique_issues = issues[col].value_counts().head(3)
                                         for issue, count in unique_issues.items():
                                             st.write(f"  - {issue}: {count} items")
-                        
-                        # Staging functionality
-                        st.markdown("---")
-                        st.markdown("**📋 Order Staging**")
-                        
-                        col1, col2, col3 = st.columns(3)
-                        
-                        with col1:
-                            if st.button("🎯 Add Selected to Staging", key="add_to_staging"):
-                                # Add selected orders to staging using boolean column approach
-                                if len(selected_df) > 0:
-                                    # Find the best ID column to use for matching
-                                    id_col = None
-                                    for col in ['ordernumber', 'externalorderid', 'id']:
-                                        if col in selected_df.columns and col in st.session_state.processed_orders.columns:
-                                            id_col = col
-                                            break
-                                    
-                                    if id_col:
-                                        # Add staged column if it doesn't exist
-                                        if 'staged' not in st.session_state.processed_orders.columns:
-                                            st.session_state.processed_orders['staged'] = False
-                                        
-                                        # Convert ID columns to strings for consistent comparison
-                                        selected_df[id_col] = selected_df[id_col].astype(str)
-                                        st.session_state.processed_orders[id_col] = st.session_state.processed_orders[id_col].astype(str)
-                                        
-                                        staged_ids = selected_df[id_col].tolist()
-                                        
-                                        # Since selected_df comes from filtered display (non-staged only), 
-                                        # all selected orders should be stageable
-                                        mask = st.session_state.processed_orders[id_col].isin(staged_ids)
-                                        
-                                        # Double-check: make sure none are already staged
-                                        already_staged_mask = mask & (st.session_state.processed_orders['staged'] == True)
-                                        new_to_stage_mask = mask & (st.session_state.processed_orders['staged'] == False)
-                                        
-                                        already_staged_count = already_staged_mask.sum()
-                                        new_to_stage_count = new_to_stage_mask.sum()
-                                        
-                                        if already_staged_count > 0:
-                                            st.warning(f"⚠️ {already_staged_count} orders are already staged (skipped)")
-                                        
-                                        if new_to_stage_count > 0:
-                                            # Mark new orders as staged
-                                            st.session_state.processed_orders.loc[new_to_stage_mask, 'staged'] = True
-                                            st.session_state.processed_orders.loc[new_to_stage_mask, 'staged_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                                            
-                                            # Add to staging history
-                                            st.session_state.staging_history.append({
-                                                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                                                'action': 'staged',
-                                                'count': new_to_stage_count,
-                                                'orders': staged_ids
-                                            })
-                                            
-                                            st.success(f"✅ Added {new_to_stage_count} new orders to staging!")
-                                        else:
-                                            st.info("ℹ️ All selected orders are already staged.")
-                                        
-                                        st.rerun()
-                                    else:
-                                        st.error("❌ Cannot stage orders: No suitable ID column found for matching.")
-                                else:
-                                    st.warning("⚠️ No orders selected for staging.")
-                        
-                        with col2:
-                            if st.session_state.processed_orders is not None and 'staged' in st.session_state.processed_orders.columns:
-                                staged_count = (st.session_state.processed_orders['staged'] == True).sum()
-                            else:
-                                staged_count = 0
-                            st.metric("📋 Orders in Staging", staged_count)
-                        
-                        with col3:
-                            if staged_count > 0:
-                                # Download staged orders using boolean column
-                                staged_orders_df = st.session_state.processed_orders[st.session_state.processed_orders['staged'] == True]
-                                staged_csv = staged_orders_df.to_csv(index=False)
-                                st.download_button(
-                                    label="💾 Download Staged Orders",
-                                    data=staged_csv,
-                                    file_name=f"staged_orders_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                                    mime="text/csv",
-                                    key="download_staged_from_orders_tab"
-                                )
                 
                 # Health & Insights section for Orders tab
                 if st.session_state.get('processing_stats'):
@@ -783,35 +779,32 @@ def main():
                 st.subheader("🔄 SKU Mappings Management")
                 st.info("View, add, edit, or remove SKU mappings from Airtable.")
                 
-                # Fetch SKU mappings from Airtable
+                # Fetch SKU mappings and fulfillment centers from Airtable
                 try:
                     with st.spinner("Loading SKU mappings from Airtable..."):
-                        all_mappings = airtable_handler.get_sku_mappings()
+                        sku_mappings = airtable_handler.get_sku_mappings()
+                        fulfillment_centers = airtable_handler.get_fulfillment_centers()
                         
-                        if all_mappings:
+                        # Create a lookup for fulfillment center IDs to names
+                        fc_lookup = {fc.get("airtable_id"): fc.get("name") for fc in fulfillment_centers}
+                        
+                        if sku_mappings:
                             # Convert to DataFrame for display
                             mappings_data = []
-                            for m in all_mappings:
-                                if not isinstance(m, dict):
-                                    # Skip if not a dictionary
-                                    continue
-                                
-                                # Safely extract data with proper type checking
+                            
+                            for m in sku_mappings:
+                                # Create a new entry with reordered fields
                                 mapping_entry = {
-                                    "airtable_id": m.get("airtable_id", ""),  # Keep for reference but hide from display
+                                    "airtable_id": m.get("airtable_id", ""),
                                     "order_sku": m.get("order_sku", ""),
                                     "picklist_sku": m.get("picklist_sku", "")
                                 }
-                                
+                            
                                 # Handle fulfillment_center field with proper type checking
                                 fc_value = m.get("fulfillment_center", [])
                                 if isinstance(fc_value, list):
-                                    fc_names = []
-                                    for fc in fc_value:
-                                        if isinstance(fc, dict):
-                                            fc_names.append(fc.get("name", str(fc)))
-                                        else:
-                                            fc_names.append(str(fc))
+                                    # Convert IDs to names using the lookup dictionary
+                                    fc_names = [fc_lookup.get(fc_id, fc_id) for fc_id in fc_value]
                                     mapping_entry["fulfillment_center"] = ", ".join(fc_names)
                                 else:
                                     mapping_entry["fulfillment_center"] = str(fc_value) if fc_value else ""
