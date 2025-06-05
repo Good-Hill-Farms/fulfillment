@@ -29,6 +29,144 @@ class DataProcessor:
         self._recalculation_log = []
         # Track which SKUs were affected by recalculation
         self._recalculated_skus = set()
+        # Track warehouse transformations for debugging
+        self._warehouse_transformations = []
+
+    def normalize_warehouse_name(self, warehouse_name, log_transformations=True):
+        """
+        Centralized warehouse name normalization function that handles all variations
+        and provides backward compatibility with existing data.
+        
+        This function:
+        - Accepts any warehouse name variation (moorpark, Moorpark, CA-Moorpark-93021, oxnard, Oxnard, etc.)
+        - Returns standardized names ("Oxnard" or "Wheeling")
+        - Handles ZIP code mapping (93021 -> Oxnard operations)
+        - Logs transformations for debugging
+        - Is backward compatible with existing data
+        
+        Args:
+            warehouse_name (str): The original warehouse name to normalize
+            log_transformations (bool): Whether to log transformations for debugging
+            
+        Returns:
+            str: Standardized warehouse name ("Oxnard" or "Wheeling")
+        """
+        if not warehouse_name or pd.isna(warehouse_name):
+            standardized_name = "Oxnard"  # Default to Oxnard for missing values
+            if log_transformations:
+                transformation = {
+                    "original": warehouse_name,
+                    "standardized": standardized_name,
+                    "reason": "default_for_missing_value"
+                }
+                self._warehouse_transformations.append(transformation)
+                logger.debug(f"Warehouse normalization: {warehouse_name} -> {standardized_name} (default for missing value)")
+            return standardized_name
+        
+        # Convert to string and normalize case for comparison
+        original_name = str(warehouse_name)
+        normalized_input = original_name.lower().strip()
+        
+        # Comprehensive mapping for Oxnard (includes legacy Moorpark references)
+        oxnard_variations = [
+            # Current Oxnard variations
+            "oxnard", "ca-oxnard", "oxnard-ca", "california-oxnard",
+            # Legacy Moorpark variations (93021 ZIP code area now operates as Oxnard)
+            "moorpark", "ca-moorpark", "moorpark-ca", "california-moorpark",
+            # ZIP code based variations
+            "93021", "93030", "ca-93021", "ca-93030",
+            # Full format variations from CSV files
+            "ca-moorpark-93021", "ca-oxnard-93030", "ca-oxnard-93021",
+            # State-based variations
+            "california", "ca", "west", "west-coast"
+        ]
+        
+        # Comprehensive mapping for Wheeling
+        wheeling_variations = [
+            # Current Wheeling variations
+            "wheeling", "il-wheeling", "wheeling-il", "illinois-wheeling",
+            # ZIP code based variations
+            "60090", "il-60090",
+            # Full format variations from CSV files
+            "il-wheeling-60090",
+            # State-based variations
+            "illinois", "il", "midwest", "central"
+        ]
+        
+        # Check for partial matches in the normalized input
+        # This handles cases like "CA-Moorpark-93021" where we need to find substrings
+        def contains_variation(input_str, variations):
+            return any(variation in input_str for variation in variations)
+        
+        # Determine standardized warehouse name
+        if contains_variation(normalized_input, oxnard_variations):
+            standardized_name = "Oxnard"
+            if "moorpark" in normalized_input or "93021" in normalized_input:
+                reason = "legacy_moorpark_to_oxnard"
+            elif "93030" in normalized_input:
+                reason = "zip_code_93030_to_oxnard"
+            else:
+                reason = "oxnard_variation"
+        elif contains_variation(normalized_input, wheeling_variations):
+            standardized_name = "Wheeling"
+            if "60090" in normalized_input:
+                reason = "zip_code_60090_to_wheeling"
+            else:
+                reason = "wheeling_variation"
+        else:
+            # If no match found, try to infer from first character or default to Oxnard
+            if normalized_input.startswith(('ca', 'c')) or any(char in normalized_input for char in ['9']):
+                standardized_name = "Oxnard"
+                reason = "inferred_california_to_oxnard"
+            elif normalized_input.startswith(('il', 'i')) or any(char in normalized_input for char in ['6']):
+                standardized_name = "Wheeling"
+                reason = "inferred_illinois_to_wheeling"
+            else:
+                standardized_name = "Oxnard"  # Default fallback
+                reason = "default_fallback_to_oxnard"
+        
+        # Log transformation if requested and there was a change
+        if log_transformations and original_name != standardized_name:
+            transformation = {
+                "original": original_name,
+                "standardized": standardized_name,
+                "reason": reason
+            }
+            self._warehouse_transformations.append(transformation)
+            logger.debug(f"Warehouse normalization: {original_name} -> {standardized_name} ({reason})")
+        
+        return standardized_name
+    
+    def get_warehouse_transformations_summary(self):
+        """
+        Get a summary of all warehouse transformations performed during processing.
+        
+        Returns:
+            pandas.DataFrame: DataFrame containing transformation details
+        """
+        if not self._warehouse_transformations:
+            return pd.DataFrame(columns=["original", "standardized", "reason", "count"])
+        
+        # Convert to DataFrame and group by transformation
+        df = pd.DataFrame(self._warehouse_transformations)
+        summary = df.groupby(["original", "standardized", "reason"]).size().reset_index(name="count")
+        summary = summary.sort_values(["count", "original"], ascending=[False, True])
+        
+        return summary
+
+    def _normalize_warehouse_key(self, sku, warehouse):
+        """
+        Helper function to normalize warehouse keys for inventory comparison.
+        
+        Args:
+            sku (str): The SKU part of the key
+            warehouse (str): The warehouse part of the key
+            
+        Returns:
+            str: Normalized key in format "SKU|NormalizedWarehouse"
+        """
+        normalized_warehouse = self.normalize_warehouse_name(warehouse, log_transformations=False)
+        return f"{sku}|{normalized_warehouse}"
 
     def load_orders(self, file):
         """
@@ -405,11 +543,9 @@ class DataProcessor:
                 if df.columns[0] == "WarehouseName":
                     logger.info("Found WarehouseName column in first position")
 
-                    # Create a FulfillmentCenter column based on the warehouse name
+                    # Create a FulfillmentCenter column based on the warehouse name using centralized normalization
                     df["FulfillmentCenter"] = df["WarehouseName"].apply(
-                        lambda x: "Oxnard"
-                        if "CA-" in str(x) or "Moorpark" in str(x) or "Oxnard" in str(x)
-                        else ("Wheeling" if "IL-" in str(x) or "Wheeling" in str(x) else x)
+                        lambda x: self.normalize_warehouse_name(x, log_transformations=True)
                     )
                     logger.info("Created FulfillmentCenter column from WarehouseName")
             else:
@@ -461,15 +597,9 @@ class DataProcessor:
                 # Fill any missing warehouse names with 'Oxnard' as default
                 df["WarehouseName"] = df["WarehouseName"].fillna("Oxnard")
 
-                # Create a FulfillmentCenter column for standardized names
+                # Create a FulfillmentCenter column for standardized names using centralized normalization
                 df["FulfillmentCenter"] = df["WarehouseName"].apply(
-                    lambda x: "Oxnard"
-                    if "moorpark" in str(x).lower()
-                    or "oxnard" in str(x).lower()
-                    or "ca-" in str(x).lower()
-                    else (
-                        "Wheeling" if "wheeling" in str(x).lower() or "il-" in str(x).lower() else x
-                    )
+                    lambda x: self.normalize_warehouse_name(x, log_transformations=True)
                 )
 
                 # Keep the original WarehouseName for reference
@@ -635,12 +765,8 @@ class DataProcessor:
         if inventory_df is None or inventory_df.empty:
             return 0
 
-        # Normalize fulfillment center key
-        fc_key = fc_key.lower()
-        if fc_key == "moorpark" or fc_key == "oxnard":
-            fc_key = "Oxnard"  # Standardize to Oxnard (Moorpark is the old name)
-        elif fc_key == "wheeling":
-            fc_key = "Wheeling"
+        # Normalize fulfillment center key using centralized function
+        fc_key = self.normalize_warehouse_name(fc_key, log_transformations=False)
 
         # Find the SKU in the inventory for the specified fulfillment center
         # First, determine which columns to use for SKU and quantity
@@ -1028,14 +1154,23 @@ class DataProcessor:
                         if "picklist_sku" in data:
                             inv_to_shopify[data["picklist_sku"]] = shopify_sku
 
-        # First add all SKUs from running_balances
-        for sku, balance in running_balances.items():
-            # Try to find the warehouse for this SKU
-            warehouse = "Unknown"
-            if warehouse_column and sku_column:
-                sku_rows = inventory_df[inventory_df[sku_column] == sku]
-                if not sku_rows.empty and warehouse_column in sku_rows.columns:
-                    warehouse = sku_rows.iloc[0][warehouse_column]
+        # Process all inventory items directly from inventory_df to ensure we get all warehouses
+        processed_items = set()  # Track processed (sku, warehouse) combinations
+        
+        # First process items from running_balances (items that were affected by orders)
+        for composite_key, balance in running_balances.items():
+            if "|" in composite_key:
+                # New composite key format: sku|warehouse
+                sku, warehouse = composite_key.split("|", 1)
+            else:
+                # Legacy format: just sku - need to find warehouse from inventory
+                sku = composite_key
+                warehouse = "Unknown"
+                if warehouse_column and sku_column:
+                    sku_rows = inventory_df[inventory_df[sku_column] == sku]
+                    if not sku_rows.empty and warehouse_column in sku_rows.columns:
+                        raw_warehouse = sku_rows.iloc[0][warehouse_column]
+                        warehouse = self.normalize_warehouse_name(raw_warehouse, log_transformations=False)
 
             # Try to find the Shopify SKU for this inventory SKU
             shopify_sku = inv_to_shopify.get(sku, "")
@@ -1050,17 +1185,19 @@ class DataProcessor:
                     "Is Bundle Component": shopify_sku.startswith("m.") if shopify_sku else False,
                 }
             )
+            
+            # Mark this combination as processed
+            processed_items.add((sku, warehouse))
 
-        # Now add any SKUs from inventory that weren't in running_balances
-        if sku_column:
+        # Now add any SKUs from inventory that weren't processed above
+        if sku_column and warehouse_column:
             for _, row in inventory_df.iterrows():
                 sku = row[sku_column]
-                if sku not in running_balances:
-                    warehouse = (
-                        row[warehouse_column]
-                        if warehouse_column and warehouse_column in row
-                        else "Unknown"
-                    )
+                raw_warehouse = row[warehouse_column] if warehouse_column in row else "Unknown"
+                warehouse = self.normalize_warehouse_name(raw_warehouse, log_transformations=False) if raw_warehouse != "Unknown" else "Unknown"
+                
+                # Skip if this (sku, warehouse) combination was already processed
+                if (sku, warehouse) not in processed_items:
                     shopify_sku = inv_to_shopify.get(sku, "")
 
                     # Get the balance from inventory - use only the main Balance column (columns 1-11)
@@ -1176,8 +1313,59 @@ class DataProcessor:
             mappings_dict = sku_mappings
             logger.info("Using old format SKU mappings")
 
-        # Initialize a dictionary to track running balances for each SKU
+        # Initialize a fresh dictionary to track running balances for each SKU
+        # Always create a new copy to avoid state persistence across calls
         running_balances = {}
+        
+        # Store initial inventory state for before/after comparison
+        initial_inventory_state = {}
+        if inventory_df is not None and not inventory_df.empty:
+            # Find the SKU column with case-insensitive matching
+            sku_column = None
+            for col in inventory_df.columns:
+                if col.lower() == 'sku':
+                    sku_column = col
+                    break
+            
+            if sku_column:
+                # Store initial balance for each SKU
+                for _, row in inventory_df.iterrows():
+                    sku = str(row[sku_column]).strip()
+                    warehouse = None
+                    if 'WarehouseName' in row:
+                        warehouse = str(row['WarehouseName']).strip()
+                    
+                    # Try to get balance from different possible column names
+                    balance = 0
+                    if 'Balance' in row and pd.notna(row['Balance']):
+                        try:
+                            balance = float(row['Balance'])
+                        except (ValueError, TypeError):
+                            pass
+                    elif 'AvailableQty' in row and pd.notna(row['AvailableQty']):
+                        try:
+                            balance = float(row['AvailableQty'])
+                        except (ValueError, TypeError):
+                            pass
+                    
+                    # Use composite key format: SKU|warehouse to track inventory per warehouse
+                    # This ensures we don't overwrite inventory from different warehouses
+                    normalized_warehouse = self.normalize_warehouse_name(warehouse, log_transformations=False) if warehouse else "Unknown"
+                    composite_key = f"{sku}|{normalized_warehouse}"
+                    
+                    initial_inventory_state[composite_key] = {
+                        'balance': balance,
+                        'warehouse': normalized_warehouse,
+                        'sku': sku
+                    }
+                    
+                    # Initialize running balances with composite key
+                    running_balances[composite_key] = balance
+                
+                logger.info(f"Initialized initial inventory state with {len(initial_inventory_state)} entries")
+                # Log a few sample entries
+                sample_items = list(initial_inventory_state.items())[:5]
+                logger.info(f"Sample initial inventory: {sample_items}")
 
         # If we have affected_skus, initialize their balances from inventory_df
         # This allows us to only recalculate the affected SKUs
@@ -1189,36 +1377,35 @@ class DataProcessor:
                 # Use 'Sku' column (not 'SKU') based on the inventory data structure
                 sku_inventory = inventory_df[inventory_df["Sku"] == sku]
                 if not sku_inventory.empty:
-                    # Use the Balance column if available, otherwise AvailableQty
-                    if "Balance" in sku_inventory.columns:
-                        running_balances[sku] = sku_inventory["Balance"].iloc[0]
+                    # Process each warehouse separately to maintain composite keys
+                    for _, row in sku_inventory.iterrows():
+                        warehouse = row.get("WarehouseName", "Unknown")
+                        normalized_warehouse = self.normalize_warehouse_name(warehouse, log_transformations=False) if warehouse else "Unknown"
+                        composite_key = f"{sku}|{normalized_warehouse}"
+                        
+                        # Use the Balance column if available, otherwise AvailableQty
+                        balance = 0.0
+                        if "Balance" in row and pd.notna(row["Balance"]):
+                            balance = float(row["Balance"])
+                        elif "AvailableQty" in row and pd.notna(row["AvailableQty"]):
+                            balance = float(row["AvailableQty"])
+                        
+                        running_balances[composite_key] = balance
+                        
+                        # Also update initial_inventory_state for consistency
+                        initial_inventory_state[composite_key] = {
+                            'balance': balance,
+                            'warehouse': normalized_warehouse,
+                            'sku': sku
+                        }
+                        
                         # Log the initial balance for this SKU
                         self._recalculation_log.append({
                             "timestamp": pd.Timestamp.now(),
                             "sku": sku,
                             "operation": "initial_balance",
-                            "value": float(sku_inventory["Balance"].iloc[0]),
-                            "warehouse": sku_inventory["WarehouseName"].iloc[0] if "WarehouseName" in sku_inventory.columns else "Unknown"
-                        })
-                    elif "AvailableQty" in sku_inventory.columns:
-                        running_balances[sku] = sku_inventory["AvailableQty"].iloc[0]
-                        # Log the initial balance for this SKU
-                        self._recalculation_log.append({
-                            "timestamp": pd.Timestamp.now(),
-                            "sku": sku,
-                            "operation": "initial_balance",
-                            "value": float(sku_inventory["AvailableQty"].iloc[0]),
-                            "warehouse": sku_inventory["WarehouseName"].iloc[0] if "WarehouseName" in sku_inventory.columns else "Unknown"
-                        })
-                    else:
-                        running_balances[sku] = 0.0
-                        # Log the initial balance for this SKU
-                        self._recalculation_log.append({
-                            "timestamp": pd.Timestamp.now(),
-                            "sku": sku,
-                            "operation": "initial_balance",
-                            "value": 0.0,
-                            "warehouse": "Unknown"
+                            "value": balance,
+                            "warehouse": normalized_warehouse
                         })
 
         # Initialize a list to track inventory shortages
@@ -1330,8 +1517,8 @@ class DataProcessor:
 
         # Rename columns to match expected format if needed
         column_mapping = {
-            "order id": "externalorderid",
-            "Name": "ordernumber",
+            "Name": "externalorderid",  # Name contains order reference like #71184
+            "order id": "ordernumber",  # order id contains the numeric ID
             "Customer: First Name": "CustomerFirstName",
             "Customer: Last Name": "customerLastname",
             "Email": "customeremail",
@@ -1406,22 +1593,11 @@ class DataProcessor:
             warehouse_sku = shopify_sku
 
             # Convert fulfillment center name to match the keys in sku_mappings
-            # Standardize fulfillment center names to match mapping keys
+            # Use centralized warehouse normalization function
             if fulfillment_center:
-                if (
-                    "moorpark" in fulfillment_center.lower()
-                    or "oxnard" in fulfillment_center.lower()
-                    or "ca" in fulfillment_center.lower()
-                ):
-                    fc_key = "Oxnard"
-                elif "wheeling" in fulfillment_center.lower() or "il" in fulfillment_center.lower():
-                    fc_key = "Wheeling"
-                else:
-                    # Default to Oxnard if unknown
-                    fc_key = "Oxnard"
-                    logger.warning(
-                        f"Warning: Unknown fulfillment center '{fulfillment_center}', defaulting to Oxnard"
-                    )
+                fc_key = self.normalize_warehouse_name(fulfillment_center, log_transformations=True)
+            else:
+                fc_key = "Oxnard"  # Default for missing fulfillment center
 
             # Skip this order if selective recalculation is enabled and this order doesn't contain affected SKUs
             if affected_skus is not None and shopify_sku is not None:
@@ -1530,7 +1706,15 @@ class DataProcessor:
             # Copy existing fields from the order row
             for field in output_columns:
                 if field in row and pd.notna(row[field]):
-                    order_data[field] = row[field]
+                    if field == "placeddate":
+                        # Format date to match expected format (M/D/YYYY)
+                        try:
+                            date_value = pd.to_datetime(row[field])
+                            order_data[field] = date_value.strftime("%-m/%-d/%Y")  # Format as M/D/YYYY
+                        except:
+                            order_data[field] = row[field]  # Keep original if conversion fails
+                    else:
+                        order_data[field] = row[field]
 
             # Add SKU information
             order_data["shopsku"] = shopify_sku
@@ -1702,8 +1886,11 @@ class DataProcessor:
                     component_order_data["Total Pick Weight"] = component_weight
                     component_order_data["quantity"] = component_qty
 
-                    # Get the current running balance for this SKU
-                    if component_sku in running_balances:
+                    # Get the current running balance for this SKU using composite key
+                    component_composite_key = f"{component_sku}|{fc_key.capitalize()}"
+                    if component_composite_key in running_balances:
+                        current_balance = running_balances[component_composite_key]
+                    elif component_sku in running_balances:  # Fallback to simple key
                         current_balance = running_balances[component_sku]
                     else:
                         # Look up the balance in inventory
@@ -1803,8 +1990,8 @@ class DataProcessor:
                     ending_balance = max(0, current_balance - transaction_quantity)
                     component_order_data["Ending Balance"] = ending_balance
 
-                    # Update the running balance for this component
-                    running_balances[component_sku] = ending_balance
+                    # Update the running balance for this component using composite key
+                    running_balances[component_composite_key] = ending_balance
 
                     # Add the component order to the output DataFrame
                     output_df = pd.concat(
@@ -1819,7 +2006,10 @@ class DataProcessor:
                     order_data["Issues"] = issue
 
                 # Get the current running balance for this SKU or use the inventory balance if not yet tracked
-                if inventory_sku in running_balances:
+                inventory_composite_key = f"{inventory_sku}|{fc_key.capitalize()}"
+                if inventory_composite_key in running_balances:
+                    current_balance = running_balances[inventory_composite_key]
+                elif inventory_sku in running_balances:  # Fallback to simple key
                     current_balance = running_balances[inventory_sku]
                 else:
                     current_balance = inventory_balance
@@ -1923,8 +2113,8 @@ class DataProcessor:
                 ending_balance = max(0, current_balance - transaction_quantity)
                 order_data["Ending Balance"] = ending_balance
 
-                # Update the running balance for this SKU
-                running_balances[inventory_sku] = ending_balance
+                # Update the running balance for this SKU using composite key
+                running_balances[inventory_composite_key] = ending_balance
                 
                 # Track this SKU as recalculated
                 self._recalculated_skus.add(inventory_sku)
@@ -1974,6 +2164,13 @@ class DataProcessor:
         recalculation_log_df = pd.DataFrame(self._recalculation_log) if self._recalculation_log else pd.DataFrame()
         
         # Return the processed orders, inventory summary, both shortage summaries, processed order IDs, and recalculation log
+        # Generate inventory comparison if initial state was captured
+        inventory_comparison = None
+        if initial_inventory_state:
+            inventory_comparison = self.generate_inventory_comparison(
+                initial_inventory_state, running_balances, inventory_df, sku_mappings
+            )
+            
         return {
             "orders": output_df[
                 output_columns
@@ -1983,8 +2180,341 @@ class DataProcessor:
             "grouped_shortage_summary": grouped_shortage_summary,
             "processed_order_ids": list(processed_order_ids) if affected_skus else None,
             "recalculation_log": recalculation_log_df,
-            "recalculated_skus": list(self._recalculated_skus)
+            "recalculated_skus": list(self._recalculated_skus),
+            "inventory_comparison": inventory_comparison
         }
+
+    def generate_inventory_comparison(self, initial_inventory_state, current_balances, inventory_df, sku_mappings=None):
+        """
+        Generate a comparison of inventory levels before and after order processing.
+        
+        Args:
+            initial_inventory_state (dict): Dictionary of SKU to initial balance before processing
+            current_balances (dict): Dictionary of SKU to current balance after processing
+            inventory_df (DataFrame): Original inventory dataframe
+            sku_mappings (dict, optional): SKU mappings dictionary. Defaults to None.
+            
+        Returns:
+            DataFrame: Comparison of inventory levels before and after processing
+        """
+        import pandas as pd
+        
+        # Find the SKU column with case-insensitive matching
+        sku_column = None
+        for col in inventory_df.columns:
+            if col.lower() == 'sku':
+                sku_column = col
+                break
+        
+        if not sku_column:
+            logger.warning("Could not find SKU column in inventory dataframe")
+            return pd.DataFrame()
+        
+        # Create a list to hold comparison data
+        comparison_data = []
+        
+        # Log the initial inventory state and current balances
+        logger.info(f"Initial inventory state has {len(initial_inventory_state)} entries")
+        logger.info(f"Current balances has {len(current_balances)} entries")
+        
+        # Handle new dictionary format with composite keys (sku|warehouse)
+        normalized_initial_state = {}
+        for key, data in initial_inventory_state.items():
+            if isinstance(data, dict) and 'balance' in data:
+                # New format: data contains balance and warehouse
+                normalized_initial_state[key] = data['balance']
+            else:
+                # Old format: data is just the balance
+                normalized_initial_state[key] = data
+            
+        # Current balances should already be in the correct format (composite_key -> balance)
+        normalized_current_balances = current_balances.copy()
+        
+        # Process all inventory items from the inventory dataframe to ensure we capture all warehouses
+        all_inventory_items = set()
+        if sku_column:
+            for _, row in inventory_df.iterrows():
+                sku = row[sku_column]
+                if "WarehouseName" in row:
+                    warehouse_name = str(row["WarehouseName"])
+                    normalized_warehouse = self.normalize_warehouse_name(warehouse_name, log_transformations=False)
+                    composite_key = f"{sku}|{normalized_warehouse}"
+                    all_inventory_items.add(composite_key)
+                    
+                    # If not in initial state, add it with inventory balance
+                    if composite_key not in normalized_initial_state:
+                        balance = 0
+                        if "Balance" in row and pd.notna(row["Balance"]):
+                            try:
+                                balance = float(row["Balance"])
+                            except (ValueError, TypeError):
+                                pass
+                        elif "AvailableQty" in row and pd.notna(row["AvailableQty"]):
+                            try:
+                                balance = float(row["AvailableQty"])
+                            except (ValueError, TypeError):
+                                pass
+                        normalized_initial_state[composite_key] = balance
+        
+        # Combine all keys from initial state, current balances, and inventory items
+        initial_skus = set(normalized_initial_state.keys())
+        current_skus = set(normalized_current_balances.keys())
+        all_keys = initial_skus.union(current_skus).union(all_inventory_items)
+        
+        logger.info(f"Processing comparison for {len(all_keys)} unique SKU-warehouse combinations")
+        
+        # Create reverse mapping from inventory SKU to Shopify SKU
+        shopify_sku_map = {}
+        if sku_mappings and isinstance(sku_mappings, dict):
+            # Handle both old and new format of sku_mappings
+            mappings_dict = sku_mappings.get("mappings", sku_mappings)
+            
+            # Flatten all mappings from different fulfillment centers
+            for fc, fc_data in mappings_dict.items():
+                if isinstance(fc_data, dict) and "all_skus" in fc_data:
+                    # New format: fc -> {all_skus: {shopify_sku: {picklist_sku: inventory_sku}}}
+                    all_skus = fc_data["all_skus"]
+                    for shopify_sku, sku_data in all_skus.items():
+                        if isinstance(sku_data, dict) and "picklist_sku" in sku_data:
+                            inventory_sku = sku_data["picklist_sku"]
+                            shopify_sku_map[inventory_sku] = shopify_sku
+                elif isinstance(fc_data, dict):
+                    # Legacy format: fc -> {shopify_sku: inventory_sku}
+                    for shopify_sku, inventory_sku in fc_data.items():
+                        # Only use inventory_sku as a key if it's hashable (string, int, etc.)
+                        if isinstance(inventory_sku, (str, int, float, bool, tuple)):
+                            shopify_sku_map[inventory_sku] = shopify_sku
+                        elif isinstance(inventory_sku, dict) and "picklist_sku" in inventory_sku:
+                            # Handle case where inventory_sku is a dict with picklist_sku
+                            picklist_sku = inventory_sku["picklist_sku"]
+                            shopify_sku_map[picklist_sku] = shopify_sku
+                        else:
+                            logger.warning(f"Skipping unhashable inventory SKU mapping: {type(inventory_sku)} for Shopify SKU: {shopify_sku}")
+            
+        
+        # Get all bundle component SKUs if available
+        bundle_components = set()
+        if sku_mappings and isinstance(sku_mappings, dict) and "bundle_info" in sku_mappings:
+            bundle_info = sku_mappings["bundle_info"]
+            for fc, bundles in bundle_info.items():
+                for _, components in bundles.items():
+                    for component in components:
+                        if "sku" in component:
+                            bundle_components.add(component["sku"])
+                        elif "component_sku" in component:
+                            bundle_components.add(component["component_sku"])
+        
+        # Process each normalized key
+        for composite_key in all_keys:
+            # Extract SKU and warehouse from composite key
+            if "|" in composite_key:
+                sku, warehouse_display = composite_key.split("|", 1)
+            else:
+                # Legacy format: just SKU
+                sku = composite_key
+                warehouse_display = "Unknown"
+                # Try to find warehouse from inventory data
+                sku_rows = inventory_df[inventory_df[sku_column] == sku]
+                if not sku_rows.empty and "WarehouseName" in sku_rows.columns:
+                    warehouse_name = str(sku_rows.iloc[0]["WarehouseName"])
+                    warehouse_display = self.normalize_warehouse_name(warehouse_name, log_transformations=False)
+            
+            # Get Shopify SKU if available
+            shopify_sku = shopify_sku_map.get(sku, "")
+            
+            # Check if this SKU is used in bundles
+            is_used_in_bundle = sku in bundle_components
+            
+            # Get initial balance from normalized dictionary using composite key
+            initial_balance = normalized_initial_state.get(composite_key, 0)
+            
+            # If still not found, look for this SKU+warehouse combination in the inventory dataframe
+            if initial_balance == 0:
+                sku_rows = inventory_df[inventory_df[sku_column] == sku]
+                if not sku_rows.empty:
+                    # Filter by warehouse if we have warehouse info
+                    if warehouse_display != "Unknown" and "WarehouseName" in sku_rows.columns:
+                        warehouse_rows = sku_rows[sku_rows["WarehouseName"].apply(
+                            lambda x: self.normalize_warehouse_name(str(x), log_transformations=False) == warehouse_display
+                        )]
+                        if not warehouse_rows.empty:
+                            row = warehouse_rows.iloc[0]
+                        else:
+                            row = sku_rows.iloc[0]  # Fallback to first match
+                    else:
+                        row = sku_rows.iloc[0]  # Take first match
+                    
+                    # Use Balance column if available, otherwise use AvailableQty
+                    if "Balance" in row and pd.notna(row["Balance"]):
+                        try:
+                            initial_balance = float(row["Balance"])
+                        except (ValueError, TypeError):
+                            pass
+                    elif "AvailableQty" in row and pd.notna(row["AvailableQty"]):
+                        try:
+                            initial_balance = float(row["AvailableQty"])
+                        except (ValueError, TypeError):
+                            pass
+            
+            # Get current balance from normalized dictionary using composite key
+            current_balance = normalized_current_balances.get(composite_key, initial_balance)
+            
+            # Calculate difference
+            difference = current_balance - initial_balance
+            
+            # Only include items with actual changes or significant balances
+            # This makes the comparison report more useful by filtering out unchanged items
+            if abs(difference) > 0.001 or initial_balance > 0 or current_balance > 0:
+                comparison_data.append({
+                    "SKU": sku,
+                    "Shopify SKU": shopify_sku,
+                    "Warehouse": warehouse_display,
+                    "Initial Balance": initial_balance,
+                    "Current Balance": current_balance,
+                    "Difference": difference,
+                    "Is Used In Bundle": is_used_in_bundle
+                })
+        
+        # Convert to DataFrame
+        comparison_df = pd.DataFrame(comparison_data)
+        
+        # Sort by absolute difference (descending) to show items with biggest changes first
+        if not comparison_df.empty:
+            comparison_df['abs_difference'] = comparison_df['Difference'].abs()
+            comparison_df = comparison_df.sort_values(
+                by=["abs_difference", "Is Used In Bundle"], 
+                ascending=[False, False]
+            ).drop('abs_difference', axis=1)
+        
+        return comparison_df
+
+    def calculate_processing_stats(self, processed_orders, inventory_summary, shortage_summary):
+        """
+        Calculate comprehensive processing statistics for decision making.
+        
+        Args:
+            processed_orders: DataFrame of processed orders
+            inventory_summary: DataFrame of inventory summary
+            shortage_summary: DataFrame of shortage summary
+            
+        Returns:
+            dict: Dictionary containing various processing statistics
+        """
+        stats = {}
+        
+        if processed_orders is not None and not processed_orders.empty:
+            # Order statistics
+            stats['total_orders'] = len(processed_orders['ordernumber'].unique()) if 'ordernumber' in processed_orders.columns else 0
+            stats['total_line_items'] = len(processed_orders)
+            stats['unique_skus'] = len(processed_orders['sku'].unique()) if 'sku' in processed_orders.columns else 0
+            
+            # Fulfillment center distribution
+            if 'Fulfillment Center' in processed_orders.columns:
+                fc_dist = processed_orders['Fulfillment Center'].value_counts().to_dict()
+                stats['fulfillment_center_distribution'] = fc_dist
+                stats['primary_fulfillment_center'] = max(fc_dist.items(), key=lambda x: x[1])[0] if fc_dist else "Unknown"
+            
+            # Issues and shortages
+            if 'Issues' in processed_orders.columns:
+                stats['items_with_issues'] = len(processed_orders[processed_orders['Issues'] != ""])
+                stats['issue_rate'] = round((stats['items_with_issues'] / len(processed_orders)) * 100, 2)
+            
+            # Quantity analysis
+            if 'Transaction Quantity' in processed_orders.columns:
+                quantities = pd.to_numeric(processed_orders['Transaction Quantity'], errors='coerce')
+                stats['total_quantity_processed'] = quantities.sum()
+                stats['avg_quantity_per_item'] = round(quantities.mean(), 2)
+                stats['max_quantity_item'] = quantities.max()
+        
+        if shortage_summary is not None and not shortage_summary.empty:
+            stats['total_shortages'] = len(shortage_summary)
+            stats['unique_shortage_skus'] = len(shortage_summary['component_sku'].unique()) if 'component_sku' in shortage_summary.columns else 0
+            
+            if 'shortage_qty' in shortage_summary.columns:
+                shortage_qty = pd.to_numeric(shortage_summary['shortage_qty'], errors='coerce')
+                stats['total_shortage_quantity'] = shortage_qty.sum()
+            
+            if 'fulfillment_center' in shortage_summary.columns:
+                shortage_by_fc = shortage_summary['fulfillment_center'].value_counts().to_dict()
+                stats['shortages_by_fulfillment_center'] = shortage_by_fc
+        
+        if inventory_summary is not None and not inventory_summary.empty:
+            stats['total_inventory_items'] = len(inventory_summary)
+            
+            if 'Current Balance' in inventory_summary.columns:
+                balances = pd.to_numeric(inventory_summary['Current Balance'], errors='coerce')
+                stats['total_inventory_balance'] = balances.sum()
+                stats['zero_balance_items'] = len(inventory_summary[balances == 0])
+                stats['low_balance_items'] = len(inventory_summary[balances <= 10])
+        
+        # Calculate processing timestamp
+        stats['processing_timestamp'] = pd.Timestamp.now().isoformat()
+        
+        return stats
+
+    def calculate_warehouse_performance(self, processed_orders, inventory_summary):
+        """
+        Calculate warehouse performance metrics for decision making.
+        
+        Args:
+            processed_orders: DataFrame of processed orders
+            inventory_summary: DataFrame of inventory summary
+            
+        Returns:
+            dict: Dictionary containing warehouse performance metrics
+        """
+        performance = {}
+        
+        if processed_orders is not None and not processed_orders.empty and 'Fulfillment Center' in processed_orders.columns:
+            warehouses = processed_orders['Fulfillment Center'].unique()
+            
+            for warehouse in warehouses:
+                warehouse_orders = processed_orders[processed_orders['Fulfillment Center'] == warehouse]
+                warehouse_perf = {}
+                
+                # Order volume metrics
+                warehouse_perf['total_orders'] = len(warehouse_orders['ordernumber'].unique()) if 'ordernumber' in warehouse_orders.columns else 0
+                warehouse_perf['total_line_items'] = len(warehouse_orders)
+                warehouse_perf['unique_skus'] = len(warehouse_orders['sku'].unique()) if 'sku' in warehouse_orders.columns else 0
+                
+                # Issue metrics
+                if 'Issues' in warehouse_orders.columns:
+                    items_with_issues = len(warehouse_orders[warehouse_orders['Issues'] != ""])
+                    warehouse_perf['items_with_issues'] = items_with_issues
+                    warehouse_perf['issue_rate'] = round((items_with_issues / len(warehouse_orders)) * 100, 2) if len(warehouse_orders) > 0 else 0
+                
+                # Quantity metrics
+                if 'Transaction Quantity' in warehouse_orders.columns:
+                    quantities = pd.to_numeric(warehouse_orders['Transaction Quantity'], errors='coerce')
+                    warehouse_perf['total_quantity'] = quantities.sum()
+                    warehouse_perf['avg_quantity_per_item'] = round(quantities.mean(), 2)
+                
+                # Bundle performance
+                if 'Bundle' in warehouse_orders.columns:
+                    bundle_items = len(warehouse_orders[warehouse_orders['Bundle'] != ""])
+                    warehouse_perf['bundle_items'] = bundle_items
+                    warehouse_perf['bundle_rate'] = round((bundle_items / len(warehouse_orders)) * 100, 2) if len(warehouse_orders) > 0 else 0
+                
+                performance[warehouse] = warehouse_perf
+        
+        # Add inventory distribution by warehouse
+        if inventory_summary is not None and not inventory_summary.empty and 'Warehouse' in inventory_summary.columns:
+            warehouse_inventory = inventory_summary.groupby('Warehouse').agg({
+                'Current Balance': 'sum',
+                'Inventory SKU': 'count'
+            }).to_dict('index')
+            
+            for warehouse, inv_data in warehouse_inventory.items():
+                if warehouse in performance:
+                    performance[warehouse]['inventory_balance'] = inv_data.get('Current Balance', 0)
+                    performance[warehouse]['inventory_sku_count'] = inv_data.get('Inventory SKU', 0)
+                else:
+                    performance[warehouse] = {
+                        'inventory_balance': inv_data.get('Current Balance', 0),
+                        'inventory_sku_count': inv_data.get('Inventory SKU', 0)
+                    }
+        
+        return performance
 
     def _map_sku_to_inventory(
         self,
@@ -2078,10 +2608,10 @@ class DataProcessor:
                     .str.contains("oxnard|moorpark", na=False)
                 )
             ]
-            if not other_rows.empty:
-                if "Balance" in other_rows.columns:
+            if not oxnard_rows.empty:
+                if "Balance" in oxnard_rows.columns:
                     try:
-                        balance_value = other_rows.iloc[0]["Balance"]
+                        balance_value = oxnard_rows.iloc[0]["Balance"]
                         if isinstance(balance_value, str):
                             balance_value = balance_value.replace(",", "")
                         balance = float(balance_value) if pd.notna(balance_value) else 0
@@ -2591,6 +3121,11 @@ class DataProcessor:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     data_processor = DataProcessor()
+    
+    # Import datetime for timestamp generation
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    save_to_file = f"inventory_comparison_{timestamp}.csv"
     shipping_zones_df = load_shipping_zones("docs/shipping_zones.csv")
     orders_df = data_processor.load_orders("docs/orders.csv")
     inventory_df = data_processor.load_inventory("docs/inventory.csv")
@@ -2667,3 +3202,9 @@ if __name__ == "__main__":
             print(
                 f"\nWARNING: {len(shortage_summary)} inventory shortages detected! See {shortage_output_path} for details."
             )
+            
+        # Save inventory comparison to a file if it exists
+        inventory_comparison = result.get("inventory_comparison")
+        if inventory_comparison is not None and not inventory_comparison.empty:
+            inventory_comparison.to_csv(save_to_file, index=False)
+            logger.info(f"Generated inventory comparison with {len(inventory_comparison)} items and saved to {save_to_file}")

@@ -1,14 +1,22 @@
 import os
+from datetime import datetime
 
 import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
+from st_aggrid import (
+    AgGrid,
+    ColumnsAutoSizeMode,
+    DataReturnMode,
+    GridOptionsBuilder,
+    GridUpdateMode,
+)
 
 from constants.shipping_zones import load_shipping_zones
 
 # Import utility modules
 from utils.data_processor import DataProcessor
-from utils.ui_components import render_header, render_summary_dashboard, render_inventory_analysis
+from utils.ui_components import render_header, render_inventory_analysis, render_summary_dashboard, create_aggrid_table
 
 # Load environment variables
 load_dotenv()
@@ -52,6 +60,12 @@ if "shortage_summary" not in st.session_state:
     st.session_state.shortage_summary = pd.DataFrame()
 if "grouped_shortage_summary" not in st.session_state:
     st.session_state.grouped_shortage_summary = pd.DataFrame()
+if "inventory_comparison" not in st.session_state:
+    st.session_state.inventory_comparison = pd.DataFrame()
+if "processing_stats" not in st.session_state:
+    st.session_state.processing_stats = {}
+if "warehouse_performance" not in st.session_state:
+    st.session_state.warehouse_performance = {}
 if "rules" not in st.session_state:
     st.session_state.rules = []
 if "bundles" not in st.session_state:
@@ -145,6 +159,20 @@ def main():
                         st.session_state.inventory_summary = result['inventory_summary']
                         st.session_state.shortage_summary = result['shortage_summary']
                         st.session_state.grouped_shortage_summary = result['grouped_shortage_summary']
+                        st.session_state.inventory_comparison = result.get('inventory_comparison', pd.DataFrame())
+                        
+                        # Calculate processing statistics for decision making
+                        st.session_state.processing_stats = data_processor.calculate_processing_stats(
+                            st.session_state.processed_orders,
+                            st.session_state.inventory_summary,
+                            st.session_state.shortage_summary
+                        )
+                        
+                        # Calculate warehouse performance metrics
+                        st.session_state.warehouse_performance = data_processor.calculate_warehouse_performance(
+                            st.session_state.processed_orders,
+                            st.session_state.inventory_summary
+                        )
 
                 st.success("✅ Files processed successfully!")
                 st.rerun()
@@ -152,77 +180,100 @@ def main():
     # Main content area
     if st.session_state.orders_df is not None and st.session_state.inventory_df is not None:
         # Create tabs for different sections
-        tab1, tab2, tab3, tab4 = st.tabs(["📜 Orders", "📦 Inventory", "📈 Dashboard", "⚙️ Rules"])
+        tab1, tab2, tab3, tab4= st.tabs(["📜 Orders", "📦 Inventory", "📈 Dashboard", "⚙️ Rules"])
 
         with tab1:
             st.header("📜 Processed Orders")
             if st.session_state.processed_orders is not None:
-                # Convert processed orders to CSV
-                csv = st.session_state.processed_orders.to_csv(index=False)
-
-                # Display all processed orders in an editable table
-                st.subheader("All Processed Orders (Editable)")
-
-                # Create a unique key for the edited dataframe
-                if "edited_orders" not in st.session_state:
-                    st.session_state.edited_orders = st.session_state.processed_orders.copy()
-
-                # Use the original dataframe without custom filtering
-                # Streamlit's built-in filtering will handle this
-                filtered_df = st.session_state.edited_orders.copy()
-
-                # Create column configuration for data editor with improved formatting
-                column_config = {}
-
-                # Ensure externalorderid and id are treated as string to avoid type conflicts
-                for id_col in ['externalorderid', 'id']:
-                    if id_col in filtered_df.columns:
-                        filtered_df[id_col] = filtered_df[id_col].astype(str)
+                # Calculate order statistics
+                orders_df = st.session_state.processed_orders
+                total_orders = len(orders_df['ordernumber'].unique()) if 'ordernumber' in orders_df.columns else 0
+                total_line_items = len(orders_df)
                 
-                # Configure columns with appropriate types and formats
-                for col in filtered_df.columns:
-                    # Format date columns
-                    if "date" in col.lower():
-                        column_config[col] = st.column_config.DatetimeColumn(
-                            col,
-                            format="YYYY-MM-DD HH:mm",
-                            required=False,
-                            help=f"Date/time for {col}",
-                        )
-                    # Handle order ID columns as text
-                    elif col == 'externalorderid' or col == 'id':
-                        column_config[col] = st.column_config.TextColumn(
-                            col,
-                            required=False,
-                            help=f"Order ID: {col}"
-                        )
-                    # Format numeric columns
-                    elif (
-                        filtered_df[col].dtype in ["int64", "float64"] or "quantity" in col.lower()
-                    ):
-                        column_config[col] = st.column_config.NumberColumn(
-                            col,
-                            format="%d" if filtered_df[col].dtype == "int64" else "%.2f",
-                            required=False,
-                        )
+                # Calculate issues
+                issues_count = 0
+                if 'Issues' in orders_df.columns:
+                    issues_count = len(orders_df[orders_df['Issues'] != ""])
+                
+                # Display key statistics
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("📋 Unique Orders", f"{total_orders:,}")
+                with col2:
+                    st.metric("📦 Line Items", f"{total_line_items:,}")
+                with col3:
+                    if issues_count > 0:
+                        st.metric("⚠️ Items with Issues", f"{issues_count:,}", delta=f"{(issues_count/total_line_items*100):.1f}% of total", delta_color="inverse")
+                    else:
+                        st.metric("✅ Items with Issues", "0", delta="Perfect!", delta_color="normal")
+                with col4:
+                    fulfillment_centers = orders_df['Fulfillment Center'].nunique() if 'Fulfillment Center' in orders_df.columns else 0
+                    st.metric("🏭 Warehouses Used", fulfillment_centers)
+                
+                # Enhanced navigation hints
+                if issues_count > 0:
+                    st.warning(f"⚠️ **{issues_count} items have issues** - Check the **📦 Inventory** tab for shortage details and **📈 Dashboard** for performance insights!")
+                else:
+                    st.success("✅ **All orders processed successfully!** - Visit **📈 Dashboard** for performance analytics and **📦 Inventory** for balance tracking.")
+                
+                # Usage hints
+                with st.expander("💡 How to analyze your orders", expanded=False):
+                    st.markdown("""
+                    **🔍 Quick Actions:**
+                    - **Filter by Issues**: Click the Issues column filter to see only problematic orders
+                    - **Group by Warehouse**: Drag "Fulfillment Center" to the Row Groups area to see distribution
+                    - **Sort by Quantity**: Click "Transaction Quantity" header to find largest orders
+                    
+                    **📊 Next Steps:**
+                    - **📦 Inventory Tab**: View shortage details and inventory balance changes
+                    - **📈 Dashboard**: Analyze warehouse performance and get decision-making insights
+                    - **Download Data**: Use the download buttons below the table for further analysis
+                    
+                    **🎯 Pro Tips:**
+                    - Use Ctrl/Cmd + click to select multiple rows for bulk analysis
+                    - Right-click column headers for advanced options
+                    - Filter by warehouse to focus on specific fulfillment center performance
+                    """)
 
-                # Make the dataframe editable with Streamlit's built-in column configuration
-                edited_df = st.data_editor(
-                    filtered_df,
-                    use_container_width=True,
-                    num_rows="dynamic",
-                    hide_index=False,
-                    column_config=column_config,
-                    height=500,
-                    disabled=False,
-                    key="main_table_editor",
+                # Display all processed orders with advanced filtering and grouping
+                st.subheader("All Processed Orders")
+
+                # Prepare the dataframe for ag-Grid
+                display_df = st.session_state.processed_orders.copy()
+                
+                # Convert ID columns to string to prevent issues
+                for id_col in ['externalorderid', 'id', 'ordernumber']:
+                    if id_col in display_df.columns:
+                        display_df[id_col] = display_df[id_col].astype(str)
+                
+                # Create ag-Grid table with advanced features
+                table_result = create_aggrid_table(
+                    display_df,
+                    height=600,
+                    key="orders_main_grid",
+                    theme="alpine",
+                    editable=False,  # Disable editing to prevent JSON serialization issues
+                    selection_mode='multiple',
+                    enable_enterprise_modules=False  # Disable to prevent JSON serialization issues
                 )
-
-                # Save changes button
-                if st.button("Save Changes"):
-                    st.session_state.processed_orders = edited_df.copy()
-                    st.session_state.edited_orders = edited_df.copy()
-                    st.success("✅ Changes saved successfully!")
+                
+                grid_response = table_result['grid_response']
+                
+                # Display additional information about selected rows
+                if table_result['selected_count'] > 0:
+                    # Show selected rows summary
+                    with st.expander("Selected Rows Summary", expanded=False):
+                        selected_df = pd.DataFrame(grid_response['selected_rows'])
+                        if 'Fulfillment Center' in selected_df.columns:
+                            fc_counts = selected_df['Fulfillment Center'].value_counts()
+                            st.write("**Selected rows by Fulfillment Center:**")
+                            for fc, count in fc_counts.items():
+                                st.write(f"- {fc}: {count} items")
+                        
+                        # Show quantity summary if available
+                        if 'Transaction Quantity' in selected_df.columns:
+                            total_qty = pd.to_numeric(selected_df['Transaction Quantity'], errors='coerce').sum()
+                            st.write(f"**Total Quantity in Selection:** {total_qty:,.0f} units")
 
         with tab2:            
             # Move inventory shortages to the inventory tab
@@ -235,17 +286,45 @@ def main():
                         if 'order_ids' in grouped_df.columns:
                             grouped_df['order_ids'] = grouped_df['order_ids'].apply(lambda x: ', '.join(map(str, x)) if isinstance(x, list) else x)
                         
-                        if 'issue' in grouped_df.columns:
-                            # Highlight rows with issues
-                            st.markdown("**⚠️ Rows with issues are highlighted**")
-                            # Create a styled dataframe
-                            styled_df = grouped_df.style.apply(
-                                lambda row: ['background-color: #ffcccc' if row['issue'] else '' for _ in row],
-                                axis=1
-                            )
-                            st.dataframe(styled_df)
-                        else:
-                            st.dataframe(grouped_df)
+                        st.markdown("**Grouped Shortage Summary** (Use sidebar to filter and group)")
+                        
+                        # Use ag-Grid for shortage summary (disable hints to avoid nested expanders)
+                        shortage_table = create_aggrid_table(
+                            grouped_df,
+                            height=400,
+                            key="shortage_summary_grid",
+                            theme="alpine",
+                            selection_mode='multiple',
+                            show_hints=False,
+                            enable_enterprise_modules=False  # Disable to prevent JSON serialization issues
+                        )
+                        
+                        # Show summary of selected shortage items
+                        if shortage_table['selected_count'] > 0:
+                            st.info(f"🔍 Selected {shortage_table['selected_count']} shortage groups for detailed analysis")
+                    
+                    # Also show detailed shortage summary
+                    st.markdown("---")
+                    st.markdown("**Detailed Shortage Summary**")
+                    detailed_shortage_df = st.session_state.shortage_summary.copy()
+                    
+                    # Create ag-Grid for detailed shortages (disable hints to avoid nested expanders)
+                    detailed_table = create_aggrid_table(
+                        detailed_shortage_df,
+                        height=500,
+                        key="detailed_shortage_grid",
+                        theme="alpine",
+                        selection_mode='multiple',
+                        show_hints=False,
+                        enable_enterprise_modules=False  # Disable to prevent JSON serialization issues
+                    )
+                    
+                    # Show detailed shortage analysis
+                    if detailed_table['selected_count'] > 0:
+                        selected_details = pd.DataFrame(detailed_table['grid_response']['selected_rows'])
+                        if 'shortage_qty' in selected_details.columns:
+                            total_shortage = pd.to_numeric(selected_details['shortage_qty'], errors='coerce').sum()
+                            st.warning(f"⚠️ Selected items show {total_shortage:,.0f} units in shortage")
             
             # Add inventory analysis section
             render_inventory_analysis(
@@ -253,10 +332,12 @@ def main():
             )
             
         with tab3:
-            
-            # Original dashboard content
+            # Enhanced dashboard content with analytics
             render_summary_dashboard(
-                st.session_state.processed_orders, st.session_state.inventory_df
+                st.session_state.processed_orders, 
+                st.session_state.inventory_df,
+                st.session_state.get('processing_stats', {}),
+                st.session_state.get('warehouse_performance', {})
             )
     else:
         # Welcome screen

@@ -12,16 +12,11 @@ import pandas as pd
 
 # Fulfillment center information
 FULFILLMENT_CENTERS = {
-    "moorpark": {
-        "name": "Oxnard",  # Displaying as Oxnard but using moorpark as key for backward compatibility
-        "state": "CA",
-        "zip": "93021",
-        "default_zone": None,  # No default zone - must be determined by ZIP code
-    },
     "oxnard": {
         "name": "Oxnard",
-        "state": "CA",
-        "zip": "93021",
+        "state": "CA", 
+        "zip": "93030",  # Updated to Oxnard ZIP code
+        "legacy_zip": "93021",  # Moorpark ZIP for reference
         "default_zone": None,  # No default zone - must be determined by ZIP code
     },
     "wheeling": {
