@@ -5,8 +5,8 @@ This module defines the shipping zones data structure and provides utility funct
 for working with shipping zones. Shipping zones are used to optimize fulfillment center
 selection based on customer ZIP codes.
 """
-import os
 import json
+import os
 
 import pandas as pd
 
@@ -36,7 +36,7 @@ FULFILLMENT_CENTERS = {
 SHIPPING_ZONE_COLUMNS = {
     "zip_prefix": "zip_prefix",
     "moorpark_zone": "moorpark_zone",  # For backward compatibility
-    "oxnard_zone": "oxnard_zone",      # New column name
+    "oxnard_zone": "oxnard_zone",  # New column name
     "wheeling_zone": "wheeling_zone",
 }
 
@@ -63,7 +63,7 @@ def load_shipping_zones(file_path=None):
         if file_path is not None:
             if isinstance(file_path, str):
                 # It's a file path
-                if file_path.endswith('.json'):
+                if file_path.endswith(".json"):
                     # Load from JSON
                     return load_shipping_zones_from_json(file_path)
                 else:
@@ -74,7 +74,7 @@ def load_shipping_zones(file_path=None):
                 return load_shipping_zones_from_csv(file_path)
         else:
             # Try to load from default location
-            if DEFAULT_SHIPPING_ZONES_PATH.endswith('.json'):
+            if DEFAULT_SHIPPING_ZONES_PATH.endswith(".json"):
                 # Load from JSON
                 return load_shipping_zones_from_json(DEFAULT_SHIPPING_ZONES_PATH)
             else:
@@ -96,63 +96,91 @@ def load_shipping_zones_from_json(file_path):
     Returns:
         pandas.DataFrame: Processed shipping zones dataframe
     """
-    with open(file_path, 'r') as f:
+    with open(file_path, "r") as f:
         data = json.load(f)
-    
+
     result_data = []
-    
+
     # Process the JSON data structure
-    if 'fulfillment_centers' in data:
+    if "fulfillment_centers" in data:
         # Extract Oxnard/Moorpark and Wheeling data
         oxnard_data = None
         moorpark_data = None
         wheeling_data = None
-        
-        for fc in data['fulfillment_centers']:
-            if fc['name'] == 'Oxnard':
+
+        for fc in data["fulfillment_centers"]:
+            if fc["name"] == "Oxnard":
                 oxnard_data = fc
-            elif fc['name'] == 'Moorpark':
+            elif fc["name"] == "Moorpark":
                 moorpark_data = fc
-            elif fc['name'] == 'Wheeling':
+            elif fc["name"] == "Wheeling":
                 wheeling_data = fc
-                
+
         # If we found Oxnard data but not Moorpark, use Oxnard data for Moorpark
         if oxnard_data and not moorpark_data:
             moorpark_data = oxnard_data
         # If we found Moorpark data but not Oxnard, use Moorpark data for Oxnard
         elif moorpark_data and not oxnard_data:
             oxnard_data = moorpark_data
-        
+
         # Process the data if we have the required information
         if (oxnard_data or moorpark_data) and wheeling_data:
             # Create a mapping of ZIP prefixes to zones
-            zip_to_oxnard_zone = {item['zip_prefix']: item['zone'] for item in oxnard_data['zones']} if oxnard_data else {}
-            zip_to_moorpark_zone = {item['zip_prefix']: item['zone'] for item in moorpark_data['zones']} if moorpark_data else {}
-            zip_to_wheeling_zone = {item['zip_prefix']: item['zone'] for item in wheeling_data['zones']}
-            
+            zip_to_oxnard_zone = (
+                {item["zip_prefix"]: item["zone"] for item in oxnard_data["zones"]}
+                if oxnard_data
+                else {}
+            )
+            zip_to_moorpark_zone = (
+                {item["zip_prefix"]: item["zone"] for item in moorpark_data["zones"]}
+                if moorpark_data
+                else {}
+            )
+            zip_to_wheeling_zone = {
+                item["zip_prefix"]: item["zone"] for item in wheeling_data["zones"]
+            }
+
             # Get all unique ZIP prefixes
-            all_zips = set(list(zip_to_oxnard_zone.keys()) + list(zip_to_moorpark_zone.keys()) + list(zip_to_wheeling_zone.keys()))
-            
+            all_zips = set(
+                list(zip_to_oxnard_zone.keys())
+                + list(zip_to_moorpark_zone.keys())
+                + list(zip_to_wheeling_zone.keys())
+            )
+
             # Create result data
             for zip_prefix in all_zips:
-                oxnard_zone = int(zip_to_oxnard_zone.get(zip_prefix, 0)) if zip_prefix in zip_to_oxnard_zone else None
-                moorpark_zone = int(zip_to_moorpark_zone.get(zip_prefix, 0)) if zip_prefix in zip_to_moorpark_zone else None
-                wheeling_zone = int(zip_to_wheeling_zone.get(zip_prefix, 0)) if zip_prefix in zip_to_wheeling_zone else None
-                
+                oxnard_zone = (
+                    int(zip_to_oxnard_zone.get(zip_prefix, 0))
+                    if zip_prefix in zip_to_oxnard_zone
+                    else None
+                )
+                moorpark_zone = (
+                    int(zip_to_moorpark_zone.get(zip_prefix, 0))
+                    if zip_prefix in zip_to_moorpark_zone
+                    else None
+                )
+                wheeling_zone = (
+                    int(zip_to_wheeling_zone.get(zip_prefix, 0))
+                    if zip_prefix in zip_to_wheeling_zone
+                    else None
+                )
+
                 # If we have Oxnard data but not Moorpark, use Oxnard for Moorpark
                 if oxnard_zone is not None and moorpark_zone is None:
                     moorpark_zone = oxnard_zone
                 # If we have Moorpark data but not Oxnard, use Moorpark for Oxnard
                 elif moorpark_zone is not None and oxnard_zone is None:
                     oxnard_zone = moorpark_zone
-                
-                result_data.append({
-                    "zip_prefix": zip_prefix,
-                    "oxnard_zone": oxnard_zone,
-                    "moorpark_zone": moorpark_zone,
-                    "wheeling_zone": wheeling_zone
-                })
-    
+
+                result_data.append(
+                    {
+                        "zip_prefix": zip_prefix,
+                        "oxnard_zone": oxnard_zone,
+                        "moorpark_zone": moorpark_zone,
+                        "wheeling_zone": wheeling_zone,
+                    }
+                )
+
     # Create DataFrame
     return pd.DataFrame(result_data)
 
@@ -221,10 +249,10 @@ def load_shipping_zones_from_csv(file_path):
         # Try to load it as a standard CSV
         try:
             shipping_zones_df = pd.read_csv(file_path)
-            
+
             # Ensure the dataframe has the required columns
             required_columns = ["zip_prefix", "moorpark_zone", "wheeling_zone"]
-            
+
             # Check if all required columns exist
             if not all(col in shipping_zones_df.columns for col in required_columns):
                 # Try to rename columns if they exist with different names
@@ -273,6 +301,7 @@ def load_shipping_zones_from_csv(file_path):
 # Dictionary to cache zone lookups
 _zone_cache = {}
 
+
 def get_zone_by_zip(shipping_zones_df, zip_code, fulfillment_center):
     """
     Get the shipping zone for a specific ZIP code and fulfillment center.
@@ -291,15 +320,15 @@ def get_zone_by_zip(shipping_zones_df, zip_code, fulfillment_center):
 
     # Get the first 3 digits of the ZIP code for zone lookup
     zip_prefix = zip_code[:3]
-    
+
     # Create a cache key using zip_prefix and fulfillment_center
     # We can't use the DataFrame in the key as it's not hashable
     cache_key = f"{zip_prefix}:{fulfillment_center.lower()}"
-    
+
     # Check if we have a cached result
     if cache_key in _zone_cache:
         return _zone_cache[cache_key]
-    
+
     # Handle both Oxnard and Moorpark (they're the same fulfillment center)
     if fulfillment_center.lower() == "oxnard":
         # Try oxnard_zone first, then moorpark_zone as fallback
@@ -315,10 +344,7 @@ def get_zone_by_zip(shipping_zones_df, zip_code, fulfillment_center):
     # Check each possible column
     for zone_column in zone_columns:
         # Check if the necessary columns exist
-        if (
-            "zip_prefix" in shipping_zones_df.columns
-            and zone_column in shipping_zones_df.columns
-        ):
+        if "zip_prefix" in shipping_zones_df.columns and zone_column in shipping_zones_df.columns:
             # Find the matching ZIP prefix
             zip_match = shipping_zones_df[shipping_zones_df["zip_prefix"] == zip_prefix]
 
@@ -332,7 +358,7 @@ def get_zone_by_zip(shipping_zones_df, zip_code, fulfillment_center):
                         return result
                     except (ValueError, TypeError):
                         print(f"Invalid {zone_column} value: {zone_value}")
-    
+
     # Cache negative results too
     _zone_cache[cache_key] = None
     # If we get here, no valid zone was found
