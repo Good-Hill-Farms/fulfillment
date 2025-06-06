@@ -1,4 +1,5 @@
 import os
+import json
 from datetime import datetime
 
 import pandas as pd
@@ -10,8 +11,9 @@ from constants.shipping_zones import load_shipping_zones
 # Import utility modules
 from utils.data_processor import DataProcessor
 from utils.ui_components import render_header, render_inventory_analysis, render_summary_dashboard, create_aggrid_table
-from constants.schemas import SchemaManager
+from constants.schemas import SchemaManager, FulfillmentRule
 from utils.airtable_handler import AirtableHandler
+from utils.rule_manager import RuleManager
 
 # Load environment variables
 load_dotenv()
@@ -69,6 +71,8 @@ if "warehouse_performance" not in st.session_state:
     st.session_state.warehouse_performance = {}
 if "rules" not in st.session_state:
     st.session_state.rules = []
+if "temp_rules" not in st.session_state:
+    st.session_state.temp_rules = None
 if "bundles" not in st.session_state:
     st.session_state.bundles = {}
 if "override_log" not in st.session_state:
@@ -216,6 +220,20 @@ def main():
                     st.warning(f"⚠️ **{issues_count} items have issues** - Check the **📦 Inventory** tab for shortage details and **📈 Dashboard** for performance insights!")
                 else:
                     st.success("✅ **All orders processed successfully!** - Visit **📈 Dashboard** for performance analytics and **📦 Inventory** for balance tracking.")
+                
+                # Add inventory shortage summary if available
+                if "shortage_summary" in st.session_state and not st.session_state.shortage_summary.empty:
+                    # Calculate unique SKUs and affected orders
+                    unique_skus = st.session_state.shortage_summary['component_sku'].nunique() if 'component_sku' in st.session_state.shortage_summary.columns else 0
+                    affected_orders = len(set(st.session_state.shortage_summary['order_id'])) if 'order_id' in st.session_state.shortage_summary.columns else 0
+                    shortage_count = len(st.session_state.shortage_summary)
+                    
+                    # Add explanation if there's a discrepancy between issues count and shortage count
+                    explanation = ""
+                    if issues_count != shortage_count:
+                        explanation = f" (Note: {issues_count - shortage_count} additional line items may have duplicate shortage references)"
+                    
+                    st.error(f"⚠️ **INVENTORY SHORTAGES DETECTED: {shortage_count} items | {unique_skus} unique SKUs | {affected_orders} orders affected{explanation}** - See **📦 Inventory** tab for details!")
  
 
                 # Display all processed orders with advanced filtering and grouping
@@ -434,6 +452,189 @@ def main():
                                         for issue, count in unique_issues.items():
                                             st.write(f"  - {issue}: {count} items")
                 
+                # Bundle Management Section
+                with st.expander("💰 Bundle Management", expanded=False):
+                    st.markdown("### Bundle Substitution Rules")
+                    st.info("View, create, and apply bundle substitution rules to selected orders")
+                    
+                    # Initialize Airtable handler if not already initialized
+                    if 'airtable_handler' not in locals():
+                        airtable_handler = AirtableHandler()
+                    if 'schema_manager' not in locals():
+                        schema_manager = SchemaManager()
+                    
+                    # Fetch bundle rules from Airtable
+                    try:
+                        with st.spinner("Loading bundle rules from Airtable..."):
+                            bundle_rules = airtable_handler.get_fulfillment_rules(rule_type="bundle_substitution")
+                            
+                            # Display existing bundle rules
+                            if bundle_rules:
+                                st.write(f"Found {len(bundle_rules)} bundle substitution rules")
+                                
+                                # Convert to DataFrame for display
+                                bundle_rules_df = pd.DataFrame([
+                                    {
+                                        "airtable_id": rule.get("airtable_id", ""),
+                                        "name": rule.get("name", ""),
+                                        "description": rule.get("description", ""),
+                                        "is_active": "Yes" if rule.get("is_active") else "No"
+                                    } for rule in bundle_rules
+                                ])
+                                
+                                # Display rules in a table
+                                st.dataframe(bundle_rules_df[["name", "description", "is_active"]], use_container_width=True)
+                                
+                                # Allow applying rules to selected orders
+                                if table_result['selected_count'] > 0:
+                                    st.markdown("#### Apply Bundle Rule to Selected Orders")
+                                    
+                                    # Create a selectbox for choosing a rule
+                                    rule_options = [rule["name"] for rule in bundle_rules]
+                                    selected_rule = st.selectbox("Select Bundle Rule", options=rule_options, key="bundle_rule_select")
+                                    
+                                    # Button to apply the selected rule
+                                    if st.button("🔄 Apply Bundle Rule", key="apply_bundle_rule"):
+                                        # Find the selected rule
+                                        selected_rule_data = next((rule for rule in bundle_rules if rule["name"] == selected_rule), None)
+                                        
+                                        if selected_rule_data:
+                                            # Create a temporary rule in session state
+                                            if "temp_fulfillment_rules" not in st.session_state:
+                                                st.session_state.temp_fulfillment_rules = {}
+                                            
+                                            if "bundle_substitution" not in st.session_state.temp_fulfillment_rules:
+                                                st.session_state.temp_fulfillment_rules["bundle_substitution"] = []
+                                            
+                                            # Add the rule to temporary rules
+                                            st.session_state.temp_fulfillment_rules["bundle_substitution"].append(selected_rule_data)
+                                            
+                                            # Recalculate orders with the temporary rule
+                                            if st.session_state.data_processor:
+                                                # Get only unstaged orders for recalculation
+                                                if 'staged' in st.session_state.processed_orders.columns:
+                                                    unstaged_orders = st.session_state.processed_orders[st.session_state.processed_orders['staged'] == False].copy()
+                                                else:
+                                                    unstaged_orders = st.session_state.processed_orders.copy()
+                                                
+                                                # Apply the temporary rule
+                                                updated_orders = st.session_state.data_processor.apply_bundle_substitution_rules(
+                                                    unstaged_orders, 
+                                                    st.session_state.temp_fulfillment_rules["bundle_substitution"]
+                                                )
+                                                
+                                                # Update only the unstaged orders
+                                                if 'staged' in st.session_state.processed_orders.columns:
+                                                    # Preserve staged orders
+                                                    staged_orders = st.session_state.processed_orders[st.session_state.processed_orders['staged'] == True]
+                                                    # Combine staged and updated unstaged orders
+                                                    st.session_state.processed_orders = pd.concat([staged_orders, updated_orders])
+                                                else:
+                                                    st.session_state.processed_orders = updated_orders
+                                                
+                                                st.success(f"✅ Applied bundle rule '{selected_rule}' to selected orders!")
+                                                st.rerun()
+                                            else:
+                                                st.error("❌ Data processor not initialized")
+                                        else:
+                                            st.error(f"❌ Could not find rule '{selected_rule}'")
+                                else:
+                                    st.info("ℹ️ Select orders from the table above to apply bundle rules")
+                            else:
+                                st.info("No bundle substitution rules found in Airtable")
+                                
+                    except Exception as e:
+                        st.error(f"Error loading bundle rules: {str(e)}")
+                    
+                    # Create new temporary bundle rule
+                    st.markdown("#### Create Temporary Bundle Rule")
+                    
+                    # Button to create a new bundle rule
+                    if st.button("➕ Create New Bundle Rule", key="create_bundle_rule_orders"):
+                        st.session_state.creating_new_bundle_rule = True
+                        st.session_state.new_bundle_components = []
+                        st.rerun()
+                    
+                    # UI for creating a new bundle rule
+                    if st.session_state.get("creating_new_bundle_rule", False):
+                        with st.form("new_bundle_rule_form_orders"):
+                            new_rule_name = st.text_input("Rule Name", key="new_rule_name_orders")
+                            new_rule_description = st.text_area("Description", key="new_rule_description_orders")
+                            new_rule_active = st.checkbox("Active", value=True, key="new_rule_active_orders")
+                            
+                            # Bundle components
+                            st.markdown("##### Bundle Components")
+                            
+                            # Display existing components
+                            if "new_bundle_components" in st.session_state and st.session_state.new_bundle_components:
+                                for i, component in enumerate(st.session_state.new_bundle_components):
+                                    st.markdown(f"**Component {i+1}:** {component['sku']} (Qty: {component['qty']})")
+                            
+                            # Add new component
+                            new_component_sku = st.text_input("SKU", key="new_component_sku_orders")
+                            new_component_qty = st.number_input("Quantity", min_value=0.0, value=1.0, step=0.1, key="new_component_qty_orders")
+                            
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                add_component = st.form_submit_button("Add Component")
+                            with col2:
+                                save_rule = st.form_submit_button("Save Rule")
+                            
+                            if add_component and new_component_sku:
+                                if "new_bundle_components" not in st.session_state:
+                                    st.session_state.new_bundle_components = []
+                                
+                                st.session_state.new_bundle_components.append({
+                                    "sku": new_component_sku,
+                                    "qty": new_component_qty
+                                })
+                                st.rerun()
+                            
+                            if save_rule and new_rule_name and "new_bundle_components" in st.session_state and st.session_state.new_bundle_components:
+                                try:
+                                    # Create rule condition and action
+                                    rule_condition = {
+                                        "bundle_sku": new_rule_name  # Using rule name as the bundle SKU for simplicity
+                                    }
+                                    
+                                    rule_action = {
+                                        "components": st.session_state.new_bundle_components
+                                    }
+                                    
+                                    # Create temporary rule in session state
+                                    if "temp_fulfillment_rules" not in st.session_state:
+                                        st.session_state.temp_fulfillment_rules = {}
+                                    
+                                    if "bundle_substitution" not in st.session_state.temp_fulfillment_rules:
+                                        st.session_state.temp_fulfillment_rules["bundle_substitution"] = []
+                                    
+                                    # Add the new rule
+                                    st.session_state.temp_fulfillment_rules["bundle_substitution"].append({
+                                        "name": new_rule_name,
+                                        "description": new_rule_description,
+                                        "rule_type": "bundle_substitution",
+                                        "is_active": new_rule_active,
+                                        "rule_condition": json.dumps(rule_condition),
+                                        "rule_action": json.dumps(rule_action)
+                                    })
+                                    
+                                    st.success(f"✅ Temporary bundle rule '{new_rule_name}' created!")
+                                    
+                                    # Reset the form
+                                    st.session_state.creating_new_bundle_rule = False
+                                    if "new_bundle_components" in st.session_state:
+                                        del st.session_state.new_bundle_components
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error creating temporary rule: {str(e)}")
+                        
+                        # Cancel button outside the form
+                        if st.button("❌ Cancel", key="cancel_bundle_rule_orders"):
+                            st.session_state.creating_new_bundle_rule = False
+                            if "new_bundle_components" in st.session_state:
+                                del st.session_state.new_bundle_components
+                            st.rerun()
+                
                 # Health & Insights section for Orders tab
                 if st.session_state.get('processing_stats'):
                     with st.expander("🔔 Inventory Health & Alerts", expanded=False):
@@ -621,7 +822,7 @@ def main():
                             theme="alpine",
                             selection_mode='multiple',
                             show_hints=False,
-                            enable_enterprise_modules=False,
+                            enable_enterprise_modules=True,  # Enable for copy/export functionality
                             enable_sidebar=True,
                             enable_pivot=True,
                             enable_value_aggregation=True,
@@ -688,7 +889,11 @@ def main():
         with tab3:            
             # Move inventory shortages to the inventory tab
             if "shortage_summary" in st.session_state and not st.session_state.shortage_summary.empty:
-                with st.expander(f"⚠️ INVENTORY SHORTAGES DETECTED: {len(st.session_state.shortage_summary)} items", expanded=True):
+                # Calculate unique SKUs and affected orders
+                unique_skus = st.session_state.shortage_summary['component_sku'].nunique() if 'component_sku' in st.session_state.shortage_summary.columns else 0
+                affected_orders = len(set(st.session_state.shortage_summary['order_id'])) if 'order_id' in st.session_state.shortage_summary.columns else 0
+                
+                with st.expander(f"⚠️ INVENTORY SHORTAGES DETECTED: {len(st.session_state.shortage_summary)} items | {unique_skus} unique SKUs | {affected_orders} orders affected", expanded=True):
                     if "grouped_shortage_summary" in st.session_state and not st.session_state.grouped_shortage_summary.empty:
                         grouped_df = st.session_state.grouped_shortage_summary.copy()
                         
@@ -706,7 +911,7 @@ def main():
                             theme="alpine",
                             selection_mode='multiple',
                             show_hints=False,
-                            enable_enterprise_modules=False,  # Disable to prevent JSON serialization issues
+                            enable_enterprise_modules=True,  # Enable for copy/export functionality
                             enable_sidebar=True,
                             enable_pivot=True,
                             enable_value_aggregation=True,
@@ -731,7 +936,7 @@ def main():
                         theme="alpine",
                         selection_mode='multiple',
                         show_hints=False,
-                        enable_enterprise_modules=False,  # Disable to prevent JSON serialization issues
+                        enable_enterprise_modules=True,  # Enable for copy/export functionality
                         enable_sidebar=True,
                         enable_pivot=True,
                         enable_value_aggregation=True,
@@ -769,10 +974,11 @@ def main():
             schema_manager = SchemaManager()
             
             # Create tabs for different configuration sections
-            rules_tab1, rules_tab2, rules_tab3 = st.tabs([
+            rules_tab1, rules_tab2, rules_tab3, rules_tab4 = st.tabs([
                 "🔄 SKU Mappings", 
                 "📍 Zip Codes & Zones", 
                 "🚚 Delivery Services",
+                "⚙️ Fulfillment Rules"
             ])
             
             with rules_tab1:
@@ -795,7 +1001,7 @@ def main():
                             for m in sku_mappings:
                                 # Create a new entry with reordered fields
                                 mapping_entry = {
-                                    "airtable_id": m.get("airtable_id", ""),
+                                    "airtable_id": m.get("airtable_id", ""),  # Keep for reference but hide from display
                                     "order_sku": m.get("order_sku", ""),
                                     "picklist_sku": m.get("picklist_sku", "")
                                 }
@@ -839,7 +1045,7 @@ def main():
                                     theme="alpine",
                                     selection_mode='multiple',
                                     show_hints=False,
-                                    enable_enterprise_modules=False,
+                                    enable_enterprise_modules=True,  # Enable for copy/export functionality
                                     enable_sidebar=True,
                                     enable_pivot=True,
                                     enable_value_aggregation=True,
@@ -875,7 +1081,7 @@ def main():
                             # Convert to DataFrame for display
                             zones_df = pd.DataFrame([
                                 {
-                                    "airtable_id": z.get("airtable_id", ""),  # Keep for reference but hide from display
+                                    "airtable_id": z.get("airtable_id", ""),  # Keep for reference but don't display
                                     "zip_prefix": z.get("zip_prefix", ""),
                                     "zone": z.get("zone", ""),
                                     "fulfillment_center": ", ".join([fc_lookup.get(fc_id, fc_id) for fc_id in z.get("FulfillmentCenter", [])]) 
@@ -901,7 +1107,7 @@ def main():
                                     theme="alpine",
                                     selection_mode='multiple',
                                     show_hints=False,
-                                    enable_enterprise_modules=False,
+                                    enable_enterprise_modules=True,  # Enable for copy/export functionality
                                     enable_sidebar=True,
                                     enable_pivot=True,
                                     enable_value_aggregation=True,
@@ -950,8 +1156,516 @@ def main():
                     )
             
             with rules_tab3:
-                st.subheader("🚚 Delivery Services Management")
+                st.subheader("🔔 Delivery Services Management")
                 st.info("View, add, edit, or remove delivery services from Airtable.")
+                
+            with rules_tab4:
+                st.subheader("⚙️ Fulfillment Rules Management")
+                st.info("View, create, edit, and apply fulfillment rules including inventory thresholds and zone overrides.")
+                
+                # Create tabs for different rule types
+                rule_type_tab1, rule_type_tab2, rule_type_tab3 = st.tabs([
+                    "💰 Bundle Substitution Rules",
+                    "📈 Inventory Threshold Rules",
+                    "📍 Zone Override Rules"
+                ])
+                
+                with rule_type_tab1:
+                    st.markdown("### Bundle Substitution Rules")
+                    st.info("Create and manage rules for substituting bundles with individual components.")
+                    
+                    # Fetch bundle rules from Airtable
+                    try:
+                        with st.spinner("Loading bundle rules from Airtable..."):
+                            bundle_rules = airtable_handler.get_fulfillment_rules(rule_type="bundle_substitution")
+                            
+                            # Display existing bundle rules
+                            if bundle_rules:
+                                st.write(f"Found {len(bundle_rules)} bundle substitution rules")
+                                
+                                # Convert to DataFrame for display
+                                bundle_rules_df = pd.DataFrame([
+                                    {
+                                        "airtable_id": rule.get("airtable_id", ""),
+                                        "name": rule.get("name", ""),
+                                        "description": rule.get("description", ""),
+                                        "is_active": "Yes" if rule.get("is_active") else "No"
+                                    } for rule in bundle_rules
+                                ])
+                                
+                                # Display rules in a table
+                                st.dataframe(bundle_rules_df[["name", "description", "is_active"]], use_container_width=True)
+                                
+                                # Add buttons for editing and applying rules
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    if st.button("🔄 Apply Rules", key="apply_bundle_rules_tab"):
+                                        # Apply bundle rules to orders
+                                        if "processed_orders" in st.session_state and st.session_state.data_processor:
+                                            # Get only unstaged orders for recalculation
+                                            if 'staged' in st.session_state.processed_orders.columns:
+                                                unstaged_orders = st.session_state.processed_orders[st.session_state.processed_orders['staged'] == False].copy()
+                                            else:
+                                                unstaged_orders = st.session_state.processed_orders.copy()
+                                            
+                                            # Apply the rules
+                                            updated_orders = st.session_state.data_processor.apply_bundle_substitution_rules(
+                                                unstaged_orders, 
+                                                bundle_rules
+                                            )
+                                            
+                                            # Update only the unstaged orders
+                                            if 'staged' in st.session_state.processed_orders.columns:
+                                                # Preserve staged orders
+                                                staged_orders = st.session_state.processed_orders[st.session_state.processed_orders['staged'] == True]
+                                                # Combine staged and updated unstaged orders
+                                                st.session_state.processed_orders = pd.concat([staged_orders, updated_orders])
+                                            else:
+                                                st.session_state.processed_orders = updated_orders
+                                            
+                                            st.success("✅ Applied bundle substitution rules to orders!")
+                                        else:
+                                            st.warning("⚠️ No orders loaded or data processor not initialized")
+                                
+                                with col2:
+                                    if st.button("➕ Create New Rule", key="create_bundle_rule_tab"):
+                                        st.session_state.creating_new_bundle_rule_tab = True
+                                        st.session_state.new_bundle_components_tab = []
+                                        st.rerun()
+                                
+                                with col3:
+                                    if st.button("🗑️ Delete Temporary Rules", key="delete_temp_bundle_rules"):
+                                        if "temp_fulfillment_rules" in st.session_state and "bundle_substitution" in st.session_state.temp_fulfillment_rules:
+                                            st.session_state.temp_fulfillment_rules["bundle_substitution"] = []
+                                            st.success("✅ Temporary bundle rules deleted!")
+                                            st.rerun()
+                                        else:
+                                            st.info("ℹ️ No temporary bundle rules to delete")
+                            else:
+                                st.info("No bundle substitution rules found in Airtable")
+                                
+                                # Add button to create new rule
+                                if st.button("➕ Create New Rule", key="create_bundle_rule_tab_empty"):
+                                    st.session_state.creating_new_bundle_rule_tab = True
+                                    st.session_state.new_bundle_components_tab = []
+                                    st.rerun()
+                    except Exception as e:
+                        st.error(f"Error loading bundle rules: {str(e)}")
+                    
+                    # UI for creating a new bundle rule
+                    if st.session_state.get("creating_new_bundle_rule_tab", False):
+                        st.markdown("#### Create New Bundle Rule")
+                        with st.form("new_bundle_rule_form_tab"):
+                            new_rule_name = st.text_input("Rule Name", key="new_rule_name_tab")
+                            new_rule_description = st.text_area("Description", key="new_rule_description_tab")
+                            new_rule_active = st.checkbox("Active", value=True, key="new_rule_active_tab")
+                            save_to_airtable = st.checkbox("Save to Airtable", value=False, key="save_to_airtable_tab")
+                            
+                            # Bundle components
+                            st.markdown("##### Bundle Components")
+                            
+                            # Display existing components
+                            if "new_bundle_components_tab" in st.session_state and st.session_state.new_bundle_components_tab:
+                                for i, component in enumerate(st.session_state.new_bundle_components_tab):
+                                    st.markdown(f"**Component {i+1}:** {component['sku']} (Qty: {component['qty']})")
+                            
+                            # Add new component
+                            new_component_sku = st.text_input("SKU", key="new_component_sku_tab")
+                            new_component_qty = st.number_input("Quantity", min_value=0.0, value=1.0, step=0.1, key="new_component_qty_tab")
+                            
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                add_component = st.form_submit_button("Add Component")
+                            with col2:
+                                save_rule = st.form_submit_button("Save Rule")
+                            
+                            if add_component and new_component_sku:
+                                if "new_bundle_components_tab" not in st.session_state:
+                                    st.session_state.new_bundle_components_tab = []
+                                
+                                st.session_state.new_bundle_components_tab.append({
+                                    "sku": new_component_sku,
+                                    "qty": new_component_qty
+                                })
+                                st.rerun()
+                            
+                            if save_rule and new_rule_name and "new_bundle_components_tab" in st.session_state and st.session_state.new_bundle_components_tab:
+                                try:
+                                    # Create rule condition and action
+                                    rule_condition = {
+                                        "bundle_sku": new_rule_name  # Using rule name as the bundle SKU for simplicity
+                                    }
+                                    
+                                    rule_action = {
+                                        "components": st.session_state.new_bundle_components_tab
+                                    }
+                                    
+                                    # Create rule data
+                                    rule_data = {
+                                        "name": new_rule_name,
+                                        "description": new_rule_description,
+                                        "rule_type": "bundle_substitution",
+                                        "is_active": new_rule_active,
+                                        "rule_condition": json.dumps(rule_condition),
+                                        "rule_action": json.dumps(rule_action)
+                                    }
+                                    
+                                    if save_to_airtable:
+                                        # Save to Airtable
+                                        airtable_handler.create_fulfillment_rule(rule_data)
+                                        st.success(f"✅ Bundle rule '{new_rule_name}' saved to Airtable!")
+                                        # Clear cache
+                                        schema_manager.clear_cache()
+                                    else:
+                                        # Create temporary rule in session state
+                                        if "temp_fulfillment_rules" not in st.session_state:
+                                            st.session_state.temp_fulfillment_rules = {}
+                                        
+                                        if "bundle_substitution" not in st.session_state.temp_fulfillment_rules:
+                                            st.session_state.temp_fulfillment_rules["bundle_substitution"] = []
+                                        
+                                        # Add the new rule
+                                        st.session_state.temp_fulfillment_rules["bundle_substitution"].append(rule_data)
+                                        st.success(f"✅ Temporary bundle rule '{new_rule_name}' created!")
+                                    
+                                    # Reset the form
+                                    st.session_state.creating_new_bundle_rule_tab = False
+                                    if "new_bundle_components_tab" in st.session_state:
+                                        del st.session_state.new_bundle_components_tab
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error creating rule: {str(e)}")
+                        
+                        # Cancel button outside the form
+                        if st.button("❌ Cancel", key="cancel_bundle_rule_tab"):
+                            st.session_state.creating_new_bundle_rule_tab = False
+                            if "new_bundle_components_tab" in st.session_state:
+                                del st.session_state.new_bundle_components_tab
+                            st.rerun()
+                
+                with rule_type_tab2:
+                    st.markdown("### Inventory Threshold Rules")
+                    st.info("Create and manage rules for redirecting orders based on inventory thresholds.")
+                    
+                    # Fetch inventory threshold rules from Airtable
+                    try:
+                        with st.spinner("Loading inventory threshold rules from Airtable..."):
+                            inventory_rules = airtable_handler.get_fulfillment_rules(rule_type="inventory_threshold")
+                            
+                            # Display existing inventory rules
+                            if inventory_rules:
+                                st.write(f"Found {len(inventory_rules)} inventory threshold rules")
+                                
+                                # Convert to DataFrame for display
+                                inventory_rules_df = pd.DataFrame([
+                                    {
+                                        "airtable_id": rule.get("airtable_id", ""),
+                                        "name": rule.get("name", ""),
+                                        "description": rule.get("description", ""),
+                                        "is_active": "Yes" if rule.get("is_active") else "No"
+                                    } for rule in inventory_rules
+                                ])
+                                
+                                # Display rules in a table
+                                st.dataframe(inventory_rules_df[["name", "description", "is_active"]], use_container_width=True)
+                                
+                                # Add buttons for editing and applying rules
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    if st.button("🔄 Apply Rules", key="apply_inventory_rules_tab"):
+                                        # Apply inventory rules to orders
+                                        if "processed_orders" in st.session_state and st.session_state.data_processor:
+                                            # Get only unstaged orders for recalculation
+                                            if 'staged' in st.session_state.processed_orders.columns:
+                                                unstaged_orders = st.session_state.processed_orders[st.session_state.processed_orders['staged'] == False].copy()
+                                            else:
+                                                unstaged_orders = st.session_state.processed_orders.copy()
+                                            
+                                            # Apply the rules
+                                            updated_orders = st.session_state.data_processor.apply_inventory_threshold_rules(
+                                                unstaged_orders, 
+                                                inventory_rules
+                                            )
+                                            
+                                            # Update only the unstaged orders
+                                            if 'staged' in st.session_state.processed_orders.columns:
+                                                # Preserve staged orders
+                                                staged_orders = st.session_state.processed_orders[st.session_state.processed_orders['staged'] == True]
+                                                # Combine staged and updated unstaged orders
+                                                st.session_state.processed_orders = pd.concat([staged_orders, updated_orders])
+                                            else:
+                                                st.session_state.processed_orders = updated_orders
+                                            
+                                            st.success("✅ Applied inventory threshold rules to orders!")
+                                        else:
+                                            st.warning("⚠️ No orders loaded or data processor not initialized")
+                                
+                                with col2:
+                                    if st.button("➕ Create New Rule", key="create_inventory_rule_tab"):
+                                        st.session_state.creating_new_inventory_rule_tab = True
+                                        st.rerun()
+                                
+                                with col3:
+                                    if st.button("🗑️ Delete Temporary Rules", key="delete_temp_inventory_rules"):
+                                        if "temp_fulfillment_rules" in st.session_state and "inventory_threshold" in st.session_state.temp_fulfillment_rules:
+                                            st.session_state.temp_fulfillment_rules["inventory_threshold"] = []
+                                            st.success("✅ Temporary inventory rules deleted!")
+                                            st.rerun()
+                                        else:
+                                            st.info("ℹ️ No temporary inventory rules to delete")
+                            else:
+                                st.info("No inventory threshold rules found in Airtable")
+                                
+                                # Add button to create new rule
+                                if st.button("➕ Create New Rule", key="create_inventory_rule_tab_empty"):
+                                    st.session_state.creating_new_inventory_rule_tab = True
+                                    st.rerun()
+                    except Exception as e:
+                        st.error(f"Error loading inventory rules: {str(e)}")
+                    
+                    # UI for creating a new inventory threshold rule
+                    if st.session_state.get("creating_new_inventory_rule_tab", False):
+                        st.markdown("#### Create New Inventory Threshold Rule")
+                        with st.form("new_inventory_rule_form_tab"):
+                            new_rule_name = st.text_input("Rule Name", key="new_inventory_rule_name_tab")
+                            new_rule_description = st.text_area("Description", key="new_inventory_rule_description_tab")
+                            new_rule_active = st.checkbox("Active", value=True, key="new_inventory_rule_active_tab")
+                            save_to_airtable = st.checkbox("Save to Airtable", value=False, key="save_inventory_to_airtable_tab")
+                            
+                            # Rule condition
+                            st.markdown("##### Rule Condition")
+                            sku = st.text_input("SKU", key="inventory_rule_sku_tab")
+                            threshold = st.number_input("Threshold Quantity", min_value=0.0, value=10.0, step=1.0, key="inventory_threshold_tab")
+                            comparison = st.selectbox("Comparison", options=["<", "<=", ">", ">=", "=="], index=0, key="inventory_comparison_tab")
+                            
+                            # Rule action
+                            st.markdown("##### Rule Action")
+                            # Fetch fulfillment centers for dropdown
+                            try:
+                                fulfillment_centers = airtable_handler.get_fulfillment_centers()
+                                fc_options = [fc.get("name", "") for fc in fulfillment_centers]
+                                target_fc = st.selectbox("Target Fulfillment Center", options=fc_options, key="inventory_target_fc_tab")
+                            except Exception as e:
+                                st.error(f"Error loading fulfillment centers: {str(e)}")
+                                fc_options = []
+                                target_fc = st.text_input("Target Fulfillment Center", key="inventory_target_fc_manual_tab")
+                            
+                            # Save button
+                            save_rule = st.form_submit_button("Save Rule")
+                            
+                            if save_rule and new_rule_name and sku and target_fc:
+                                try:
+                                    # Create rule condition and action
+                                    rule_condition = {
+                                        "sku": sku,
+                                        "threshold": threshold,
+                                        "comparison": comparison
+                                    }
+                                    
+                                    rule_action = {
+                                        "target_fc": target_fc
+                                    }
+                                    
+                                    # Create rule data
+                                    rule_data = {
+                                        "name": new_rule_name,
+                                        "description": new_rule_description,
+                                        "rule_type": "inventory_threshold",
+                                        "is_active": new_rule_active,
+                                        "rule_condition": json.dumps(rule_condition),
+                                        "rule_action": json.dumps(rule_action)
+                                    }
+                                    
+                                    if save_to_airtable:
+                                        # Save to Airtable
+                                        airtable_handler.create_fulfillment_rule(rule_data)
+                                        st.success(f"✅ Inventory rule '{new_rule_name}' saved to Airtable!")
+                                        # Clear cache
+                                        schema_manager.clear_cache()
+                                    else:
+                                        # Create temporary rule in session state
+                                        if "temp_fulfillment_rules" not in st.session_state:
+                                            st.session_state.temp_fulfillment_rules = {}
+                                        
+                                        if "inventory_threshold" not in st.session_state.temp_fulfillment_rules:
+                                            st.session_state.temp_fulfillment_rules["inventory_threshold"] = []
+                                        
+                                        # Add the new rule
+                                        st.session_state.temp_fulfillment_rules["inventory_threshold"].append(rule_data)
+                                        st.success(f"✅ Temporary inventory rule '{new_rule_name}' created!")
+                                    
+                                    # Reset the form
+                                    st.session_state.creating_new_inventory_rule_tab = False
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error creating rule: {str(e)}")
+                        
+                        # Cancel button outside the form
+                        if st.button("❌ Cancel", key="cancel_inventory_rule_tab"):
+                            st.session_state.creating_new_inventory_rule_tab = False
+                            st.rerun()
+                
+                with rule_type_tab3:
+                    st.markdown("### Zone Override Rules")
+                    st.info("Create and manage rules for overriding fulfillment zones.")
+                    
+                    # Fetch zone override rules from Airtable
+                    try:
+                        with st.spinner("Loading zone override rules from Airtable..."):
+                            zone_rules = airtable_handler.get_fulfillment_rules(rule_type="zone_override")
+                            
+                            # Display existing zone rules
+                            if zone_rules:
+                                st.write(f"Found {len(zone_rules)} zone override rules")
+                                
+                                # Convert to DataFrame for display
+                                zone_rules_df = pd.DataFrame([
+                                    {
+                                        "airtable_id": rule.get("airtable_id", ""),
+                                        "name": rule.get("name", ""),
+                                        "description": rule.get("description", ""),
+                                        "is_active": "Yes" if rule.get("is_active") else "No"
+                                    } for rule in zone_rules
+                                ])
+                                
+                                # Display rules in a table
+                                st.dataframe(zone_rules_df[["name", "description", "is_active"]], use_container_width=True)
+                                
+                                # Add buttons for editing and applying rules
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    if st.button("🔄 Apply Rules", key="apply_zone_rules_tab"):
+                                        # Apply zone rules to orders
+                                        if "processed_orders" in st.session_state and st.session_state.data_processor:
+                                            # Get only unstaged orders for recalculation
+                                            if 'staged' in st.session_state.processed_orders.columns:
+                                                unstaged_orders = st.session_state.processed_orders[st.session_state.processed_orders['staged'] == False].copy()
+                                            else:
+                                                unstaged_orders = st.session_state.processed_orders.copy()
+                                            
+                                            # Apply the rules
+                                            updated_orders = st.session_state.data_processor.apply_zone_override_rules(
+                                                unstaged_orders, 
+                                                zone_rules
+                                            )
+                                            
+                                            # Update only the unstaged orders
+                                            if 'staged' in st.session_state.processed_orders.columns:
+                                                # Preserve staged orders
+                                                staged_orders = st.session_state.processed_orders[st.session_state.processed_orders['staged'] == True]
+                                                # Combine staged and updated unstaged orders
+                                                st.session_state.processed_orders = pd.concat([staged_orders, updated_orders])
+                                            else:
+                                                st.session_state.processed_orders = updated_orders
+                                            
+                                            st.success("✅ Applied zone override rules to orders!")
+                                        else:
+                                            st.warning("⚠️ No orders loaded or data processor not initialized")
+                                
+                                with col2:
+                                    if st.button("➕ Create New Rule", key="create_zone_rule_tab"):
+                                        st.session_state.creating_new_zone_rule_tab = True
+                                        st.rerun()
+                                
+                                with col3:
+                                    if st.button("🗑️ Delete Temporary Rules", key="delete_temp_zone_rules"):
+                                        if "temp_fulfillment_rules" in st.session_state and "zone_override" in st.session_state.temp_fulfillment_rules:
+                                            st.session_state.temp_fulfillment_rules["zone_override"] = []
+                                            st.success("✅ Temporary zone rules deleted!")
+                                            st.rerun()
+                                        else:
+                                            st.info("ℹ️ No temporary zone rules to delete")
+                            else:
+                                st.info("No zone override rules found in Airtable")
+                                
+                                # Add button to create new rule
+                                if st.button("➕ Create New Rule", key="create_zone_rule_tab_empty"):
+                                    st.session_state.creating_new_zone_rule_tab = True
+                                    st.rerun()
+                    except Exception as e:
+                        st.error(f"Error loading zone rules: {str(e)}")
+                    
+                    # UI for creating a new zone override rule
+                    if st.session_state.get("creating_new_zone_rule_tab", False):
+                        st.markdown("#### Create New Zone Override Rule")
+                        with st.form("new_zone_rule_form_tab"):
+                            new_rule_name = st.text_input("Rule Name", key="new_zone_rule_name_tab")
+                            new_rule_description = st.text_area("Description", key="new_zone_rule_description_tab")
+                            new_rule_active = st.checkbox("Active", value=True, key="new_zone_rule_active_tab")
+                            save_to_airtable = st.checkbox("Save to Airtable", value=False, key="save_zone_to_airtable_tab")
+                            
+                            # Rule condition
+                            st.markdown("##### Rule Condition")
+                            zip_prefix = st.text_input("ZIP Code Prefix", key="zone_rule_zip_prefix_tab")
+                            
+                            # Rule action
+                            st.markdown("##### Rule Action")
+                            # Fetch fulfillment centers for dropdown
+                            try:
+                                fulfillment_centers = airtable_handler.get_fulfillment_centers()
+                                fc_options = [fc.get("name", "") for fc in fulfillment_centers]
+                                target_fc = st.selectbox("Target Fulfillment Center", options=fc_options, key="zone_target_fc_tab")
+                            except Exception as e:
+                                st.error(f"Error loading fulfillment centers: {str(e)}")
+                                fc_options = []
+                                target_fc = st.text_input("Target Fulfillment Center", key="zone_target_fc_manual_tab")
+                            
+                            # Zone information
+                            zone = st.text_input("Zone (as string)", key="zone_value_tab", help="Zone must be a string value, not an integer")
+                            
+                            # Save button
+                            save_rule = st.form_submit_button("Save Rule")
+                            
+                            if save_rule and new_rule_name and zip_prefix and target_fc and zone:
+                                try:
+                                    # Create rule condition and action
+                                    rule_condition = {
+                                        "zip_prefix": zip_prefix
+                                    }
+                                    
+                                    rule_action = {
+                                        "target_fc": target_fc,
+                                        "zone": zone  # Ensure zone is stored as a string
+                                    }
+                                    
+                                    # Create rule data
+                                    rule_data = {
+                                        "name": new_rule_name,
+                                        "description": new_rule_description,
+                                        "rule_type": "zone_override",
+                                        "is_active": new_rule_active,
+                                        "rule_condition": json.dumps(rule_condition),
+                                        "rule_action": json.dumps(rule_action)
+                                    }
+                                    
+                                    if save_to_airtable:
+                                        # Save to Airtable
+                                        airtable_handler.create_fulfillment_rule(rule_data)
+                                        st.success(f"✅ Zone rule '{new_rule_name}' saved to Airtable!")
+                                        # Clear cache
+                                        schema_manager.clear_cache()
+                                    else:
+                                        # Create temporary rule in session state
+                                        if "temp_fulfillment_rules" not in st.session_state:
+                                            st.session_state.temp_fulfillment_rules = {}
+                                        
+                                        if "zone_override" not in st.session_state.temp_fulfillment_rules:
+                                            st.session_state.temp_fulfillment_rules["zone_override"] = []
+                                        
+                                        # Add the new rule
+                                        st.session_state.temp_fulfillment_rules["zone_override"].append(rule_data)
+                                        st.success(f"✅ Temporary zone rule '{new_rule_name}' created!")
+                                    
+                                    # Reset the form
+                                    st.session_state.creating_new_zone_rule_tab = False
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error creating rule: {str(e)}")
+                        
+                        # Cancel button outside the form
+                        if st.button("❌ Cancel", key="cancel_zone_rule_tab"):
+                            st.session_state.creating_new_zone_rule_tab = False
+                            st.rerun()
                 
                 # Fetch delivery services from Airtable
                 try:
@@ -993,7 +1707,7 @@ def main():
                                     theme="alpine",
                                     selection_mode='multiple',
                                     show_hints=False,
-                                    enable_enterprise_modules=False,
+                                    enable_enterprise_modules=True,  # Enable for copy/export functionality
                                     enable_sidebar=True,
                                     enable_pivot=True,
                                     enable_value_aggregation=True,
