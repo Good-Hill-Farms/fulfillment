@@ -9,6 +9,9 @@ import os
 from typing import Dict, List, Optional, Union, Any
 import requests
 from dotenv import load_dotenv
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -347,7 +350,6 @@ class AirtableHandler:
         result['created_time'] = record.get('createdTime')
         return result
 
-
     # SKU Mapping methods
     def get_sku_mappings(self, warehouse: Optional[str] = None) -> List[Dict[str, Any]]:
         """
@@ -362,18 +364,29 @@ class AirtableHandler:
         table_name = "SKUMapping"  # Use the actual table name directly
         url = f"{self.base_url}/{table_name}"
         
-        # Prepare parameters
+        # Retrieve all SKU mappings first - this is a fallback if filtering fails
+        all_mappings = []
+        offset = None
         params = {}
         
-        # Add filter if warehouse is provided
+        # If we have a warehouse filter, get its ID from FulfillmentCenter table
+        fc_id = None
         if warehouse:
-            filter_formula = f"{{warehouse}} = '{warehouse}'"
-            params['filterByFormula'] = filter_formula
-        
-        all_records = []
-        offset = None
-        
-        # Loop to handle pagination
+            # Get the Fulfillment Center record ID
+            fc_table = self.tables.get("fulfillment_center", "FulfillmentCenter")
+            fc_url = f"{self.base_url}/{fc_table}"
+            fc_params = {'filterByFormula': f"{{name}} = '{warehouse}'"}
+            
+            fc_response = requests.get(fc_url, headers=self.headers, params=fc_params)
+            if fc_response.status_code == 200:
+                fc_data = fc_response.json()
+                fc_records = fc_data.get('records', [])
+                
+                if fc_records:
+                    fc_id = fc_records[0].get('id')  # Get the Airtable ID of the fulfillment center
+                    print(f"Found fulfillment center '{warehouse}' with ID: {fc_id}")
+            
+        # Loop to handle pagination and retrieve all records
         while True:
             # Add offset parameter if we have one from a previous request
             if offset:
@@ -384,7 +397,8 @@ class AirtableHandler:
             
             if response.status_code == 200:
                 data = response.json()
-                all_records.extend([self._format_record(record) for record in data.get('records', [])])
+                records = [self._format_record(record) for record in data.get('records', [])]
+                all_mappings.extend(records)
                 
                 # Check if there are more records to fetch
                 offset = data.get('offset')
@@ -393,7 +407,39 @@ class AirtableHandler:
             else:
                 raise Exception(f"Failed to fetch SKU mappings: {response.text}")
         
-        return all_records
+        # If we have a warehouse to filter by, do client-side filtering
+        # This is more reliable than using complex Airtable formulas for linked records
+        if warehouse and fc_id:
+            # Filter mappings where fulfillment_center is a list containing the fc_id
+            filtered_mappings = []
+            for mapping in all_mappings:
+                # Check if this mapping has a fulfillment_center that matches our target
+                fc_array = mapping.get('fulfillment_center', [])
+                
+                # Debug output to understand what's in the records
+                if len(filtered_mappings) == 0:
+                    print(f"Example record structure: {mapping}")
+                
+                # Different ways the fulfillment center might be referenced
+                if isinstance(fc_array, list) and fc_id in fc_array:
+                    filtered_mappings.append(mapping)
+                elif fc_id == fc_array:  # Direct reference
+                    filtered_mappings.append(mapping)
+                elif isinstance(fc_array, str) and fc_id in fc_array:  # String containing ID
+                    filtered_mappings.append(mapping)
+                elif 'name' in mapping and mapping.get('name') == warehouse:  # By name
+                    filtered_mappings.append(mapping)
+                # Might be nested under another key
+                elif isinstance(mapping.get('fields', {}), dict):
+                    fields = mapping.get('fields', {})
+                    if isinstance(fields.get('fulfillment_center', []), list) and fc_id in fields.get('fulfillment_center', []):
+                        filtered_mappings.append(mapping)
+            
+            print(f"Client-side filtering found {len(filtered_mappings)} SKU mappings for '{warehouse}'")
+            return filtered_mappings
+        
+        print(f"Retrieved {len(all_mappings)} total SKU mappings")
+        return all_mappings
     
     def create_sku_mapping(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -401,7 +447,7 @@ class AirtableHandler:
         
         Args:
             data (Dict[str, Any]): SKU mapping data
-            
+
         Returns:
             Dict[str, Any]: Created record
         """
@@ -779,74 +825,95 @@ class AirtableHandler:
             return True
         else:
             raise Exception(f"Failed to delete fulfillment rule: {response.text}")
+    
+    def load_sku_mappings_from_airtable(self, center):
+        """
+        Load SKU mappings from Airtable for the specified fulfillment center.
+        
+        Args:
+            center (str): The fulfillment center to load mappings for ("Oxnard" or "Wheeling")
+            
+        Returns:
+            dict: Dictionary containing mappings and bundle_info for the specified center
+        """
+        logger.info(f"Loading SKU mappings for {center} from Airtable...")
+        
+        # Initialize result structure
+        result = {
+            "mappings": {center: {}},       # Simple shopify_sku -> inventory_sku mapping
+            "bundle_info": {center: {}},   # Bundle component information
+            "details": {center: {}}       # All details for each SKU
+        }
+        
+        try:
+            # Get SKU mappings from Airtable for this warehouse
+            sku_mappings = self.get_sku_mappings(center)
+            
+            for mapping in sku_mappings:
+                # Skip if no order_sku
+                if 'order_sku' not in mapping or not mapping['order_sku']:
+                    continue
+                    
+                order_sku = mapping['order_sku']
+                
+                # Store all fields in the details dictionary
+                result["details"][center][order_sku] = {
+                    # Common fields - add defaults for any missing fields to prevent errors
+                    "picklist_sku": mapping.get('picklist_sku', ''),
+                    "actual_qty": mapping.get('actual_qty', 0),
+                    "total_pick_weight": mapping.get('total_pick_weight', 0),
+                    "pick_type": mapping.get('pick_type', ''),
+                    # Include any other fields that might be useful
+                    "airtable_id": mapping.get('airtable_id', ''),
+                    "created_time": mapping.get('created_time', ''),
+                    # Store the entire mapping record for maximum flexibility
+                    "raw_data": mapping
+                }
+                
+                # Handle individual SKUs - use dictionary access instead of attribute access
+                if 'picklist_sku' in mapping and mapping['picklist_sku']:
+                    # Basic SKU mapping (shopify -> inventory)
+                    result["mappings"][center][order_sku] = mapping['picklist_sku']
+                
+                # Handle bundles if they have components
+                if 'bundle_components' in mapping and mapping['bundle_components']:
+                    bundle_components_str = mapping['bundle_components']
+                    # Convert the JSON string to Python objects
+                    import json
+                    try:
+                        # Try to parse the JSON string
+                        bundle_components = json.loads(bundle_components_str)
+                        
+                        # Store bundle components with all available information
+                        result["bundle_info"][center][order_sku] = [
+                            {
+                                "sku": comp.get("sku", ""),
+                                "qty": comp.get("qty", 0),
+                                "weight": comp.get("weight", 0.0), 
+                                "type": comp.get("type", "")
+                            }
+                            for comp in bundle_components
+                        ]
+                        
+                        # If this is a bundle but has no regular picklist_sku mapping, 
+                        # map to first component for backward compatibility
+                        if bundle_components and ('picklist_sku' not in mapping or not mapping['picklist_sku']):
+                            if bundle_components[0].get("sku"):
+                                result["mappings"][center][order_sku] = bundle_components[0].get("sku")
+                                logger.debug(f"Mapped bundle {order_sku} to component {bundle_components[0].get('sku')}")
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"Error parsing bundle_components JSON for {order_sku}: {e}")
+            
+            logger.info(f"Loaded {len(result['mappings'][center])} SKU mappings and {len(result['details'][center])} detail records for {center}")
+            
+        except Exception as e:
+            logger.warning(f"Error loading SKU mappings for {center} from Airtable: {e}")
+        
+        return result
 
-# Example usage
+    
+
 if __name__ == "__main__":
     handler = AirtableHandler()
-    
-    # Example: Explore table structure
-    try:
-        # Explore the structure of the fulfillment center table
-        fc_structure = handler.explore_table_structure("fulfillment_center")
-        print("\nFulfillment Center Table Structure:")
-        print(f"Table ID: {fc_structure['table_id']}")
-        print(f"Fields: {fc_structure['fields']}")
-        print(f"Sample Values: {fc_structure['sample_values']}")
-        
-        # Explore the structure of the delivery service table
-        ds_structure = handler.explore_table_structure("delivery_service")
-        print("\nDelivery Service Table Structure:")
-        print(f"Table ID: {ds_structure['table_id']}")
-        print(f"Fields: {ds_structure['fields']}")
-        
-        # Explore the structure of the SKU mapping table
-        sku_structure = handler.explore_table_structure("sku_mapping")
-        print("\nSKU Mapping Table Structure:")
-        print(f"Table ID: {sku_structure['table_id']}")
-        print(f"Fields: {sku_structure['fields']}")
-    except Exception as e:
-        print(f"Error exploring table structure: {e}")
-    
-    # Example: Get all fulfillment centers
-    try:
-        fulfillment_centers = handler.get_fulfillment_centers()
-        print(f"\nFound {len(fulfillment_centers)} fulfillment centers")
-        if fulfillment_centers:
-            print(f"First fulfillment center: {fulfillment_centers[0]}")
-    except Exception as e:
-        print(f"Error getting fulfillment centers: {e}")
-    
-    # Example: Get zip to zone mapping
-    try:
-        zip_to_zone = handler.get_zip_to_zone_mapping()
-        print(f"\nZip to zone mapping sample: {list(zip_to_zone.items())[:5]}")
-    except Exception as e:
-        print(f"Error getting zip to zone mapping: {e}")
-    
-    # Example: Find best fulfillment center for a zip code
-    try:
-        best_fc = handler.get_best_fulfillment_center("90210")
-        if best_fc:
-            print(f"\nBest fulfillment center for 90210: {best_fc.get('name')}")
-        else:
-            print("\nNo fulfillment center found for 90210")
-    except Exception as e:
-        print(f"Error finding best fulfillment center: {e}")
-        
-    # Example: Get SKU mappings for a warehouse
-    try:
-        sku_mappings = handler.get_sku_mappings("Oxnard")
-        print(f"\nFound {len(sku_mappings)} SKU mappings for Oxnard")
-        if sku_mappings:
-            print(f"First SKU mapping: {sku_mappings[0]}")
-    except Exception as e:
-        print(f"Error getting SKU mappings: {e}")
-    
-    # Example: Get delivery services
-    try:
-        delivery_services = handler.get_delivery_services(zip_prefix="900")
-        print(f"\nFound {len(delivery_services)} delivery services for zip prefix 900")
-        if delivery_services:
-            print(f"First delivery service: {delivery_services[0]}")
-    except Exception as e:
-        print(f"Error getting delivery services: {e}")
+    res = handler.load_sku_mappings_from_airtable("Wheeling")
+    print(res)

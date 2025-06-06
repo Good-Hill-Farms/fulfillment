@@ -11,6 +11,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from constants.shipping_zones import load_shipping_zones
 from constants.schemas import SchemaManager
+from utils.data_parser import DataParser
+from utils.airtable_handler import AirtableHandler
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +22,7 @@ class DataProcessor:
     Handles data loading, processing, and transformation for the fulfillment application.
     """
 
-    def __init__(self, use_airtable: bool = True):
+    def __init__(self, use_airtable: bool = True) -> None:
         """
         Initialize the DataProcessor with required tracking variables.
         
@@ -38,8 +40,12 @@ class DataProcessor:
         # Schema manager for Airtable integration
         self.use_airtable = use_airtable
         self.schema_manager = SchemaManager() if use_airtable else None
+        self._data_parser = DataParser()
+        self._airtable_handler = AirtableHandler()
+        # SKU mappings cache
+        self.sku_mappings = None
 
-    def normalize_warehouse_name(self, warehouse_name, log_transformations=True):
+    def normalize_warehouse_name(self, warehouse_name, log_transformations=True) -> str:
         """
         Centralized warehouse name normalization function that handles all variations
         and provides backward compatibility with existing data.
@@ -175,7 +181,7 @@ class DataProcessor:
         normalized_warehouse = self.normalize_warehouse_name(warehouse, log_transformations=False)
         return f"{sku}|{normalized_warehouse}"
 
-    def load_orders(self, file):
+    def load_orders(self, file) -> pd.DataFrame:
         """
         Load and preprocess orders CSV file
 
@@ -185,142 +191,12 @@ class DataProcessor:
         Returns:
             pandas.DataFrame: Processed orders dataframe
         """
-        try:
-            # Read CSV file
-            df = pd.read_csv(file)
-
-            # Basic preprocessing
-            # Ensure required columns exist
-            required_columns = [
-                "Date",
-                "Name",
-                "order id",
-                "Customer: First Name",
-                "Customer: Last Name",
-                "Email",
-                "Shipping: Name",
-                "Shipping: Address 1",
-                "Shipping: Address 2",
-                "Shipping: City",
-                "Shipping: Province Code",
-                "Shipping: Zip",
-                "Note",
-                "SKU Helper",
-                "Line: Fulfillable Quantity",
-                "Line: ID",
-                "NEW Tags",
-                "MAX PKG NUM",
-                "Fulfillment Center",
-                "Saturday Shipping",
-            ]
-
-            # Check if all required columns exist
-            missing_columns = [col for col in required_columns if col not in df.columns]
-
-            # If columns are missing, try to find them with case-insensitive matching
-            if missing_columns:
-                # Create a mapping of lowercase column names to actual column names
-                col_mapping = {col.lower(): col for col in df.columns}
-
-                # Try to map missing columns
-                for missing_col in missing_columns.copy():
-                    if missing_col.lower() in col_mapping:
-                        # Rename column to expected name
-                        df.rename(
-                            columns={col_mapping[missing_col.lower()]: missing_col}, inplace=True
-                        )
-                        missing_columns.remove(missing_col)
-
-            # If columns are still missing, check if we have sample data in docs folder
-            if missing_columns:
-                st.warning(
-                    f"Some columns are missing in the uploaded file. Using sample data from docs folder."
-                )
-                try:
-                    # Try to use the sample file from docs folder
-                    sample_path = "docs/orders_placed.csv"
-                    if os.path.exists(sample_path):
-                        df = pd.read_csv(sample_path)
-                        st.success("Successfully loaded sample orders data.")
-                    else:
-                        raise ValueError(
-                            f"Missing required columns and sample file not found: {', '.join(missing_columns)}"
-                        )
-                except Exception as e:
-                    st.error(f"Error loading sample data: {str(e)}")
-                    raise ValueError(f"Missing required columns: {', '.join(missing_columns)}")
-
-            # Convert date format with error handling
-            if "Date" in df.columns:
-                df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-            else:
-                df["Date"] = pd.to_datetime("today")
-
-            # Fill NA values for required fields
-            for col in ["Shipping: Address 2", "Note", "NEW Tags"]:
-                if col in df.columns:
-                    df[col] = df[col].fillna("")
-                else:
-                    df[col] = ""
-
-            if "MAX PKG NUM" in df.columns:
-                df["MAX PKG NUM"] = pd.to_numeric(df["MAX PKG NUM"], errors="coerce").fillna(1)
-            else:
-                df["MAX PKG NUM"] = 1
-
-            if "Fulfillment Center" in df.columns:
-                df["Fulfillment Center"] = df["Fulfillment Center"].fillna("")
-            else:
-                df["Fulfillment Center"] = ""
-
-            if "Saturday Shipping" in df.columns:
-                df["Saturday Shipping"] = df["Saturday Shipping"].fillna(False)
-                # Convert Saturday Shipping to boolean
-                df["Saturday Shipping"] = df["Saturday Shipping"].map(
-                    lambda x: str(x).upper() == "TRUE" if pd.notnull(x) else False
-                )
-            else:
-                df["Saturday Shipping"] = False
-
-            # Convert Line: Fulfillable Quantity to numeric if it exists
-            if "Line: Fulfillable Quantity" in df.columns:
-                df["Line: Fulfillable Quantity"] = pd.to_numeric(
-                    df["Line: Fulfillable Quantity"], errors="coerce"
-                ).fillna(1)
-            else:
-                df["Line: Fulfillable Quantity"] = 1
-
-            # Clean up and standardize SKU format
-            if "SKU Helper" in df.columns:
-                df["SKU"] = df["SKU Helper"].str.replace("f.", "", regex=False)
-            elif "SKU" not in df.columns:
-                df["SKU"] = "unknown"
-
-            # Extract priority tags from NEW Tags if it exists
-            if "NEW Tags" in df.columns:
-                df["Priority"] = df["NEW Tags"].str.extract(r"(P\d+|P\*)", expand=False).fillna("")
-            else:
-                df["Priority"] = ""
-
-            # Parse zip codes to ensure consistent format if it exists
-            if "Shipping: Zip" in df.columns:
-                df["Shipping: Zip"] = (
-                    df["Shipping: Zip"].astype(str).str.strip().str.split("-").str[0]
-                )
-            else:
-                df["Shipping: Zip"] = ""
-
-            return df
-
-        except Exception as e:
-            st.error(f"Error processing orders file: {str(e)}")
-            # Create a minimal dataframe with required columns
-            return pd.DataFrame(columns=required_columns)
+        df_orders = self._data_parser.parse_orders(file)
+        return df_orders
 
     def load_sku_mappings(self):
         """
-        Load SKU mappings from Airtable or JSON file for Oxnard, Moorpark, and Wheeling fulfillment centers
-        with fallback to CSV files if neither is available.
+        Load SKU mappings from Airtable for Oxnard and Wheeling fulfillment centers.
 
         Handles both individual SKUs (using picklist_sku) and bundles (using component_sku).
         For bundles, all components and their quantities are stored in a structured format.
@@ -331,342 +207,54 @@ class DataProcessor:
                 - Bundle information by fulfillment center
         """
         try:
-            # Initialize mappings and bundle information dictionaries
+            # Initialize empty mappings and bundle information dictionaries as fallback
             mappings = {"Oxnard": {}, "Wheeling": {}}
             bundle_info = {"Oxnard": {}, "Wheeling": {}}
             
-            # Try Airtable first if enabled
-            if self.use_airtable and self.schema_manager:
+            # Check if Airtable is enabled and schema manager exists
+            if not self.use_airtable or not self.schema_manager:
+                logger.warning("Airtable integration is disabled or schema manager not initialized.")
+                result = {"mappings": mappings, "bundle_info": bundle_info}
+                self.sku_mappings = result  # Store the mappings in the instance
+                return result
+        
+            # Load SKU mappings from Airtable
+            # Initialize merged results
+            result = {"mappings": {"Oxnard": {}, "Wheeling": {}}, "bundle_info": {"Oxnard": {}, "Wheeling": {}}}
+            
+            # Load mappings for each center
+            for center in ["Oxnard", "Wheeling"]:
                 try:
-                    airtable_result = self._load_sku_mappings_from_airtable()
-                    if airtable_result and any(len(airtable_result["mappings"][center]) > 0 for center in airtable_result["mappings"]):
-                        logger.info("Successfully loaded SKU mappings from Airtable")
-                        return airtable_result
+                    center_result = self._airtable_handler.load_sku_mappings_from_airtable(center)
+                    if center_result:
+                        # If the center has mappings, update our result
+                        if "mappings" in center_result and center in center_result["mappings"]:
+                            result["mappings"][center] = center_result["mappings"][center]
+                        if "bundle_info" in center_result and center in center_result["bundle_info"]:
+                            result["bundle_info"][center] = center_result["bundle_info"][center]
+                    logger.info(f"Loaded {len(result['mappings'][center])} mappings for {center}")
                 except Exception as e:
-                    logger.warning(f"Failed to load SKU mappings from Airtable: {e}")
-                    logger.info("Falling back to JSON/CSV files...")
-
-            # First try to load from JSON file
-            json_path = os.path.join(
-                os.path.dirname(os.path.dirname(__file__)), "constants", "data", "sku_mappings.json"
-            )
-
-            if os.path.exists(json_path):
-                try:
-                    with open(json_path, "r") as f:
-                        sku_json = json.load(f)
-
-                    # Process each fulfillment center
-                    for center in ["Wheeling", "Oxnard"]:
-                        if center not in sku_json:
-                            logger.warning(f"{center} not found in SKU mappings JSON")
-                            continue
-
-                        center_map = {}
-
-                        # Get list of bundle SKUs to exclude from regular processing
-                        bundle_skus = set()
-                        if "bundles" in sku_json[center]:
-                            bundle_skus = set(sku_json[center]["bundles"].keys())
-
-                        # Process individual SKUs (excluding bundle SKUs to prevent double processing)
-                        if "all_skus" in sku_json[center]:
-                            for sku, data in sku_json[center]["all_skus"].items():
-                                if "picklist_sku" in data and sku not in bundle_skus:
-                                    # Map the Shopify SKU to the picklist SKU (only if it's not a bundle)
-                                    center_map[sku] = data["picklist_sku"]
-                                elif sku in bundle_skus:
-                                    logger.info(f"Skipping {sku} from all_skus mapping because it's defined as a bundle")
-
-                        # Process bundles
-                        if "bundles" in sku_json[center]:
-                            for bundle_sku, components in sku_json[center]["bundles"].items():
-                                # Store all component information for the bundle
-                                bundle_components = []
-                                for component in components:
-                                    if "component_sku" in component:
-                                        component_info = {
-                                            "sku": component["component_sku"],
-                                            "qty": float(component.get("actualqty", 1.0)),
-                                            "weight": float(component.get("weight", 0.0)),
-                                            "type": component.get("type", ""),
-                                        }
-                                        bundle_components.append(component_info)
-
-                                # Store the bundle components information
-                                if bundle_components:
-                                    bundle_info[center][bundle_sku] = bundle_components
-
-                                    # Also map the bundle to the first component for backward compatibility
-                                    # This allows the bundle to be mapped to a warehouse SKU for picking
-                                    center_map[bundle_sku] = bundle_components[0]["sku"]
-                                    logger.debug(
-                                        f"Mapped bundle {bundle_sku} to component {bundle_components[0]['sku']}"
-                                    )
-
-                            logger.info(
-                                f"Processed {len(sku_json[center]['bundles'])} bundles for {center}"
-                            )
-
-                        mappings[center] = center_map
-                        logger.info(f"Loaded {len(center_map)} SKU mappings for {center} from JSON")
-
-                    # If we successfully loaded mappings from JSON, return them along with bundle info
-                    if any(len(mappings[center]) > 0 for center in mappings):
-                        return {"mappings": mappings, "bundle_info": bundle_info}
-
-                except Exception as e:
-                    logger.error(f"Error loading SKU mappings from JSON: {e}")
-                    logger.info("Falling back to CSV files for SKU mappings")
-
-            # Fallback to CSV files if JSON loading failed or no mappings were found
-            # Define paths to mapping files
-            oxnard_path = os.path.join(
-                os.path.dirname(os.path.dirname(__file__)), "docs", "sku_shopify_to_oxnard.csv"
-            )
-            wheeling_path = os.path.join(
-                os.path.dirname(os.path.dirname(__file__)), "docs", "sku_shopify_to_wheeling.csv"
-            )
-
-            # Load Oxnard mappings from CSV
-            if os.path.exists(oxnard_path):
-                oxnard_df = pd.read_csv(oxnard_path, skiprows=1)  # Skip the duplicate header row
-                # Clean up columns by stripping whitespace
-                oxnard_df["shopifysku2"] = oxnard_df["shopifysku2"].astype(str).str.strip()
-                oxnard_df["picklist sku"] = oxnard_df["picklist sku"].astype(str).str.strip()
-                # Filter out empty or NaN picklist SKUs
-                oxnard_df = oxnard_df[
-                    oxnard_df["picklist sku"].notna() & (oxnard_df["picklist sku"] != "nan")
-                ]
-                # Create mapping from shopify SKU to picklist SKU
-                oxnard_map = dict(zip(oxnard_df["shopifysku2"], oxnard_df["picklist sku"]))
-                mappings["Oxnard"] = oxnard_map
-                logger.info(f"Loaded {len(oxnard_map)} SKU mappings for Oxnard from CSV")
+                    logger.warning(f"Error loading mappings for {center}: {e}")
+        
+            # Use the merged results
+            airtable_result = result
+            
+            if airtable_result and any(len(airtable_result["mappings"][center]) > 0 for center in airtable_result["mappings"]):
+                logger.info("Successfully loaded SKU mappings from Airtable")
+                self.sku_mappings = airtable_result  # Store the mappings in the instance
+                return airtable_result
             else:
-                logger.warning(f"Warning: Oxnard SKU mapping file not found at {oxnard_path}")
-
-            # Load Wheeling mappings from CSV
-            if os.path.exists(wheeling_path):
-                try:
-                    # First attempt: skip first row which might be a duplicate header
-                    wheeling_df = pd.read_csv(wheeling_path, skiprows=1)
-                    logger.info(
-                        f"Successfully loaded Wheeling SKU file with skiprows=1, found {len(wheeling_df)} rows"
-                    )
-                except Exception as e1:
-                    logger.error(f"Error loading Wheeling SKU file with skiprows=1: {e1}")
-                    try:
-                        # Second attempt: load without skipping rows
-                        wheeling_df = pd.read_csv(wheeling_path)
-                        logger.info(
-                            f"Successfully loaded Wheeling SKU file without skiprows, found {len(wheeling_df)} rows"
-                        )
-                    except Exception as e2:
-                        logger.error(f"Error loading Wheeling SKU file without skiprows: {e2}")
-                        # If both attempts fail, create an empty DataFrame
-                        wheeling_df = pd.DataFrame(columns=["shopifysku2", "picklist sku"])
-                        logger.info(
-                            "Created empty DataFrame for Wheeling SKUs due to loading errors"
-                        )
-
-                # Show sample of the data to verify structure
-                if not wheeling_df.empty:
-                    logger.info(f"Wheeling SKU file columns: {wheeling_df.columns.tolist()}")
-                    logger.info("Sample of first 3 Wheeling SKU mappings:")
-                    for i, row in wheeling_df.head(3).iterrows():
-                        logger.info(f"  {row['shopifysku2']} -> {row['picklist sku']}")
-
-                # Clean up columns by stripping whitespace
-                wheeling_df["shopifysku2"] = wheeling_df["shopifysku2"].astype(str).str.strip()
-                wheeling_df["picklist sku"] = wheeling_df["picklist sku"].astype(str).str.strip()
-
-                # Filter out empty or NaN picklist SKUs
-                wheeling_df_filtered = wheeling_df[
-                    wheeling_df["picklist sku"].notna()
-                    & (wheeling_df["picklist sku"] != "nan")
-                    & (wheeling_df["picklist sku"] != "")
-                ]
-
-                logger.info(
-                    f"After filtering, Wheeling SKU mappings reduced from {len(wheeling_df)} to {len(wheeling_df_filtered)} rows"
-                )
-
-                # Create mapping from shopify SKU to picklist SKU
-                wheeling_map = dict(
-                    zip(wheeling_df_filtered["shopifysku2"], wheeling_df_filtered["picklist sku"])
-                )
-                mappings["Wheeling"] = wheeling_map
-
-                logger.info(f"Loaded {len(wheeling_map)} SKU mappings for Wheeling from CSV")
-                logger.info("Sample of Wheeling mappings:")
-                sample_keys = list(wheeling_map.keys())[:5]
-                for key in sample_keys:
-                    logger.info(f"  {key} -> {wheeling_map[key]}")
-
-                # Check for specific SKUs that should be mapped
-                test_skus = ["f.loquat-5lb", "f.loquat-2lb", "f.avocado_hass-2lb"]
-                for test_sku in test_skus:
-                    if test_sku in wheeling_map:
-                        logger.info(
-                            f"Test SKU '{test_sku}' is mapped to '{wheeling_map[test_sku]}'"
-                        )
-                    else:
-                        logger.info(f"Test SKU '{test_sku}' is NOT found in Wheeling mappings")
-            else:
-                logger.warning(f"Warning: Wheeling SKU mapping file not found at {wheeling_path}")
-
-            return mappings
-
+                logger.warning("No SKU mappings found in Airtable")
+                result = {"mappings": mappings, "bundle_info": bundle_info}
+                self.sku_mappings = result  # Store the mappings in the instance
+                return result
+            
         except Exception as e:
-            logger.error(f"Error loading SKU mappings: {str(e)}")
-            return {"Oxnard": {}, "Wheeling": {}}
+            logger.error(f"Error loading SKU mappings from Airtable: {str(e)}")
+            result = {"mappings": mappings, "bundle_info": bundle_info}
+            self.sku_mappings = result  # Store the mappings in the instance
+            return result
     
-    def _load_sku_mappings_from_airtable(self):
-        """
-        Load SKU mappings from Airtable.
-        
-        Returns:
-            dict: Dictionary containing mappings and bundle_info
-        """
-        logger.info("Loading SKU mappings from Airtable...")
-        
-        mappings = {"Oxnard": {}, "Wheeling": {}}
-        bundle_info = {"Oxnard": {}, "Wheeling": {}}
-        
-        for center in ["Oxnard", "Wheeling"]:
-            try:
-                # Get SKU mappings from Airtable for this warehouse
-                sku_mappings = self.schema_manager.get_sku_mappings(center)
-                
-                center_map = {}
-                
-                for mapping in sku_mappings:
-                    # Handle individual SKUs
-                    if mapping.picklist_sku:
-                        center_map[mapping.order_sku] = mapping.picklist_sku
-                    
-                    # Handle bundles if they have components
-                    bundle_components = mapping.get_bundle_components()
-                    if bundle_components:
-                        # Store bundle components
-                        bundle_info[center][mapping.order_sku] = [
-                            {
-                                "sku": comp.sku,
-                                "qty": comp.qty,
-                                "weight": 0.0,  # Weight not stored in current schema
-                                "type": "",     # Type not stored in current schema
-                            }
-                            for comp in bundle_components
-                        ]
-                        
-                        # Map bundle to first component for backward compatibility
-                        if bundle_components:
-                            center_map[mapping.order_sku] = bundle_components[0].sku
-                            logger.debug(f"Mapped bundle {mapping.order_sku} to component {bundle_components[0].sku}")
-                
-                mappings[center] = center_map
-                logger.info(f"Loaded {len(center_map)} SKU mappings for {center} from Airtable")
-                
-            except Exception as e:
-                logger.warning(f"Error loading SKU mappings for {center} from Airtable: {e}")
-        
-        return {"mappings": mappings, "bundle_info": bundle_info}
-
-    def process_raw_inventory(self, inventory_file):
-        """Process raw inventory data with multiple batch entries per SKU.
-        
-        Takes raw inventory with format:
-        WarehouseName | ItemId | Sku | Name | Type | BatchCode | AvailableQty | DaysOnHand | ... | Balance
-        
-        And aggregates it to:
-        Warehouse | Inventory SKU | Current Balance
-        """
-        try:
-            # Read the CSV file
-            df = pd.read_csv(inventory_file)
-            logger.info(f"Loaded raw inventory CSV with {len(df)} rows and {len(df.columns)} columns")
-            logger.info(f"Columns: {df.columns.tolist()}")
-            
-            # Check for required columns
-            required_cols = ['WarehouseName', 'Sku', 'AvailableQty']
-            missing_cols = [col for col in required_cols if col not in df.columns]
-            if missing_cols:
-                logger.error(f"Missing required columns: {missing_cols}")
-                return pd.DataFrame(columns=['Warehouse', 'Inventory SKU', 'Current Balance'])
-            
-            # Clean and prepare data
-            df = df.copy()
-            
-            # Clean warehouse names - map to standard warehouse names
-            def normalize_warehouse_name(warehouse_name):
-                """Normalize warehouse names to standard format"""
-                if pd.isna(warehouse_name):
-                    return 'Unknown'
-                
-                warehouse_str = str(warehouse_name).upper()
-                
-                # Check for Wheeling/Illinois
-                if any(x in warehouse_str for x in ['WHEELING', 'IL-', 'ILLINOIS']):
-                    return 'Wheeling'
-                
-                # Check for Oxnard/Moorpark/California
-                elif any(x in warehouse_str for x in ['OXNARD', 'MOORPARK', 'CA-', 'CALIFORNIA']):
-                    return 'Oxnard'
-                
-                # If no match, try to extract first alphabetic part
-                else:
-                    import re
-                    match = re.search(r'([A-Za-z]+)', warehouse_str)
-                    if match:
-                        return match.group(1).title()
-                    else:
-                        return 'Unknown'
-            
-            df['Warehouse'] = df['WarehouseName'].apply(normalize_warehouse_name)
-            
-            # Clean SKU column
-            df['Sku'] = df['Sku'].astype(str).str.strip()
-            
-            # Convert AvailableQty to numeric, handling any formatting
-            df['AvailableQty'] = pd.to_numeric(df['AvailableQty'], errors='coerce').fillna(0)
-            
-            # Filter out empty SKUs
-            df = df[df['Sku'] != '']
-            df = df[df['Sku'] != 'nan']
-            df = df[df['Sku'].notna()]
-            
-            logger.info(f"After cleaning: {len(df)} rows")
-            logger.info(f"Unique warehouses: {df['Warehouse'].unique()}")
-            logger.info(f"Unique SKUs: {df['Sku'].nunique()}")
-            
-            # Aggregate by Warehouse and SKU - sum up AvailableQty for all batches
-            aggregated = df.groupby(['Warehouse', 'Sku']).agg({
-                'AvailableQty': 'sum'  # Sum all batch quantities for each SKU
-            }).reset_index()
-            
-            # Rename columns to match expected format
-            aggregated.rename(columns={
-                'Sku': 'Inventory SKU',
-                'AvailableQty': 'Current Balance'
-            }, inplace=True)
-            
-            # Filter out SKUs with negative total balance, but keep zero balance SKUs
-            aggregated = aggregated[aggregated['Current Balance'] >= 0]
-            
-            logger.info(f"Successfully processed raw inventory: {len(aggregated)} unique SKU/warehouse combinations")
-            logger.info(f"Total inventory value: {aggregated['Current Balance'].sum()}")
-            
-            # Show sample of processed data
-            logger.info("Sample of processed inventory:")
-            for i, row in aggregated.head(5).iterrows():
-                logger.info(f"  {row['Warehouse']} | {row['Inventory SKU']} | {row['Current Balance']}")
-            
-            return aggregated
-            
-        except Exception as e:
-            logger.error(f"Error processing raw inventory file: {str(e)}")
-            return pd.DataFrame(columns=['Warehouse', 'Inventory SKU', 'Current Balance'])
-
     def load_inventory(self, file):
         """
         Load and preprocess inventory CSV file
@@ -678,297 +266,53 @@ class DataProcessor:
             pandas.DataFrame: Processed inventory dataframe with normalized columns
         """
         try:
-            # Handle file object or path string
-            file_path = None
-            if hasattr(file, "read"):
-                # It's a file object (like from Streamlit uploader)
-                # Save to a temporary file to handle complex CSV structure
-                import tempfile
-
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as temp_file:
-                    file_path = temp_file.name
-                    file.seek(0)
-                    temp_file.write(file.read())
-            else:
-                # It's a file path string
-                file_path = file
-                if not os.path.exists(file_path):
-                    logger.error(
-                        f"Error processing inventory file: [Errno 2] No such file or directory: '{file_path}'"
-                    )
-                    return pd.DataFrame()
-
-            # First try to process as raw inventory data
-            try:
-                processed_df = self.process_raw_inventory(file_path)
-                
-                # If we got valid results, return them
-                if not processed_df.empty:
-                    logger.info(f"Successfully loaded inventory as raw data: {len(processed_df)} items")
-                    return processed_df
-            except Exception as e:
-                logger.info(f"Raw inventory processing failed: {e}, trying summary column extraction...")
-
-            # Read the first few lines to understand the structure
-            with open(file_path, "r") as f:
-                first_lines = [next(f) for _ in range(3) if f]
-
-            # Check if the first line indicates a complex header structure
-            if ",,,,,,,,,,,,,,,,Oxnard,,,Wheeling," in first_lines[0]:
-                # This is the specific format we observed in the inventory file
-                # Instead of processing the complex main data, use the summary columns
-                df = pd.read_csv(file_path, skiprows=1)
-                logger.info("Detected complex inventory file format - using summary columns")
-
-                # Extract inventory from the Oxnard and Wheeling summary columns
-                inventory_rows = []
-                
-                # Process Oxnard summary data (columns around index 16-17)
-                if len(df.columns) > 17:
-                    oxnard_sku_col = None
-                    oxnard_balance_col = None
-                    for i, col in enumerate(df.columns):
-                        if i >= 16 and 'Sku' in str(col):
-                            oxnard_sku_col = col
-                        elif i >= 16 and 'MIN of Balance' in str(col):
-                            oxnard_balance_col = col
-                            break
-                    
-                    if oxnard_sku_col and oxnard_balance_col:
-                        oxnard_data = df[[oxnard_sku_col, oxnard_balance_col]].dropna()
-                        for _, row in oxnard_data.iterrows():
-                            if pd.notna(row[oxnard_sku_col]) and row[oxnard_sku_col] != '_':
-                                inventory_rows.append({
-                                    'WarehouseName': 'CA-Oxnard-93030',
-                                    'Sku': str(row[oxnard_sku_col]).strip(),
-                                    'Balance': pd.to_numeric(str(row[oxnard_balance_col]).replace(',', ''), errors='coerce') or 0,
-                                    'AvailableQty': pd.to_numeric(str(row[oxnard_balance_col]).replace(',', ''), errors='coerce') or 0
-                                })
-                
-                # Process Wheeling summary data (columns around index 19-20)
-                if len(df.columns) > 20:
-                    wheeling_sku_col = None
-                    wheeling_balance_col = None
-                    for i, col in enumerate(df.columns):
-                        if i >= 19 and 'Sku' in str(col):
-                            wheeling_sku_col = col
-                        elif i >= 19 and 'MIN of Balance' in str(col):
-                            wheeling_balance_col = col
-                            break
-                    
-                    if wheeling_sku_col and wheeling_balance_col:
-                        wheeling_data = df[[wheeling_sku_col, wheeling_balance_col]].dropna()
-                        for _, row in wheeling_data.iterrows():
-                            if pd.notna(row[wheeling_sku_col]) and row[wheeling_sku_col] != '_':
-                                inventory_rows.append({
-                                    'WarehouseName': 'IL-Wheeling-60090',
-                                    'Sku': str(row[wheeling_sku_col]).strip(),
-                                    'Balance': pd.to_numeric(str(row[wheeling_balance_col]).replace(',', ''), errors='coerce') or 0,
-                                    'AvailableQty': pd.to_numeric(str(row[wheeling_balance_col]).replace(',', ''), errors='coerce') or 0
-                                })
-                
-                # Create DataFrame from summary data
-                if inventory_rows:
-                    df = pd.DataFrame(inventory_rows)
-                    logger.info(f"✅ SUCCESS: Extracted {len(df)} inventory items from Oxnard/Wheeling summary columns")
-                    logger.info(f"Sample inventory data: {df.head(3).to_dict('records')}")
-                    
-                    # Create FulfillmentCenter column
-                    df["FulfillmentCenter"] = df["WarehouseName"].apply(
-                        lambda x: self.normalize_warehouse_name(x, log_transformations=True)
-                    )
-                    
-                    # Skip the complex processing - we have clean data now
-                    inventory_summary = df.copy()
-                    inventory_summary["Status"] = inventory_summary.apply(
-                        lambda row: "Critical" if row["Balance"] <= 0 
-                        else ("Low" if row["Balance"] < 10 else "Good"),
-                        axis=1,
-                    )
-                    
-                    logger.info(f"Final inventory summary: {len(inventory_summary)} items ready")
-                    if "WarehouseName" in inventory_summary.columns:
-                        warehouse_counts = inventory_summary["WarehouseName"].value_counts()
-                        logger.info(f"Warehouses: {dict(warehouse_counts)}")
-                    
-                    return inventory_summary
-                    
-                else:
-                    logger.warning("No inventory data found in summary columns")
-                    df = pd.DataFrame(columns=["WarehouseName", "Sku", "Balance", "AvailableQty"])
-            else:
-                # Try standard CSV reading
-                df = pd.read_csv(file_path)
-                logger.info("Detected standard inventory file format")
-
-            # Basic preprocessing
-            # Check if required columns exist
-            required_columns = ["WarehouseName", "Sku", "AvailableQty"]
-
-            # Check for required columns with case-insensitive matching
-            for req_col in required_columns:
-                found = False
-                for col in df.columns:
-                    if col.lower() == req_col.lower():
-                        # Rename to standard case if needed
-                        if col != req_col:
-                            df = df.rename(columns={col: req_col})
-                        found = True
-                        break
-
-                if not found:
-                    logger.warning(
-                        f"Warning: Required column '{req_col}' not found in inventory file"
-                    )
-                    # Create empty column if missing
-                    df[req_col] = None
-
-            # Ensure SKU column is properly formatted
-            # The inventory file uses 'Sku' but our code often looks for 'SKU'
-            if "Sku" in df.columns:
-                # Convert SKU to string type to ensure consistent matching
-                df["Sku"] = df["Sku"].astype(str).str.strip()
-                # Create a standardized SKU column if it doesn't exist
-                if "SKU" not in df.columns:
-                    df["SKU"] = df["Sku"]
-                    logger.info("Created standardized SKU column from Sku column")
-
-            # Extract warehouse name from the first column if it exists
-            # This handles the CA-Moorpark-93021 and CA-Oxnard-93030 format in the inventory file
-            if df.columns[0].startswith("CA-") or df.columns[0].startswith("IL-"):
-                # Create WarehouseName column from the first column
-                df["WarehouseName"] = df.iloc[:, 0]
-                logger.info(f"Created WarehouseName column from first column: {df.columns[0]}")
-
-            # Ensure WarehouseName is properly formatted
-            if "WarehouseName" in df.columns:
-                # Fill any missing warehouse names with 'Oxnard' as default
-                df["WarehouseName"] = df["WarehouseName"].fillna("Oxnard")
-
-                # Create a FulfillmentCenter column for standardized names using centralized normalization
-                df["FulfillmentCenter"] = df["WarehouseName"].apply(
-                    lambda x: self.normalize_warehouse_name(x, log_transformations=True)
-                )
-
-                # Keep the original WarehouseName for reference
-                # This preserves CA-Moorpark-93021 and CA-Oxnard-93030 distinctions
-                # Log unique warehouse names after standardization for debugging
-                unique_warehouses = df["WarehouseName"].unique()
-                logger.info(f"Unique warehouse names after standardization: {unique_warehouses}")
-
-            # Convert numeric columns with error handling
-            if "AvailableQty" in df.columns:
-                # Handle commas in numeric values
-                if df["AvailableQty"].dtype == object:
-                    df["AvailableQty"] = df["AvailableQty"].astype(str).str.replace(",", "")
-                df["AvailableQty"] = pd.to_numeric(df["AvailableQty"], errors="coerce").fillna(0)
-                # Log sample of AvailableQty values for debugging
-                logger.info(
-                    f"Sample AvailableQty values after conversion: {df['AvailableQty'].head(5).tolist()}"
-                )
-
-            # Handle Balance column which might have commas in numbers
-            if "Balance" in df.columns:
-                # Make sure we're only using the Balance column from the main section
-                if df["Balance"].dtype == object:
-                    df["Balance"] = df["Balance"].astype(str).str.replace(",", "")
-                df["Balance"] = pd.to_numeric(df["Balance"], errors="coerce").fillna(0)
-                # Filter out negative balances (adjustment entries) before processing
-                logger.info(f"Before filtering: {len(df)} rows, Balance range: {df['Balance'].min()} to {df['Balance'].max()}")
-                df = df[df["Balance"] >= 0]
-                logger.info(f"After filtering negative balances: {len(df)} rows")
-
-            # Handle AvailableQty column which might have commas in numbers
-            if "AvailableQty" in df.columns:
-                if df["AvailableQty"].dtype == object:
-                    df["AvailableQty"] = df["AvailableQty"].astype(str).str.replace(",", "")
-                df["AvailableQty"] = pd.to_numeric(df["AvailableQty"], errors="coerce").fillna(0)
-
-            # Use Balance as primary, fall back to AvailableQty only if Balance is missing/invalid
-            if "Balance" in df.columns and "AvailableQty" in df.columns:
-                # Only use AvailableQty when Balance is genuinely missing (NaN), not when it's 0
-                mask = df["Balance"].isna() & (df["AvailableQty"] > 0)
-                if mask.any():
-                    logger.info(f"Using AvailableQty for {mask.sum()} rows where Balance is missing")
-                    df.loc[mask, "Balance"] = df.loc[mask, "AvailableQty"]
-
-            # Log the final Balance values for verification
-            if "Balance" in df.columns:
-                logger.info(f"Final Balance range: {df['Balance'].min()} to {df['Balance'].max()}")
-                logger.info(f"Sample Balance values: {df['Balance'].head(10).tolist()}")
-
-            # Convert DaysOnHand to numeric
-            if "DaysOnHand" in df.columns:
-                df["DaysOnHand"] = pd.to_numeric(df["DaysOnHand"], errors="coerce").fillna(0)
-
-            # Clean up warehouse names and standardize SKU format
-            # Filter for only SellableIndividual items if Type column exists
-            if "Type" in df.columns:
-                # Log unique types for debugging
-                unique_types = df["Type"].unique()
-                logger.info(f"Unique item types in inventory: {unique_types}")
-
-                # Filter for fruit items (SellableIndividual) to exclude packaging materials
-                sellable_df = df[df["Type"] == "SellableIndividual"].copy()
-                if not sellable_df.empty:
-                    logger.info(
-                        f"Filtered inventory to {len(sellable_df)} sellable items out of {len(df)} total items"
-                    )
-                    df = sellable_df
-                else:
-                    logger.warning("Warning: No SellableIndividual items found in inventory")
-
-            # Log inventory summary by warehouse
-            if "WarehouseName" in df.columns and "AvailableQty" in df.columns:
-                inventory_summary = df.groupby("WarehouseName")["AvailableQty"].agg(
-                    ["sum", "count"]
-                )
-                logger.info("Inventory summary by warehouse:")
-                logger.info(inventory_summary)
-
-            # Log sample of fruit SKUs for debugging
-            if "Sku" in df.columns:
-                fruit_skus = df[df["Sku"].str.contains("_") | df["Sku"].str.contains("-")][
-                    "Sku"
-                ].unique()[:10]
-                logger.info(f"Sample fruit SKUs: {fruit_skus}")
-            if "WarehouseName" in df.columns:
-                df["WarehouseName"] = df["WarehouseName"].astype(str).str.strip()
-
-            if "Sku" in df.columns:
-                df["Sku"] = df["Sku"].astype(str).str.strip()
-
-            # Filter out rows with empty or invalid SKUs
-            if "Sku" in df.columns:
-                df = df[df["Sku"].notna() & (df["Sku"] != "")]
-
-            # Since we're using summary data, no complex grouping needed
-            inventory_summary = df.copy()
+            # Use DataParser to parse the inventory file
+            inventory_df = self._data_parser.parse_inventory(file)
             
-            # Add inventory status column based on Balance
-            if "Balance" in inventory_summary.columns:
-                inventory_summary["Status"] = inventory_summary.apply(
-                    lambda row: "Critical" if row["Balance"] <= 0 
-                    else ("Low" if row["Balance"] < 10 else "Good"),
-                    axis=1,
-                )
-            else:
-                inventory_summary["Status"] = "Unknown"
-
-            # Log summary statistics
-            logger.info(
-                f"Loaded inventory with {len(inventory_summary)} unique SKU-warehouse combinations"
-            )
-            if "WarehouseName" in inventory_summary.columns:
-                warehouse_counts = inventory_summary["WarehouseName"].value_counts()
-                logger.info(f"Warehouses: {dict(warehouse_counts)}")
-
-            return inventory_summary
-
+            # Check if the DataFrame is empty
+            if inventory_df.empty:
+                logger.warning("Empty inventory DataFrame after initial parsing")
+                return pd.DataFrame(columns=['WarehouseName', 'Sku', 'Name', 'Type', 'Balance', 'Status'])
+            
+            # Ensure the 'Sku' column exists
+            if 'Sku' not in inventory_df.columns:
+                # Try to find an alternative sku column
+                sku_col = next((col for col in ['SKU', 'sku', 'Item #', 'Item#', 'Item Number', 'ItemNumber']
+                               if col in inventory_df.columns), None)
+                
+                if sku_col:
+                    # Rename the column to 'Sku'
+                    inventory_df = inventory_df.rename(columns={sku_col: 'Sku'})
+                    logger.info(f"Renamed column '{sku_col}' to 'Sku'")
+                else:
+                    logger.warning("'Sku' column not found in inventory DataFrame and no alternative column found")
+                    # Create an empty 'Sku' column
+                    inventory_df['Sku'] = ''
+                    
+            # Ensure other required columns exist
+            required_columns = ['WarehouseName', 'Name', 'Balance', 'Status', 'Type']
+            for col in required_columns:
+                if col not in inventory_df.columns:
+                    logger.warning(f"Required column '{col}' not found in inventory DataFrame")
+                    inventory_df[col] = '' if col != 'Balance' else 0
+                    
+            # Convert Balance column to numeric
+            if 'Balance' in inventory_df.columns:
+                inventory_df['Balance'] = pd.to_numeric(inventory_df['Balance'].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+            
+            # Add tracking key for SKU and warehouse if not already present
+            if 'tracking_key' not in inventory_df.columns:
+                inventory_df['tracking_key'] = inventory_df['WarehouseName'] + '|' + inventory_df['Sku']
+                logger.info(f"Inventory has {len(inventory_df)} rows with {inventory_df['tracking_key'].nunique()} unique SKU-warehouse combinations")
+            
+            # We do NOT group or sum balances as per requirement - keep all rows as is
+            # This preserves the individual Balance values for each SKU and warehouse combination
+            
+            return inventory_df
+            
         except Exception as e:
             logger.error(f"Error processing inventory file: {str(e)}")
-            # Return an empty DataFrame with the required columns as a fallback
-            return pd.DataFrame(columns=["WarehouseName", "Sku", "AvailableQty", "Status"])
+            return pd.DataFrame(columns=['WarehouseName', 'Sku', 'Name', 'Type', 'Balance', 'Status'])
 
     def check_inventory_in_other_fc(self, sku, inventory_df, fc_key):
         """
@@ -1137,7 +481,7 @@ class DataProcessor:
         # Get balance column if it exists
         balance_column = None
         for col in inventory_df.columns:
-            if col.lower() in ["balance", "availableqty"]:
+            if col.lower() == "balance":
                 balance_column = col
                 break
 
@@ -1487,21 +831,7 @@ class DataProcessor:
                                 f"Could not convert Balance value for {sku}: {row['Balance']} - Error: {e}"
                             )
 
-                    # Only use AvailableQty if Balance is not available
-                    if balance == 0 and "AvailableQty" in row.index:
-                        try:
-                            avail_value = row["AvailableQty"]
-                            if isinstance(avail_value, str):
-                                avail_value = avail_value.replace(",", "")
-                            avail_qty = float(avail_value) if pd.notna(avail_value) else 0
-                            balance = avail_qty
-                            logger.info(
-                                f"Using AvailableQty column for {sku} because Balance is not available: {balance}"
-                            )
-                        except (ValueError, TypeError) as e:
-                            logger.warning(
-                                f"Could not convert AvailableQty value for {sku}: {row['AvailableQty']} - Error: {e}"
-                            )
+                    # We only use the Balance column as requested, no fallback to AvailableQty
 
                     # Log the final balance value
                     logger.info(f"Final balance for {sku}: {balance}")
@@ -1550,7 +880,7 @@ class DataProcessor:
         sku_weight_data=None,
         affected_skus=None,
     ):
-        """Process orders and apply SKU mappings.
+        """Process orders and apply SKU mappings with proper inventory allocation.
 
         Args:
             orders_df (DataFrame): Orders dataframe
@@ -1581,212 +911,337 @@ class DataProcessor:
             mappings_dict = sku_mappings
             logger.info("Using old format SKU mappings")
 
-        # Initialize a fresh dictionary to track running balances for each SKU
-        # Always create a new copy to avoid state persistence across calls
+        # Initialize tracking variables
         running_balances = {}
-        
-        # Store initial inventory state for before/after comparison
         initial_inventory_state = {}
-        if inventory_df is not None and not inventory_df.empty:
-            # Find the SKU column with case-insensitive matching
-            sku_column = None
-            for col in inventory_df.columns:
-                if col.lower() == 'sku':
-                    sku_column = col
-                    break
-            
-            if sku_column:
-                # Store initial balance for each SKU
-                for _, row in inventory_df.iterrows():
-                    sku = str(row[sku_column]).strip()
-                    warehouse = None
-                    if 'WarehouseName' in row:
-                        warehouse = str(row['WarehouseName']).strip()
-                    
-                    # Try to get balance from different possible column names
-                    balance = 0
-                    if 'Balance' in row and pd.notna(row['Balance']):
-                        try:
-                            balance = float(row['Balance'])
-                        except (ValueError, TypeError):
-                            pass
-                    elif 'AvailableQty' in row and pd.notna(row['AvailableQty']):
-                        try:
-                            balance = float(row['AvailableQty'])
-                        except (ValueError, TypeError):
-                            pass
-                    
-                    # Use composite key format: SKU|warehouse to track inventory per warehouse
-                    # This ensures we don't overwrite inventory from different warehouses
-                    normalized_warehouse = self.normalize_warehouse_name(warehouse, log_transformations=False) if warehouse else "Unknown"
-                    composite_key = f"{sku}|{normalized_warehouse}"
-                    
-                    initial_inventory_state[composite_key] = {
-                        'balance': balance,
-                        'warehouse': normalized_warehouse,
-                        'sku': sku
-                    }
-                    
-                    # Initialize running balances with composite key
-                    running_balances[composite_key] = balance
-                
-                logger.info(f"Initialized initial inventory state with {len(initial_inventory_state)} entries")
-                # Log a few sample entries
-                sample_items = list(initial_inventory_state.items())[:5]
-                logger.info(f"Sample initial inventory: {sample_items}")
-
-        # If we have affected_skus, initialize their balances from inventory_df
-        # This allows us to only recalculate the affected SKUs
-        if affected_skus:
-            logger.info(f"Selective recalculation for {len(affected_skus)} affected SKUs")
-            # Initialize running balances for affected SKUs from inventory
-            for sku in affected_skus:
-                # Find this SKU in inventory
-                # Use 'Sku' column (not 'SKU') based on the inventory data structure
-                sku_inventory = inventory_df[inventory_df["Sku"] == sku]
-                if not sku_inventory.empty:
-                    # Process each warehouse separately to maintain composite keys
-                    for _, row in sku_inventory.iterrows():
-                        warehouse = row.get("WarehouseName", "Unknown")
-                        normalized_warehouse = self.normalize_warehouse_name(warehouse, log_transformations=False) if warehouse else "Unknown"
-                        composite_key = f"{sku}|{normalized_warehouse}"
-                        
-                        # Use the Balance column if available, otherwise AvailableQty
-                        balance = 0.0
-                        if "Balance" in row and pd.notna(row["Balance"]):
-                            balance = float(row["Balance"])
-                        elif "AvailableQty" in row and pd.notna(row["AvailableQty"]):
-                            balance = float(row["AvailableQty"])
-                        
-                        running_balances[composite_key] = balance
-                        
-                        # Also update initial_inventory_state for consistency
-                        initial_inventory_state[composite_key] = {
-                            'balance': balance,
-                            'warehouse': normalized_warehouse,
-                            'sku': sku
-                        }
-                        
-                        # Log the initial balance for this SKU
-                        self._recalculation_log.append({
-                            "timestamp": pd.Timestamp.now(),
-                            "sku": sku,
-                            "operation": "initial_balance",
-                            "value": balance,
-                            "warehouse": normalized_warehouse
-                        })
-
-        # Initialize a list to track inventory shortages
         all_shortages = []
-
-        # Keep track of unique shortages to prevent duplications
-        # Using a set of tuples (component_sku, order_id) to track what's been added
         shortage_tracker = set()
+        processed_orders = []
         
         # Clear previous recalculation log if starting a new recalculation
         self._recalculation_log = []
-        # Clear recalculated SKUs tracking
         self._recalculated_skus = set()
 
-        # Load SKU weight data from mapping files if not provided
+        # Initialize inventory state
+        if inventory_df is not None and not inventory_df.empty:
+            self._initialize_inventory_state(inventory_df, running_balances, initial_inventory_state, affected_skus)
+
+        # Load SKU weight data if not provided
         if sku_weight_data is None:
-            sku_weight_data = {}
-            # Try to load from constants directory
-            try:
-                import os
+            sku_weight_data = self._load_sku_weight_data(sku_mappings)
 
-                # Load SKU mappings from JSON file
-                sku_mappings_path = os.path.join("constants", "data", "sku_mappings.json")
-                if os.path.exists(sku_mappings_path):
-                    try:
-                        with open(sku_mappings_path, "r") as f:
-                            sku_mappings = json.load(f)
-
-                        # Extract Wheeling data if available
-                        if "Wheeling" in sku_mappings and "all_skus" in sku_mappings["Wheeling"]:
-                            wheeling_data = {}
-                            for sku, data in sku_mappings["Wheeling"]["all_skus"].items():
-                                # Store the picklist_sku as well
-                                wheeling_data[sku] = {
-                                    "actualqty": data.get("actualqty", ""),
-                                    "Total Pick Weight": data.get("Total_Pick_Weight", ""),
-                                    "picklist_sku": data.get("picklist_sku", ""),
-                                }
-                                # Also add the SKU without 'f.' prefix if it has one
-                                if sku.startswith("f."):
-                                    wheeling_data[sku[2:]] = wheeling_data[sku]
-                                # Also add with 'f.' prefix if it doesn't have one
-                                elif not sku.startswith("f."):
-                                    wheeling_data[f"f.{sku}"] = wheeling_data[sku]
-
-                            sku_weight_data["Wheeling"] = wheeling_data
-                            logger.info(
-                                f"Loaded weight data for {len(wheeling_data)} SKUs from Wheeling mapping file"
-                            )
-                    except Exception as e:
-                        logger.error(f"Error loading SKU mappings from JSON file: {e}")
-
-                # Oxnard data should already be in the sku_mappings.json file
-                # Extract Oxnard data if available
-                if "Oxnard" in sku_mappings and "all_skus" in sku_mappings["Oxnard"]:
-                    oxnard_data = {}
-                    for sku, data in sku_mappings["Oxnard"]["all_skus"].items():
-                        oxnard_data[sku] = {
-                            "actualqty": data.get("actualqty", ""),
-                            "Total Pick Weight": data.get("Total_Pick_Weight", ""),
-                        }
-                        # Also add the SKU without 'f.' prefix if it has one
-                        if sku.startswith("f."):
-                            oxnard_data[sku[2:]] = oxnard_data[sku]
-
-                    sku_weight_data["Oxnard"] = oxnard_data
-                    logger.info(
-                        f"Loaded weight data for {len(oxnard_data)} SKUs from Oxnard mapping file"
-                    )
-            except Exception as e:
-                logger.error(f"Error loading SKU weight data: {str(e)}")
-        # Define the streamlined output columns based on the fulfillment-focused structure
-        # Removed delivery service-related columns (carrier_name, service_name, delivery_days)
+        # Define output columns
         output_columns = [
-            "externalorderid",
-            "ordernumber",
-            "CustomerFirstName",
-            "customerLastname",
-            "customeremail",
-            "customerphone",
-            "shiptoname",
-            "shiptostreet1",
-            "shiptostreet2",
-            "shiptocity",
-            "shiptostate",
-            "shiptopostalcode",
-            "note",
-            "placeddate",
-            "preferredcarrierserviceid",
-            "totalorderamount",
-            "shopsku",
-            "shopquantity",
-            "externalid",
-            "Tags",
-            "MAX PKG NUM",
-            "Fulfillment Center",
-            "shopifysku2",
-            "sku",
-            "actualqty",
-            "Total Pick Weight",
-            "quantity",
-            "Starting Balance",
-            "Transaction Quantity",
-            "Ending Balance",
-            "Issues",
+            "externalorderid", "ordernumber", "CustomerFirstName", "customerLastname",
+            "customeremail", "customerphone", "shiptoname", "shiptostreet1", "shiptostreet2",
+            "shiptocity", "shiptostate", "shiptopostalcode", "note", "placeddate",
+            "preferredcarrierserviceid", "totalorderamount", "shopsku", "shopquantity",
+            "externalid", "Tags", "MAX PKG NUM", "Fulfillment Center", "shopifysku2", "sku",
+            "actualqty", "Total Pick Weight", "quantity", "Starting Balance",
+            "Transaction Quantity", "Ending Balance", "Issues",
         ]
-
         output_df = pd.DataFrame(columns=output_columns)
 
-        # Rename columns to match expected format if needed
+        # Apply column mapping
+        self._apply_column_mapping(orders_df)
+
+        # Process each order
+        for _, row in orders_df.iterrows():
+            order_id = row.get("externalorderid", row.get("ordernumber", "unknown"))
+            
+            # Extract SKU information
+            shopify_sku = self._extract_shopify_sku(row, orders_df.columns)
+            if shopify_sku is None:
+                logger.warning(f"Warning: No SKU found for order {order_id}")
+                continue
+
+            # Skip if selective recalculation and SKU not affected
+            if affected_skus is not None and not self._is_sku_affected(shopify_sku, affected_skus, bundle_info_dict, row):
+                continue
+
+            # Get fulfillment center and normalize
+            fulfillment_center = row.get("Fulfillment Center", "Moorpark")
+            fc_key = self.normalize_warehouse_name(fulfillment_center, log_transformations=True) if fulfillment_center else "Oxnard"
+
+            # Create base order data
+            order_data = self._create_base_order_data(row, output_columns, shopify_sku, fulfillment_center)
+
+            # Find weight data
+            found_match = self._find_weight_data_in_mappings(shopify_sku, fc_key, sku_weight_data, order_data)
+            if not found_match:
+                order_data["actualqty"] = ""
+                order_data["Total Pick Weight"] = ""
+
+            # Get shop quantity and set order quantity
+            shop_quantity = int(row.get("shopquantity", 1)) if pd.notna(row.get("shopquantity")) else 1
+            order_data["shopquantity"] = shop_quantity
+            self._set_order_quantity(order_data, shop_quantity)
+
+            # Check if this is a bundle and process accordingly
+            is_bundle = (bundle_info_dict and fc_key in bundle_info_dict and shopify_sku in bundle_info_dict[fc_key])
+            
+            if is_bundle:
+                bundle_components = bundle_info_dict[fc_key][shopify_sku]
+                output_df = self._process_bundle_order(
+                    order_data, bundle_components, shop_quantity, inventory_df,
+                    running_balances, all_shortages, shortage_tracker, output_df,
+                    sku_mappings, fc_key, row
+                )
+            else:
+                output_df = self._process_single_sku_order(
+                    order_data, shopify_sku, shop_quantity, inventory_df,
+                    running_balances, all_shortages, shortage_tracker, output_df,
+                    sku_mappings, fc_key, row
+                )
+
+        # Log completion
+        logger.info(f"Processed {len(orders_df)} orders, generated {len(output_df)} output rows")
+        logger.info(f"Found {len(all_shortages)} inventory shortages")
+
+        return (output_df, all_shortages)
+
+    def _find_sku_columns(self, df):
+        """
+        Find SKU and balance columns in a DataFrame with case-insensitive matching.
+        
+        Returns:
+            tuple: (sku_column, balance_column) where each is the column name or None if not found
+        """
+        sku_column = None
+        balance_column = None
+        
+        # Find SKU column
+        sku_candidates = ['Sku', 'SKU', 'sku', 'Item #', 'Item#', 'Item Number', 'ItemNumber', 'inventory_sku', 'Inventory SKU']
+        for candidate in sku_candidates:
+            if candidate in df.columns:
+                sku_column = candidate
+                break
+        
+        # Try case-insensitive match for SKU if exact match not found
+        if not sku_column:
+            for col in df.columns:
+                if col.lower() == 'sku':
+                    sku_column = col
+                    break
+        
+        # Find balance column
+        balance_candidates = ['Balance', 'AvailableQty', 'Available Qty', 'Quantity', 'balance', 'availableqty']
+        for candidate in balance_candidates:
+            if candidate in df.columns:
+                balance_column = candidate
+                break
+        
+        return sku_column, balance_column
+
+    def _find_weight_data_in_mappings(self, shopify_sku, fc_key, sku_weight_data, order_data):
+        """
+        Find weight data for a SKU in the mappings and set actualqty and Total Pick Weight.
+        Enhanced to work with Airtable data structure.
+        
+        Args:
+            shopify_sku (str): The Shopify SKU to look up
+            fc_key (str): Fulfillment center key
+            sku_weight_data (dict): Weight data dictionary (supports both old and new format)
+            order_data (dict): Order data dictionary to update
+            
+        Returns:
+            bool: True if weight data was found and set, False otherwise
+        """
+        try:
+            # Normalize fc_key
+            normalized_fc = self.normalize_warehouse_name(fc_key, log_transformations=False)
+            
+            # Handle both old and new data structures
+            search_data = sku_weight_data
+            
+            # If using Airtable structure, get the mappings
+            if isinstance(sku_weight_data, dict) and "mappings" in sku_weight_data:
+                search_data = sku_weight_data["mappings"]
+                logger.debug(f"Using Airtable format mappings for {shopify_sku}")
+            
+            # Check if we have weight data for this fulfillment center
+            if not search_data or normalized_fc not in search_data:
+                logger.debug(f"No weight data found for warehouse {normalized_fc}")
+                return False
+            
+            fc_weight_data = search_data[normalized_fc]
+            
+            # Try multiple SKU variations
+            sku_variations = [
+                shopify_sku,  # Direct match
+                shopify_sku[2:] if shopify_sku.startswith("f.") else shopify_sku,  # Without f. prefix
+                f"f.{shopify_sku}" if not shopify_sku.startswith("f.") else shopify_sku  # With f. prefix
+            ]
+            
+            for sku_variant in sku_variations:
+                if sku_variant in fc_weight_data:
+                    sku_data = fc_weight_data[sku_variant]
+                    
+                    if isinstance(sku_data, dict):
+                        # Handle multiple field name variations
+                        actualqty = (sku_data.get("actualqty") or 
+                                   sku_data.get("Actualqty") or 
+                                   sku_data.get("actual_qty") or "")
+                        
+                        weight = (sku_data.get("Total Pick Weight") or 
+                                sku_data.get("Total_Pick_Weight") or 
+                                sku_data.get("total_pick_weight") or "")
+                        
+                        mapped_sku = (sku_data.get("sku") or 
+                                    sku_data.get("inventory_sku") or 
+                                    sku_data.get("Inventory SKU") or "")
+                        
+                        # Set the data
+                        order_data["actualqty"] = actualqty
+                        order_data["Total Pick Weight"] = weight
+                        
+                        # Set the mapped inventory SKU if available
+                        if mapped_sku:
+                            order_data["sku"] = mapped_sku
+                        
+                        logger.debug(f"Found mapping: {shopify_sku} -> {mapped_sku} (qty: {actualqty}, weight: {weight})")
+                        return True
+            
+            # Try alternate warehouse if current one doesn't have the mapping
+            alternate_fc = "Wheeling" if normalized_fc == "Oxnard" else "Oxnard"
+            if alternate_fc in search_data:
+                alt_fc_data = search_data[alternate_fc]
+                for sku_variant in sku_variations:
+                    if sku_variant in alt_fc_data:
+                        sku_data = alt_fc_data[sku_variant]
+                        if isinstance(sku_data, dict):
+                            actualqty = (sku_data.get("actualqty") or 
+                                       sku_data.get("Actualqty") or 
+                                       sku_data.get("actual_qty") or "")
+                            
+                            weight = (sku_data.get("Total Pick Weight") or 
+                                    sku_data.get("Total_Pick_Weight") or 
+                                    sku_data.get("total_pick_weight") or "")
+                            
+                            mapped_sku = (sku_data.get("sku") or 
+                                        sku_data.get("inventory_sku") or 
+                                        sku_data.get("Inventory SKU") or "")
+                            
+                            order_data["actualqty"] = actualqty
+                            order_data["Total Pick Weight"] = weight
+                            if mapped_sku:
+                                order_data["sku"] = mapped_sku
+                            
+                            logger.debug(f"Found mapping in alternate warehouse {alternate_fc}: {shopify_sku} -> {mapped_sku}")
+                            return True
+            
+            logger.debug(f"No mapping found for SKU {shopify_sku} in any warehouse")
+            return False
+            
+        except Exception as e:
+            logger.warning(f"Error finding weight data for SKU {shopify_sku}: {str(e)}")
+            return False
+
+    def _set_order_quantity(self, order_data, shop_quantity):
+        """
+        Set the order quantity in order_data.
+        
+        Args:
+            order_data (dict): Order data dictionary to update
+            shop_quantity (int): The shop quantity to set
+        """
+        order_data["quantity"] = shop_quantity
+
+    def _initialize_inventory_state(self, inventory_df, running_balances, initial_inventory_state, affected_skus=None):
+        """Initialize inventory state from inventory DataFrame with proper warehouse separation."""
+        sku_column, balance_column = self._find_sku_columns(inventory_df)
+        if not sku_column:
+            logger.warning("Warning: 'Sku' column not found in inventory DataFrame")
+            return
+
+        # Initialize counters for debugging
+        total_entries = 0
+        warehouse_counts = {}
+        
+        # Track processed keys to avoid duplicate overwriting
+        processed_keys = set()
+        
+        for _, row in inventory_df.iterrows():
+            sku = str(row[sku_column]).strip()
+            
+            # Get warehouse - prefer 'Warehouse' over 'WarehouseName' if available
+            warehouse = row.get('Warehouse', row.get('WarehouseName', 'Unknown'))
+            normalized_warehouse = self.normalize_warehouse_name(warehouse, log_transformations=False) if warehouse else "Unknown"
+            
+            # Track warehouse distribution for debugging
+            warehouse_counts[normalized_warehouse] = warehouse_counts.get(normalized_warehouse, 0) + 1
+            
+            # Create composite key for unique inventory tracking per warehouse
+            composite_key = f"{sku}|{normalized_warehouse}"
+            
+            # Only process each SKU+warehouse combination once (use the first/highest value)
+            if composite_key in processed_keys:
+                continue
+            
+            # Get balance from appropriate column
+            balance = 0.0
+            if balance_column and balance_column in row and pd.notna(row[balance_column]):
+                balance = float(row[balance_column])
+            elif "Balance" in row and pd.notna(row["Balance"]):
+                balance = float(row["Balance"])
+            elif "Current Balance" in row and pd.notna(row["Current Balance"]):
+                balance = float(row["Current Balance"])
+            
+            # Store in running balances for order processing
+            running_balances[composite_key] = balance
+            
+            # Store in initial state for tracking changes
+            initial_inventory_state[composite_key] = {
+                'balance': balance,
+                'warehouse': normalized_warehouse,
+                'sku': sku,
+                'original_warehouse': warehouse  # Keep original for reference
+            }
+            
+            # Mark this SKU+warehouse combination as processed
+            processed_keys.add(composite_key)
+            
+            total_entries += 1
+
+        logger.info(f"Initialized inventory state with {total_entries} entries across warehouses: {warehouse_counts}")
+        logger.info(f"Used first entry for each unique SKU+warehouse combination, ignoring duplicates")
+
+    def _load_sku_weight_data(self, sku_mappings):
+        """Load SKU weight data from mapping files"""
+        sku_weight_data = {}
+        try:
+            import os
+            sku_mappings_path = os.path.join("constants", "data", "sku_mappings.json")
+            if os.path.exists(sku_mappings_path):
+                with open(sku_mappings_path, "r") as f:
+                    loaded_mappings = json.load(f)
+                
+                for warehouse in ["Wheeling", "Oxnard"]:
+                    if warehouse in loaded_mappings and "all_skus" in loaded_mappings[warehouse]:
+                        warehouse_data = {}
+                        for sku, data in loaded_mappings[warehouse]["all_skus"].items():
+                            warehouse_data[sku] = {
+                                "actualqty": data.get("actualqty", ""),
+                                "Total Pick Weight": data.get("Total_Pick_Weight", ""),
+                            }
+                            # Handle SKU variations
+                            if sku.startswith("f."):
+                                warehouse_data[sku[2:]] = warehouse_data[sku]
+                            elif not sku.startswith("f."):
+                                warehouse_data[f"f.{sku}"] = warehouse_data[sku]
+                        
+                        sku_weight_data[warehouse] = warehouse_data
+                        logger.info(f"Loaded weight data for {len(warehouse_data)} SKUs from {warehouse} mapping file")
+        except Exception as e:
+            logger.error(f"Error loading SKU weight data: {str(e)}")
+        
+        return sku_weight_data
+
+    def _apply_column_mapping(self, orders_df):
+        """Apply column mapping to standardize order DataFrame columns"""
         column_mapping = {
-            "Name": "externalorderid",  # Name contains order reference like #71184
-            "order id": "ordernumber",  # order id contains the numeric ID
+            "Name": "externalorderid",
+            "order id": "ordernumber",
             "Customer: First Name": "CustomerFirstName",
             "Customer: Last Name": "customerLastname",
             "Email": "customeremail",
@@ -1804,666 +1259,209 @@ class DataProcessor:
             "NEW Tags": "Tags",
             "MAX PKG NUM": "MAX PKG NUM",
             "Fulfillment Center": "Fulfillment Center",
-            "Saturday Shipping": "Saturday Shipping",
         }
 
-        # Apply column mapping where columns exist
         for old_col, new_col in column_mapping.items():
             if old_col in orders_df.columns and new_col not in orders_df.columns:
                 orders_df[new_col] = orders_df[old_col]
 
-        # Check for SKU columns in the dataframe
-        # Some SKUs might be in columns with fruit names like 'f.loquat-5lb'
-        sku_columns = [
-            col for col in orders_df.columns if col.startswith("f.") or col.startswith("m.")
-        ]
-
-        # Track which orders we've processed for selective recalculation
-        processed_order_ids = set()
-
-        # Process each order
-        for _, row in orders_df.iterrows():
-            # Get order ID for tracking
-            order_id = row.get("externalorderid", row.get("ordernumber", "unknown"))
-
-            # First try to get SKU from shopsku column
-            shopify_sku = None
-            if "shopsku" in row and pd.notna(row["shopsku"]):
-                shopify_sku = row["shopsku"]
-            elif "SKU Helper" in row and pd.notna(row["SKU Helper"]):
-                shopify_sku = row["SKU Helper"]
-            else:
-                # Check other possible SKU columns
-                standard_sku_columns = ["sku", "lineitemsku", "shopifysku", "shopifysku2"]
-                for col in standard_sku_columns:
-                    if col in row and pd.notna(row[col]):
-                        shopify_sku = row[col]
-                        break
-
-                # If still no SKU, check fruit-specific columns
-                if shopify_sku is None:
-                    for col in sku_columns:
-                        if col in row and pd.notna(row[col]) and float(row[col]) > 0:
-                            shopify_sku = col
-                            break
-
-            # Skip this order if no SKU found
-            if shopify_sku is None:
-                logger.warning(
-                    f"Warning: No SKU found for order {row.get('externalorderid', 'unknown')}"
-                )
-                continue
-
-            # Determine fulfillment center for this order
-            fulfillment_center = row.get("Fulfillment Center", "Moorpark")
-
-            # Map Shopify SKU to warehouse SKU using the mappings
-            warehouse_sku = shopify_sku
-
-            # Convert fulfillment center name to match the keys in sku_mappings
-            # Use centralized warehouse normalization function
-            if fulfillment_center:
-                fc_key = self.normalize_warehouse_name(fulfillment_center, log_transformations=True)
-            else:
-                fc_key = "Oxnard"  # Default for missing fulfillment center
-
-            # Skip this order if selective recalculation is enabled and this order doesn't contain affected SKUs
-            if affected_skus is not None and shopify_sku is not None:
-                # Check if this SKU is in the affected_skus set
-                sku_affected = shopify_sku in affected_skus
-
-                # If it's a bundle, check if any of its components are in affected_skus
-                if (
-                    not sku_affected
-                    and bundle_info_dict
-                    and fc_key in bundle_info_dict
-                    and shopify_sku in bundle_info_dict[fc_key]
-                ):
-                    # Check if any component SKU is in affected_skus
-                    for component in bundle_info_dict[fc_key][shopify_sku]:
-                        component_sku = component.get("component_sku")
-                        if component_sku in affected_skus:
-                            sku_affected = True
-                            # Log that this bundle is affected because of a component
-                            self._recalculation_log.append({
-                                "timestamp": pd.Timestamp.now(),
-                                "sku": shopify_sku,
-                                "operation": "bundle_affected",
-                                "value": component_sku,
-                                "order_id": order_id,
-                                "reason": f"Bundle affected by component {component_sku}"
-                            })
-                            break
-
-                # Skip this order if neither the SKU nor its components are affected
-                if not sku_affected:
-                    continue
-
-                # Track that we're processing this order
-                processed_order_ids.add(order_id)
-                
-                # Log that we're processing this order due to affected SKU
-                self._recalculation_log.append({
-                    "timestamp": pd.Timestamp.now(),
-                    "sku": shopify_sku,
-                    "operation": "process_order",
-                    "value": "",
-                    "order_id": order_id,
-                    "reason": "SKU directly affected by changes"
-                })
-            else:
-                # Do not default to any fulfillment center if none is specified
-                # This is a critical logistics task and we need to preserve the original value
-                if not fulfillment_center:
-                    # Just log the warning once per order
-                    warning_key = f"no_fc_specified_{order_id}"
-                    if warning_key not in self._logged_inventory_issues:
-                        logger.warning(f"Warning: No fulfillment center specified for order {order_id}")
-                        self._logged_inventory_issues.add(warning_key)
-            # Apply SKU mapping if available
-            # Use the mappings_dict we extracted earlier
-            fc_mappings = {}
-            if mappings_dict and fc_key in mappings_dict:
-                # Get the mapping for this fulfillment center
-                fc_mappings = mappings_dict[fc_key]
-
-                # If this SKU has a mapping, use it
-                if (
-                    shopify_sku in fc_mappings
-                    and fc_mappings[shopify_sku]
-                    and fc_mappings[shopify_sku] != "nan"
-                ):
-                    warehouse_sku = fc_mappings[shopify_sku]
-                    logger.info(
-                        f"Mapped Shopify SKU '{shopify_sku}' to warehouse SKU '{warehouse_sku}' for {fc_key}"
-                    )
-                else:
-                    logger.info(
-                        f"No SKU mapping found for '{shopify_sku}' in {fc_key}, using original SKU"
-                    )
-            else:
-                logger.info(f"No SKU mappings available for {fc_key}, using original SKU")
-
-            # Use the warehouse SKU for inventory matching
-            sku = warehouse_sku
-
-            # Map SKU to inventory SKU
-            # Note: warehouse_sku is already mapped from shopify_sku using the JSON mappings above
-            # Now we just need to find this SKU in the inventory and get its balance
-            inventory_sku, inventory_balance, issue = self._map_sku_to_inventory(
-                warehouse_sku,
-                inventory_df,
-                None,  # Don't pass mappings again - we already mapped shopify_sku to warehouse_sku
-                bundle_info_dict,
-                fc_key,
-                running_balances,  # Pass running balances to the mapping function
-            )
-
-            # Extract priority tag
-            if "Tags" in row and pd.notna(row["Tags"]):
-                tags = str(row["Tags"]).upper()
-                if "P1" in tags or "P*" in tags:
-                    pass
-
-            # Extract ZIP code for shipping zone lookup
-            if "shiptopostalcode" in row and pd.notna(row["shiptopostalcode"]):
-                str(row["shiptopostalcode"])
-
-            # Create order data dictionary with basic fields
-            order_data = {col: "" for col in output_columns}  # Initialize with empty strings
-
-            # Copy existing fields from the order row
-            for field in output_columns:
-                if field in row and pd.notna(row[field]):
-                    if field == "placeddate":
-                        # Format date to match expected format (M/D/YYYY)
-                        try:
-                            date_value = pd.to_datetime(row[field])
-                            order_data[field] = date_value.strftime("%-m/%-d/%Y")  # Format as M/D/YYYY
-                        except:
-                            order_data[field] = row[field]  # Keep original if conversion fails
-                    else:
-                        order_data[field] = row[field]
-
-            # Add SKU information
-            order_data["shopsku"] = shopify_sku
-            order_data["shopifysku2"] = shopify_sku  # Also add as shopifysku2 for compatibility
-
-            # Check if this is a bundle
-            is_bundle = False
-            bundle_components = []
-
-            if (
-                bundle_info_dict
-                and fc_key in bundle_info_dict
-                and shopify_sku in bundle_info_dict[fc_key]
-            ):
-                is_bundle = True
-                bundle_components = bundle_info_dict[fc_key][shopify_sku]
-                logger.info(
-                    f"Found bundle {shopify_sku} with {len(bundle_components)} components: {bundle_components}"
-                )
-
-            # Find the SKU and balance columns in the inventory DataFrame
-            sku_column = None
-            balance_column = None
-            for col in inventory_df.columns:
-                if col.lower() == "sku":
-                    sku_column = col
-                elif col.lower() == "balance":
-                    balance_column = col
-
-            if sku_column is None:
-                logger.warning("Warning: 'Sku' column not found in inventory DataFrame")
-                continue
-
-            # Add fulfillment center
-            order_data["Fulfillment Center"] = fulfillment_center
-
-            # Add weight and actual quantity information from the JSON file
-            # First try to get data from the mappings_dict structure
-            found_match = False
-
-            # Check if we have the new format with mappings in the JSON file
-            if mappings_dict and fc_key in mappings_dict:
-                # Try to find the SKU in the JSON file structure
-                if shopify_sku in mappings_dict[fc_key]:
-                    # For the new format, we need to look up the data in the original JSON file
-                    try:
-                        json_path = os.path.join(
-                            os.path.dirname(os.path.dirname(__file__)),
-                            "constants",
-                            "data",
-                            "sku_mappings.json",
-                        )
-
-                        if os.path.exists(json_path):
-                            with open(json_path, "r") as f:
-                                sku_json = json.load(f)
-
-                                # Check if the SKU exists in the all_skus section
-                                if (
-                                    "all_skus" in sku_json[fc_key]
-                                    and shopify_sku in sku_json[fc_key]["all_skus"]
-                                ):
-                                    sku_data = sku_json[fc_key]["all_skus"][shopify_sku]
-                                    order_data["actualqty"] = sku_data.get("actualqty", "")
-                                    order_data["Total Pick Weight"] = sku_data.get(
-                                        "Total_Pick_Weight", ""
-                                    )
-                                    logger.info(
-                                        f"Found weight/quantity data for {shopify_sku} in JSON: actualqty={order_data['actualqty']}, weight={order_data['Total Pick Weight']}"
-                                    )
-                                    found_match = True
-                    except Exception as e:
-                        logger.error(f"Error loading SKU data from JSON: {e}")
-
-            # If we didn't find a match in the JSON file, try the old sku_weight_data
-            if not found_match and sku_weight_data:
-                if fc_key in sku_weight_data and shopify_sku in sku_weight_data[fc_key]:
-                    sku_data = sku_weight_data[fc_key][shopify_sku]
-                    order_data["actualqty"] = sku_data.get("actualqty", "")
-                    order_data["Total Pick Weight"] = sku_data.get("Total Pick Weight", "")
-                    logger.info(
-                        f"Found weight/quantity data for {shopify_sku}: actualqty={order_data['actualqty']}, weight={order_data['Total Pick Weight']}"
-                    )
-                    found_match = True
-                else:
-                    # Try alternative SKU formats
-                    alt_skus = []
-                    if shopify_sku.startswith("f."):
-                        alt_skus.append(shopify_sku[2:])  # Try without 'f.' prefix
-                    else:
-                        alt_skus.append(f"f.{shopify_sku}")  # Try with 'f.' prefix
-
-                    # Try case variations
-                    alt_skus.append(shopify_sku.lower())
-                    alt_skus.append(shopify_sku.upper())
-
-                    # Check all alternative formats
-                    for alt_sku in alt_skus:
-                        if fc_key in sku_weight_data and alt_sku in sku_weight_data[fc_key]:
-                            sku_data = sku_weight_data[fc_key][alt_sku]
-                            order_data["actualqty"] = sku_data.get("actualqty", "")
-                            order_data["Total Pick Weight"] = sku_data.get("Total Pick Weight", "")
-                            logger.info(
-                                f"Found weight/quantity data for alternative SKU {alt_sku}: actualqty={order_data['actualqty']}, weight={order_data['Total Pick Weight']}"
-                            )
-                            found_match = True
-                            break
-
-                    # Try the other fulfillment center's mapping as a fallback
-                    if not found_match:
-                        other_fc = "Oxnard" if fc_key == "Wheeling" else "Wheeling"
-                        if other_fc in sku_weight_data and shopify_sku in sku_weight_data[other_fc]:
-                            sku_data = sku_weight_data[other_fc][shopify_sku]
-                            order_data["actualqty"] = sku_data.get("actualqty", "")
-                            order_data["Total Pick Weight"] = sku_data.get("Total Pick Weight", "")
-                            logger.info(
-                                f"Found weight/quantity data in {other_fc} for {shopify_sku}: actualqty={order_data['actualqty']}, weight={order_data['Total Pick Weight']}"
-                            )
-                            found_match = True
-
-            # If still no match, set empty values
-            if not found_match:
-                other_fc = "Oxnard" if fc_key == "Wheeling" else "Wheeling"
-                if other_fc in sku_weight_data and shopify_sku in sku_weight_data[other_fc]:
-                    sku_data = sku_weight_data[other_fc][shopify_sku]
-                    order_data["actualqty"] = sku_data.get("actualqty", "")
-                    order_data["Total Pick Weight"] = sku_data.get("Total Pick Weight", "")
-                    logger.info(
-                        f"Found weight/quantity data in {other_fc} for {shopify_sku}: actualqty={order_data['actualqty']}, weight={order_data['Total Pick Weight']}"
-                    )
-                    found_match = True
-
-            # If still no match, set empty values
-            if not found_match:
-                logger.info(f"No weight/quantity data found for {shopify_sku} in any mapping")
-                order_data["actualqty"] = ""
-                order_data["Total Pick Weight"] = ""
-
-            # Add balance information
-            shop_quantity = (
-                int(row.get("shopquantity", 1)) if pd.notna(row.get("shopquantity")) else 1
-            )
-            order_data["shopquantity"] = shop_quantity
-
-            # Set the quantity field based on actualqty if available, otherwise use shopquantity
-            if order_data.get("actualqty") and str(order_data["actualqty"]).strip():
-                try:
-                    order_data["quantity"] = float(order_data["actualqty"])
-                except (ValueError, TypeError):
-                    order_data["quantity"] = shop_quantity
-            else:
-                order_data["quantity"] = shop_quantity
-
-            # Process differently based on whether this is a bundle or not
-            if is_bundle and bundle_components:
-                # For bundles, create a separate row for each component
-                for component in bundle_components:
-                    # Create a copy of the order data for this component
-                    component_order_data = order_data.copy()
-
-                    # Get the component SKU and quantity
-                    component_sku = component["sku"]
-                    base_component_qty = float(component.get("qty", 1.0))
-                    component_weight = float(component.get("weight", 0.0))
-                    
-                    # Calculate total component quantity needed (base quantity * order quantity)
-                    component_qty = base_component_qty * shop_quantity
-                    total_component_weight = component_weight * shop_quantity
-
-                    # Set component data
-                    component_order_data["sku"] = component_sku
-                    component_order_data["actualqty"] = component_qty
-                    component_order_data["Total Pick Weight"] = total_component_weight
-                    component_order_data["quantity"] = component_qty
-
-                    # Get the current running balance for this SKU using composite key
-                    # Make sure we're using the normalized warehouse name for consistency
-                    normalized_warehouse = self.normalize_warehouse_name(fc_key, log_transformations=False)
-                    component_composite_key = f"{component_sku}|{normalized_warehouse}"
-                    
-                    if component_composite_key in running_balances:
-                        current_balance = running_balances[component_composite_key]
-                    elif component_sku in running_balances:  # Fallback to simple key
-                        current_balance = running_balances[component_sku]
-                    else:
-                        # Look up the balance in inventory
-                        component_inventory = inventory_df[
-                            inventory_df[sku_column] == component_sku
-                        ]
-                        if component_inventory.empty:
-                            logger.warning(
-                                f"Component {component_sku} not found in inventory for bundle {shopify_sku}"
-                            )
-                            component_order_data[
-                                "Issues"
-                            ] = f"Bundle component {component_sku} not found in inventory"
-                            component_order_data["Starting Balance"] = 0
-                            component_order_data["Transaction Quantity"] = component_qty
-                            component_order_data["Ending Balance"] = 0
-                            # Add the component order to the output DataFrame
-                            output_df = pd.concat(
-                                [output_df, pd.DataFrame([component_order_data])], ignore_index=True
-                            )
-                            continue
-                        else:
-                            # Get the balance from inventory
-                            if balance_column in component_inventory.columns:
-                                current_balance = (
-                                    float(component_inventory.iloc[0][balance_column])
-                                    if pd.notna(component_inventory.iloc[0][balance_column])
-                                    else 0
-                                )
-                            else:
-                                current_balance = 0
-
-                    # Check if we have enough inventory
-                    if current_balance < component_qty:
-                        # Not enough inventory to satisfy order
-                        shortage = component_qty - current_balance
-
-                        # Track this shortage for the summary
-                        order_id = row.get("externalorderid", "") or row.get("id", "")
-
-                        # Create a unique key for this shortage to prevent duplications
-                        shortage_key = (component_sku, str(order_id))
-
-                        # Only add if we haven't seen this exact shortage before
-                        if shortage_key not in shortage_tracker:
-                            all_shortages.append(
-                                {
-                                    "component_sku": component_sku,
-                                    "shopify_sku": shopify_sku,
-                                    "order_id": order_id,
-                                    "current_balance": current_balance,
-                                    "needed_qty": component_qty,
-                                    "shortage_qty": shortage,
-                                    "fulfillment_center": fc_key,
-                                }
-                            )
-                            # Add to tracker to prevent future duplicates
-                            shortage_tracker.add(shortage_key)
-
-                        # Find potential substitutions
-                        substitution_options = self.find_substitution_options(
-                            component_sku, shortage, inventory_df, sku_mappings, fc_key
-                        )
-
-                        # Create the issue message
-                        issue_message = f"Issue: Insufficient inventory | Item: {component_sku} | Shopify SKU: {shopify_sku} | Current: {current_balance} | Needed: {component_qty} | Short by: {shortage} units"
-
-                        # Add substitution suggestions if available
-                        if substitution_options:
-                            issue_message += "\nSuggested substitutions:\n"
-                            for i, option in enumerate(substitution_options, 1):
-                                issue_message += f"{i}. {option['sku']} (weight: {option['weight']}, available: {option['available_qty']}, similarity: {option['similarity_score']}%)\n"
-
-                        component_order_data["Issues"] = issue_message
-                        
-                        # Create a unique key for this inventory issue to prevent duplicate warnings
-                        issue_key = f"bundle_shortage_{component_sku}_{shopify_sku}_{shortage}"
-                        
-                        # Only log if we haven't seen this exact issue before
-                        if issue_key not in self._logged_inventory_issues:
-                            logger.warning(
-                                f"Insufficient inventory for bundle component {component_sku} (Shopify SKU: {shopify_sku}): current balance {current_balance}, needed {component_qty}, short by {shortage} units"
-                            )
-                            # Add to tracked issues to prevent duplicate warnings
-                            self._logged_inventory_issues.add(issue_key)
-
-                        # Use what we have - but don't consume entire balance, just use the needed component quantity
-                        transaction_quantity = min(current_balance, component_qty)
-                    else:
-                        transaction_quantity = component_qty
-
-                    # Set the starting balance for this component
-                    component_order_data["Starting Balance"] = current_balance
-                    component_order_data["Transaction Quantity"] = transaction_quantity
-
-                    # Calculate ending balance and update running balance
-                    ending_balance = max(0, current_balance - transaction_quantity)
-                    component_order_data["Ending Balance"] = ending_balance
-
-                    # Update the running balance for this component using composite key
-                    running_balances[component_composite_key] = ending_balance
-
-                    # Add the component order to the output DataFrame
-                    output_df = pd.concat(
-                        [output_df, pd.DataFrame([component_order_data])], ignore_index=True
-                    )
-            else:
-                # For regular SKUs, process normally
-                order_data["sku"] = inventory_sku  # Mapped inventory SKU
-
-                # Add issue if one was returned from _map_sku_to_inventory
-                if issue:
-                    order_data["Issues"] = issue
-
-                # Get the current running balance for this SKU or use the inventory balance if not yet tracked
-                # Make sure we're using the normalized warehouse name for consistency
-                normalized_warehouse = self.normalize_warehouse_name(fc_key, log_transformations=False)
-                inventory_composite_key = f"{inventory_sku}|{normalized_warehouse}"
-                
-                if inventory_composite_key in running_balances:
-                    current_balance = running_balances[inventory_composite_key]
-                elif inventory_sku in running_balances:  # Fallback to simple key
-                    current_balance = running_balances[inventory_sku]
-                else:
-                    current_balance = inventory_balance
-
-                # Set the starting balance for this order
-                order_data["Starting Balance"] = current_balance
-                order_data["Transaction Quantity"] = shop_quantity
-
-                # Calculate ending balance and update running balance
-                transaction_quantity = (
-                    order_data["quantity"]
-                    if isinstance(order_data["quantity"], (int, float))
-                    else shop_quantity
-                )
-
-                # Check if we have enough inventory
-                if current_balance < transaction_quantity:
-                    # Not enough inventory to satisfy order
-                    shortage = transaction_quantity - current_balance
-
-                    # Track this shortage for the summary
-                    order_id = row.get("externalorderid", "") or row.get("id", "")
-
-                    # Create a unique key for this shortage to prevent duplications
-                    shortage_key = (inventory_sku, str(order_id))
-
-                    # Only add if we haven't seen this exact shortage before
-                    if shortage_key not in shortage_tracker:
-                        all_shortages.append(
-                            {
-                                "component_sku": inventory_sku,
-                                "shopify_sku": shopify_sku,
-                                "order_id": order_id,
-                                "current_balance": current_balance,
-                                "needed_qty": transaction_quantity,
-                                "shortage_qty": shortage,
-                                "fulfillment_center": fc_key.capitalize() if fc_key else "Unknown",
-                            }
-                        )
-                        # Add to tracker to prevent future duplicates
-                        shortage_tracker.add(shortage_key)
-
-                    # Determine if this is a zero inventory item or just a partial shortage
-                    if current_balance == 0:
-                        # Zero inventory - check if it's available in the other fulfillment center
-                        other_fc = "wheeling" if fc_key.lower() == "oxnard" else "oxnard"
-                        other_fc_inventory = self.check_inventory_in_other_fc(
-                            inventory_sku, inventory_df, other_fc
-                        )
-
-                        if other_fc_inventory > 0:
-                            # Item is available in the other fulfillment center - log only once per SKU
-                            if inventory_sku not in self._logged_inventory_issues:
-                                logger.info(
-                                    f"Item {inventory_sku} is out of stock in {fc_key} but available in {other_fc} ({other_fc_inventory} units)"
-                                )
-                                self._logged_inventory_issues.add(inventory_sku)
-                            issue_message = f"Issue: Inventory in wrong location | Item: {inventory_sku} | Shopify SKU: {shopify_sku} | Location: {fc_key.capitalize()} | Available in {other_fc.capitalize()}: {other_fc_inventory} units"
-                        else:
-                            # Item is not available in either fulfillment center - log only once per SKU
-                            if inventory_sku not in self._logged_inventory_issues:
-                                logger.warning(
-                                    f"Item {inventory_sku} is completely out of stock in both fulfillment centers"
-                                )
-                                self._logged_inventory_issues.add(inventory_sku)
-                            issue_message = f"Issue: Out of stock | Item: {inventory_sku} | Shopify SKU: {shopify_sku} | Status: No inventory in any fulfillment center"
-                    else:
-                        # Partial shortage - some inventory is available but not enough
-                        issue_message = f"Issue: Insufficient inventory | Item: {inventory_sku} | Shopify SKU: {shopify_sku} | Current: {current_balance} | Needed: {transaction_quantity} | Short by: {shortage} units"
-
-                    # Find potential substitutions
-                    substitution_options = self.find_substitution_options(
-                        inventory_sku, shortage, inventory_df, sku_mappings, fc_key
-                    )
-
-                    # Create the issue message
-                    issue_message = f"Issue: Insufficient inventory | Item: {inventory_sku} | Shopify SKU: {shopify_sku} | Current: {current_balance} | Needed: {transaction_quantity} | Short by: {shortage} units"
-
-                    # Add substitution suggestions if available
-                    if substitution_options:
-                        issue_message += "\nSuggested substitutions:\n"
-                        for i, option in enumerate(substitution_options, 1):
-                            issue_message += f"{i}. {option['sku']} (weight: {option['weight']}, available: {option['available_qty']}, similarity: {option['similarity_score']}%)\n"
-
-                    order_data["Issues"] = issue_message
-                    
-                    # Create a unique key for this inventory issue to prevent duplicate warnings
-                    issue_key = f"inventory_shortage_{inventory_sku}_{shopify_sku}_{shortage}"
-                    
-                    # Only log if we haven't seen this exact issue before
-                    if issue_key not in self._logged_inventory_issues:
-                        logger.warning(
-                            f"Insufficient inventory for {inventory_sku} (Shopify SKU: {shopify_sku}): current balance {current_balance}, needed {transaction_quantity}, short by {shortage} units"
-                        )
-                        # Add to tracked issues to prevent duplicate warnings
-                        self._logged_inventory_issues.add(issue_key)
-
-                    # Use what we have - but don't consume entire balance, just use the needed quantity
-                    transaction_quantity = min(current_balance, transaction_quantity)
-
-                ending_balance = max(0, current_balance - transaction_quantity)
-                order_data["Ending Balance"] = ending_balance
-
-                # Update the running balance for this SKU using composite key
-                running_balances[inventory_composite_key] = ending_balance
-                
-                # Track this SKU as recalculated
-                self._recalculated_skus.add(inventory_sku)
-                
-                # Log the balance update
-                self._recalculation_log.append({
-                    "timestamp": pd.Timestamp.now(),
-                    "sku": inventory_sku,
-                    "operation": "update_balance",
-                    "value": ending_balance,
-                    "starting_balance": current_balance,
-                    "transaction_quantity": transaction_quantity,
-                    "order_id": order_id,
-                    "warehouse": fc_key
-                })
-
-                # Add the order to the output DataFrame
-                output_df = pd.concat([output_df, pd.DataFrame([order_data])], ignore_index=True)
-
-        # Ensure all columns are in the right order
-        for col in output_columns:
-            if col not in output_df.columns:
-                output_df[col] = ""
-
-        # Generate inventory summary
-        inventory_summary = self.generate_inventory_summary(
-            running_balances, inventory_df, sku_mappings
-        )
-
-        # Generate shortage summary - now returns both detailed and grouped views
-        shortage_summary, grouped_shortage_summary = self.generate_shortage_summary(all_shortages)
-
-        # Log information about selective recalculation if applicable
-        if affected_skus:
-            logger.info(f"Selective recalculation completed for {len(affected_skus)} SKUs")
-            logger.info(
-                f"Processed {len(processed_order_ids)} orders out of {len(orders_df)} total orders"
-            )
-
-            # Calculate percentage of orders processed
-            percentage = (
-                (len(processed_order_ids) / len(orders_df)) * 100 if len(orders_df) > 0 else 0
-            )
-            logger.info(f"Selective recalculation processed {percentage:.1f}% of orders")
-
-        # Convert recalculation log to DataFrame for easier display
-        recalculation_log_df = pd.DataFrame(self._recalculation_log) if self._recalculation_log else pd.DataFrame()
+    def _extract_shopify_sku(self, row, columns):
+        """Extract Shopify SKU from order row"""
+        # Try standard SKU columns first
+        for col in ["shopsku", "SKU Helper", "sku", "lineitemsku", "shopifysku", "shopifysku2"]:
+            if col in row and pd.notna(row[col]):
+                return row[col]
         
-        # Return the processed orders, inventory summary, both shortage summaries, processed order IDs, and recalculation log
-        # Generate inventory comparison if initial state was captured
-        inventory_comparison = None
-        if initial_inventory_state:
-            inventory_comparison = self.generate_inventory_comparison(
-                initial_inventory_state, running_balances, inventory_df, sku_mappings
+        # Check fruit-specific columns
+        sku_columns = [col for col in columns if col.startswith("f.") or col.startswith("m.")]
+        for col in sku_columns:
+            if col in row and pd.notna(row[col]) and float(row[col]) > 0:
+                return col
+        
+        return None
+
+    def _is_sku_affected(self, shopify_sku, affected_skus, bundle_info_dict, row):
+        """Check if SKU is affected for selective recalculation"""
+        if shopify_sku in affected_skus:
+            return True
+        
+        # Check if any bundle components are affected
+        fc_key = self.normalize_warehouse_name(row.get("Fulfillment Center", "Moorpark"))
+        if bundle_info_dict and fc_key in bundle_info_dict and shopify_sku in bundle_info_dict[fc_key]:
+            for component in bundle_info_dict[fc_key][shopify_sku]:
+                if component.get("component_sku") in affected_skus:
+                    return True
+        
+        return False
+
+    def _create_base_order_data(self, row, output_columns, shopify_sku, fulfillment_center):
+        """Create base order data dictionary"""
+        order_data = {col: "" for col in output_columns}
+        
+        # Copy existing fields from the order row
+        for field in output_columns:
+            if field in row and pd.notna(row[field]):
+                if field == "placeddate":
+                    try:
+                        date_value = pd.to_datetime(row[field])
+                        order_data[field] = date_value.strftime("%-m/%-d/%Y")
+                    except:
+                        order_data[field] = row[field]
+                else:
+                    order_data[field] = row[field]
+
+        # Add SKU information
+        order_data["shopsku"] = shopify_sku
+        order_data["shopifysku2"] = shopify_sku
+        order_data["Fulfillment Center"] = fulfillment_center
+        
+        return order_data
+
+    def _process_bundle_order(self, order_data, bundle_components, shop_quantity, inventory_df,
+                             running_balances, all_shortages, shortage_tracker, output_df,
+                             sku_mappings, fc_key, row):
+        """Process a bundle order by handling each component"""
+        sku_column, balance_column = self._find_sku_columns(inventory_df)
+        if not sku_column:
+            return output_df
+
+        for component in bundle_components:
+            component_order_data = order_data.copy()
+            component_sku = component["sku"]
+            base_component_qty = float(component.get("qty", 1.0))
+            component_weight = float(component.get("weight", 0.0))
+            
+            component_qty = base_component_qty * shop_quantity
+            total_component_weight = component_weight * shop_quantity
+
+            # Set component data
+            component_order_data["sku"] = component_sku
+            component_order_data["actualqty"] = component_qty
+            component_order_data["Total Pick Weight"] = total_component_weight
+            component_order_data["quantity"] = component_qty
+
+            # Map component SKU to inventory SKU
+            component_inventory_sku = self.map_shopify_to_inventory_sku(
+                shopify_sku=component_sku,
+                fulfillment_center=fc_key,
+                sku_mappings=sku_mappings
             )
             
-        return {
-            "orders": output_df[
-                output_columns
-            ],  # Return only the specified columns in the correct order
-            "inventory_summary": inventory_summary,
-            "shortage_summary": shortage_summary,
-            "grouped_shortage_summary": grouped_shortage_summary,
-            "processed_order_ids": list(processed_order_ids) if affected_skus else None,
-            "recalculation_log": recalculation_log_df,
-            "recalculated_skus": list(self._recalculated_skus),
-            "inventory_comparison": inventory_comparison
-        }
+            # Use the inventory balance directly - no more actualqty overrides from mapping
 
-    def generate_inventory_comparison(self, initial_inventory_state, current_balances, inventory_df, sku_mappings=None):
+            # Get current balance and process allocation
+            current_balance = self._get_current_balance(
+                component_inventory_sku, fc_key, running_balances, inventory_df, sku_column, balance_column
+            )
+
+            # Check for shortages and allocate
+            self._allocate_inventory(
+                component_order_data, component_inventory_sku, component_qty, current_balance,
+                running_balances, all_shortages, shortage_tracker, fc_key, row, order_data["shopsku"]
+            )
+
+            # Add to output
+            output_df = pd.concat([output_df, pd.DataFrame([component_order_data])], ignore_index=True)
+        
+        return output_df
+
+    def _process_single_sku_order(self, order_data, shopify_sku, shop_quantity, inventory_df,
+                                 running_balances, all_shortages, shortage_tracker, output_df,
+                                 sku_mappings, fc_key, row) -> pd.DataFrame:
+        """Process a single SKU order"""
+        sku_column, balance_column = self._find_sku_columns(inventory_df)
+        if not sku_column:
+            return output_df
+
+        # Map SKU to inventory SKU
+        inventory_sku = self.map_shopify_to_inventory_sku(
+            shopify_sku=shopify_sku,
+            fulfillment_center=fc_key,
+            sku_mappings=sku_mappings
+        )
+
+        order_data["sku"] = inventory_sku
+
+        # Use shop_quantity directly as requested quantity - no actualqty override
+        requested_quantity = shop_quantity
+
+        # Get current balance and process allocation
+        current_balance = self._get_current_balance(
+            inventory_sku, fc_key, running_balances, inventory_df, sku_column, balance_column
+        )
+
+        # Check for shortages and allocate
+        self._allocate_inventory(
+            order_data, inventory_sku, requested_quantity, current_balance,
+            running_balances, all_shortages, shortage_tracker, fc_key, row, shopify_sku
+        )
+
+        # Add to output
+        output_df = pd.concat([output_df, pd.DataFrame([order_data])], ignore_index=True)
+        
+        return output_df
+
+    def _get_current_balance(self, inventory_sku, fc_key, running_balances, inventory_df, sku_column, balance_column):
+        """Get current balance for a SKU with fallback to inventory lookup"""
+        normalized_warehouse = self.normalize_warehouse_name(fc_key, log_transformations=False)
+        composite_key = f"{inventory_sku}|{normalized_warehouse}"
+        
+        if composite_key in running_balances:
+            return running_balances[composite_key]
+        elif inventory_sku in running_balances:
+            return running_balances[inventory_sku]
+        else:
+            # Look up in inventory
+            sku_inventory = inventory_df[inventory_df[sku_column] == inventory_sku]
+            if sku_inventory.empty:
+                return 0
+            
+            if balance_column and balance_column in sku_inventory.columns:
+                balance = float(sku_inventory.iloc[0][balance_column]) if pd.notna(sku_inventory.iloc[0][balance_column]) else 0
+                running_balances[composite_key] = balance
+                return balance
+            
+            return 0
+
+    def _allocate_inventory(self, order_data, inventory_sku, requested_qty, current_balance,
+                           running_balances, all_shortages, shortage_tracker, fc_key, row, shopify_sku) -> None:
+        """Allocate inventory and handle shortages"""
+        normalized_warehouse = self.normalize_warehouse_name(fc_key, log_transformations=False)
+        composite_key = f"{inventory_sku}|{normalized_warehouse}"
+        
+        order_data["Starting Balance"] = current_balance
+        
+        if current_balance < requested_qty:
+            # Handle shortage
+            shortage = requested_qty - current_balance
+            order_id = row.get("externalorderid", "") or row.get("id", "")
+            shortage_key = (inventory_sku, str(order_id))
+
+            if shortage_key not in shortage_tracker:
+                all_shortages.append({
+                    "component_sku": inventory_sku,
+                    "shopify_sku": shopify_sku,
+                    "order_id": order_id,
+                    "current_balance": current_balance,
+                    "needed_qty": requested_qty,
+                    "shortage_qty": shortage,
+                    "fulfillment_center": fc_key,
+                })
+                shortage_tracker.add(shortage_key)
+
+            order_data["Issues"] = f"Issue: Insufficient inventory | Item: {inventory_sku} | Shopify SKU: {shopify_sku} | Current: {current_balance} | Needed: {requested_qty} | Short by: {shortage} units"
+            transaction_quantity = min(current_balance, requested_qty)
+        else:
+            transaction_quantity = requested_qty
+
+        order_data["Transaction Quantity"] = transaction_quantity
+        ending_balance = max(0, current_balance - transaction_quantity)
+        order_data["Ending Balance"] = ending_balance
+        
+        # Update running balance
+        running_balances[composite_key] = ending_balance
+
+    def generate_inventory_comparison(self, initial_inventory_state, current_balances, inventory_df, sku_mappings=None) -> pd.DataFrame:
         """
         Generate a comparison of inventory levels before and after order processing.
         
@@ -2528,11 +1526,7 @@ class DataProcessor:
                                 balance = float(row["Balance"])
                             except (ValueError, TypeError):
                                 pass
-                        elif "AvailableQty" in row and pd.notna(row["AvailableQty"]):
-                            try:
-                                balance = float(row["AvailableQty"])
-                            except (ValueError, TypeError):
-                                pass
+                        # Only using the Balance column as requested, not falling back to AvailableQty
                         normalized_initial_state[composite_key] = balance
         
         # Combine all keys from initial state, current balances, and inventory items
@@ -2629,11 +1623,7 @@ class DataProcessor:
                             initial_balance = float(row["Balance"])
                         except (ValueError, TypeError):
                             pass
-                    elif "AvailableQty" in row and pd.notna(row["AvailableQty"]):
-                        try:
-                            initial_balance = float(row["AvailableQty"])
-                        except (ValueError, TypeError):
-                            pass
+                    # Only using the Balance column as requested, not falling back to AvailableQty
             
             # Get current balance from normalized dictionary using composite key
             current_balance = normalized_current_balances.get(composite_key, initial_balance)
@@ -2667,7 +1657,7 @@ class DataProcessor:
         
         return comparison_df
 
-    def calculate_processing_stats(self, processed_orders, inventory_summary, shortage_summary):
+    def calculate_processing_stats(self, processed_orders, inventory_summary, shortage_summary) -> dict:
         """
         Calculate comprehensive processing statistics for decision making.
         
@@ -2731,7 +1721,7 @@ class DataProcessor:
         
         return stats
 
-    def _apply_inventory_threshold_rules(self, orders_df, inventory_rules):
+    def _apply_inventory_threshold_rules(self, orders_df, inventory_rules) -> pd.DataFrame:
         """
         Apply inventory threshold rules to orders.
         
@@ -2823,7 +1813,7 @@ class DataProcessor:
         
         return result_df
         
-    def _apply_zone_override_rules(self, orders_df, zone_rules):
+    def _apply_zone_override_rules(self, orders_df, zone_rules) -> pd.DataFrame:
         """
         Apply zone override rules to orders.
         
@@ -2914,7 +1904,7 @@ class DataProcessor:
         
         return result_df
 
-    def calculate_warehouse_performance(self, processed_orders, inventory_summary):
+    def calculate_warehouse_performance(self, processed_orders, inventory_summary) -> dict:
         """
         Calculate warehouse performance metrics for decision making.
         
@@ -2977,6 +1967,71 @@ class DataProcessor:
                     }
         
         return performance
+
+    def map_shopify_to_inventory_sku(self, shopify_sku, fulfillment_center=None, sku_mappings=None) -> str:
+        """
+        Maps a Shopify SKU to the corresponding inventory SKU using the Airtable mappings.
+        This function focuses solely on the SKU mapping logic, following the single responsibility principle.
+        
+        Args:
+            shopify_sku (str): The Shopify SKU to map
+            fulfillment_center (str, optional): The fulfillment center ("Oxnard" or "Wheeling")
+            sku_mappings (dict, optional): SKU mapping dictionary (if already loaded)
+            
+        Returns:
+            str: The mapped inventory SKU or the original SKU if no mapping exists
+        """
+        if not shopify_sku:
+            return ""
+            
+        # Normalize input
+        shopify_sku = str(shopify_sku).strip()
+        
+        # If fulfillment center isn't specified, default to both centers
+        fc_keys = []
+        if fulfillment_center:
+            normalized_fc = self.normalize_warehouse_name(fulfillment_center)
+            if normalized_fc.lower() == "oxnard":
+                fc_keys = ["oxnard", "moorpark"]
+            elif normalized_fc.lower() == "wheeling":
+                fc_keys = ["wheeling", "il-wheeling"]
+        else:
+            fc_keys = ["wheeling", "il-wheeling", "oxnard", "moorpark"]
+        
+        # Use provided mappings or load from instance
+        mappings = sku_mappings or self.sku_mappings
+        if not mappings:
+            logger.warning("No SKU mappings available for mapping Shopify SKU to inventory SKU")
+            return shopify_sku
+            
+        # Check each fulfillment center for mappings
+        # First, check if mappings has a "mappings" structure (new Airtable format)
+        if "mappings" in mappings:
+            # New Airtable format: mappings["mappings"]["Oxnard"][shopify_sku] = inventory_sku
+            for fc_key in fc_keys:
+                center_name = "Oxnard" if fc_key.lower() in ["oxnard", "moorpark"] else "Wheeling"
+                if center_name in mappings["mappings"]:
+                    center_mappings = mappings["mappings"][center_name]
+                    if shopify_sku in center_mappings:
+                        inventory_sku = center_mappings[shopify_sku]
+                        if inventory_sku:
+                            logger.info(f"Mapped Shopify SKU '{shopify_sku}' to inventory SKU '{inventory_sku}' for {center_name}")
+                            return inventory_sku
+        else:
+            # Legacy format: try the old structure
+            for fc_key in fc_keys:
+                if fc_key in mappings and "mappings" in mappings[fc_key]:
+                    # Look for direct mapping
+                    for mapping in mappings[fc_key]["mappings"]:
+                        if mapping.get("shopify_sku", "").lower() == shopify_sku.lower():
+                            inventory_sku = mapping.get("inventory_sku", "")
+                            if inventory_sku:
+                                logger.info(f"Mapped Shopify SKU '{shopify_sku}' to inventory SKU '{inventory_sku}' for {fc_key}")
+                                return inventory_sku
+        
+        # If no mapping found, return original SKU
+        logger.info(f"No mapping found for Shopify SKU '{shopify_sku}', using the original SKU")
+        return shopify_sku
 
     def _map_sku_to_inventory(
         self,
@@ -3730,6 +2785,14 @@ if __name__ == "__main__":
                     })
         
         inventory_summary_initial = pd.DataFrame(inventory_summary_initial)
+        
+        # Group inventory by SKU and warehouse separately (do not sum across warehouses)
+        if not inventory_summary_initial.empty:
+            # Get the maximum balance per SKU-warehouse combination (keep warehouses separate)
+            inventory_grouped = inventory_summary_initial.groupby(['Inventory SKU', 'Warehouse'])['Current Balance'].max().reset_index()
+            # Reorder columns: SKU, Warehouse, Balance
+            inventory_grouped = inventory_grouped[['Inventory SKU', 'Warehouse', 'Current Balance']]
+            inventory_summary_initial = inventory_grouped
         inventory_summary_initial.to_csv(initial_inventory_file, index=False)
         print(f"📦 Saved initial inventory state to: {initial_inventory_file}")
         print(f"   Initial inventory items: {len(inventory_summary_initial)}")
@@ -3752,9 +2815,12 @@ if __name__ == "__main__":
         result = data_processor.process_orders(
             orders_df, inventory_df, shipping_zones_df, sku_mappings
         )
-        processed_orders = result["orders"]
-        inventory_summary = result["inventory_summary"]
-        shortage_summary = result["shortage_summary"]
+        processed_orders, shortage_summary = result
+        
+        # Generate inventory summary from current balances if needed
+        # Note: For now we'll create an empty inventory summary since the main focus 
+        # is on processed orders and shortages
+        inventory_summary = pd.DataFrame()
 
         # Format numeric columns to 3 decimal places, but only if there are non-zero digits after the decimal point
         numeric_columns = [
@@ -3867,6 +2933,7 @@ if __name__ == "__main__":
         # Make sure we're saving the right columns in the right order for inventory_after_processing
         if 'Warehouse' in inventory_final_numeric.columns and 'Inventory SKU' in inventory_final_numeric.columns:
             # Create a new DataFrame with just the columns we need in the right order
+            # We don't aggregate balances - maintain individual rows for the same SKU-warehouse combinations
             inventory_after_processing = pd.DataFrame({
                 'Warehouse': inventory_final_numeric['Warehouse'],
                 'Inventory SKU': inventory_final_numeric['Inventory SKU'],
@@ -3874,6 +2941,11 @@ if __name__ == "__main__":
                 'Current Balance': inventory_final_numeric['Current Balance'],
                 'Is Bundle Component': inventory_final_numeric['Is Bundle Component'] if 'Is Bundle Component' in inventory_final_numeric.columns else False
             })
+            
+            # Add tracking key for verification and debugging
+            inventory_after_processing['tracking_key'] = inventory_after_processing['Warehouse'] + '|' + inventory_after_processing['Inventory SKU']
+            unique_combinations = inventory_after_processing['tracking_key'].nunique()
+            logger.info(f"Final inventory has {len(inventory_after_processing)} rows with {unique_combinations} unique SKU-warehouse combinations")
             
             # Save this formatted DataFrame
             inventory_after_processing.to_csv(final_inventory_file, index=False)
@@ -4026,18 +3098,17 @@ if __name__ == "__main__":
                 print(f"   No balance changes detected in any inventory items")
 
         # Save shortage summary to a separate file if there are any shortages
-        if not shortage_summary.empty:
+        if shortage_summary and len(shortage_summary) > 0:
             shortage_output_path = "shortage_summary.csv"
-            shortage_summary.to_csv(shortage_output_path, index=False)
+            # Convert shortage list to DataFrame if needed
+            if isinstance(shortage_summary, list):
+                shortage_df = pd.DataFrame(shortage_summary)
+            else:
+                shortage_df = shortage_summary
+            shortage_df.to_csv(shortage_output_path, index=False)
             logger.info(
-                f"Generated shortage summary with {len(shortage_summary)} items and saved to {shortage_output_path}"
+                f"Generated shortage summary with {len(shortage_df)} items and saved to {shortage_output_path}"
             )
             print(
-                f"\nWARNING: {len(shortage_summary)} inventory shortages detected! See {shortage_output_path} for details."
+                f"\nWARNING: {len(shortage_df)} inventory shortages detected! See {shortage_output_path} for details."
             )
-            
-        # Save inventory comparison to a file if it exists
-        inventory_comparison = result.get("inventory_comparison")
-        if inventory_comparison is not None and not inventory_comparison.empty:
-            inventory_comparison.to_csv(save_to_file, index=False)
-            logger.info(f"Generated inventory comparison with {len(inventory_comparison)} items and saved to {save_to_file}")

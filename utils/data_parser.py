@@ -149,7 +149,7 @@ class DataParser:
             inventory_file: Path to the inventory CSV file
 
         Returns:
-            pandas.DataFrame: Raw inventory dataframe with basic cleaning
+            pandas.DataFrame: Raw inventory dataframe with basic cleaning and proper grouping
         """
         try:
             # Read CSV file, using first row as column names
@@ -168,6 +168,12 @@ class DataParser:
             # Convert numeric columns, handling commas
             for col in ['AvailableQty', 'Balance']:
                 df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+            
+            # Ensure we're tracking by SKU and warehouse properly
+            # Each row is kept as is - no summing of Balance values
+            # This creates a composite key for tracking but doesn't modify the data
+            df['tracking_key'] = df['WarehouseName'] + '|' + df['Sku']
+            logger.info(f"Parsed inventory with {len(df)} rows, {df['tracking_key'].nunique()} unique SKU-warehouse combinations")
 
             return df
 
@@ -176,7 +182,6 @@ class DataParser:
             return pd.DataFrame(columns=[
                 'WarehouseName', 'Sku', 'Name', 'Type', 'Balance', 'Status'
             ])
-
 
 if __name__ == "__main__":
     parser = DataParser()
