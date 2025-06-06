@@ -178,59 +178,6 @@ class DataParser:
             ])
 
 
-    def parse_sku_mappings(self, mappings_file) -> dict:
-        """Load SKU mappings from JSON file.
-
-        Args:
-            mappings_file: Path to the SKU mappings JSON file
-
-        Returns:
-            dict: Dictionary containing SKU mappings and bundle information
-        """
-        try:
-            with open(mappings_file, 'r') as f:
-                mappings = json.load(f)
-
-            # Validate structure against sku_mapping_structure
-            for center in ["Oxnard", "Wheeling"]:
-                if center not in mappings:
-                    mappings[center] = {}
-
-            if "bundles" not in mappings:
-                mappings["bundles"] = {}
-
-            return mappings
-
-        except Exception as e:
-            logger.error(f"Error loading SKU mappings: {str(e)}")
-            return {"Oxnard": {}, "Wheeling": {}, "bundles": {}}
-
-    def parse_zip_mappings(self, mappings_file) -> dict:
-        """Load ZIP code mappings from JSON file.
-
-        Args:
-            mappings_file: Path to the ZIP mappings JSON file
-
-        Returns:
-            dict: Dictionary containing ZIP code to fulfillment center mappings
-        """
-        try:
-            with open(mappings_file, 'r') as f:
-                mappings = json.load(f)
-
-            # Validate structure against zip_mapping_structure
-            for zip_prefix, data in mappings.items():
-                if not isinstance(data.get("zone"), str):
-                    data["zone"] = str(data.get("zone", ""))
-                if not isinstance(data.get("fulfillment_center"), list):
-                    data["fulfillment_center"] = [str(data.get("fulfillment_center", ""))]
-
-            return mappings
-
-        except Exception as e:
-            logger.error(f"Error loading ZIP mappings: {str(e)}")
-            return {}
-
 if __name__ == "__main__":
     parser = DataParser()
     orders = parser.parse_orders("docs/orders.csv")
