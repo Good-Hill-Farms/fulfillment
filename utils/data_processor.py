@@ -2025,7 +2025,7 @@ class DataProcessor:
                         )
 
                         # Create the issue message
-                        issue_message = f"Insufficient inventory for bundle component {component_sku} (Shopify SKU: {shopify_sku}): current balance {current_balance}, needed {component_qty}, short by {shortage} units"
+                        issue_message = f"Issue: Insufficient inventory | Item: {component_sku} | Shopify SKU: {shopify_sku} | Current: {current_balance} | Needed: {component_qty} | Short by: {shortage} units"
 
                         # Add substitution suggestions if available
                         if substitution_options:
@@ -2136,7 +2136,7 @@ class DataProcessor:
                                     f"Item {inventory_sku} is out of stock in {fc_key} but available in {other_fc} ({other_fc_inventory} units)"
                                 )
                                 self._logged_inventory_issues.add(inventory_sku)
-                            issue_message = f"Insufficient inventory for {inventory_sku} (Shopify SKU: {shopify_sku}) in {fc_key.capitalize()}, but {other_fc_inventory} units available in {other_fc.capitalize()}"
+                            issue_message = f"Issue: Inventory in wrong location | Item: {inventory_sku} | Shopify SKU: {shopify_sku} | Location: {fc_key.capitalize()} | Available in {other_fc.capitalize()}: {other_fc_inventory} units"
                         else:
                             # Item is not available in either fulfillment center - log only once per SKU
                             if inventory_sku not in self._logged_inventory_issues:
@@ -2144,10 +2144,10 @@ class DataProcessor:
                                     f"Item {inventory_sku} is completely out of stock in both fulfillment centers"
                                 )
                                 self._logged_inventory_issues.add(inventory_sku)
-                            issue_message = f"Insufficient inventory for {inventory_sku} (Shopify SKU: {shopify_sku}): out of stock in both fulfillment centers"
+                            issue_message = f"Issue: Out of stock | Item: {inventory_sku} | Shopify SKU: {shopify_sku} | Status: No inventory in any fulfillment center"
                     else:
                         # Partial shortage - some inventory is available but not enough
-                        issue_message = f"Insufficient inventory for {inventory_sku} (Shopify SKU: {shopify_sku}): current balance {current_balance}, needed {transaction_quantity}, short by {shortage} units"
+                        issue_message = f"Issue: Insufficient inventory | Item: {inventory_sku} | Shopify SKU: {shopify_sku} | Current: {current_balance} | Needed: {transaction_quantity} | Short by: {shortage} units"
 
                     # Find potential substitutions
                     substitution_options = self.find_substitution_options(
@@ -2155,7 +2155,7 @@ class DataProcessor:
                     )
 
                     # Create the issue message
-                    issue_message = f"Insufficient inventory for {inventory_sku} (Shopify SKU: {shopify_sku}): current balance {current_balance}, needed {transaction_quantity}, short by {shortage} units"
+                    issue_message = f"Issue: Insufficient inventory | Item: {inventory_sku} | Shopify SKU: {shopify_sku} | Current: {current_balance} | Needed: {transaction_quantity} | Short by: {shortage} units"
 
                     # Add substitution suggestions if available
                     if substitution_options:

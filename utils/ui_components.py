@@ -70,7 +70,10 @@ def create_aggrid_table(df, height=400, selection_mode='multiple', enable_enterp
             filter=True,
             floatingFilter=True,  # Enable floating filters for better UX
             suppressMenu=False,
-            menuTabs=['filterMenuTab', 'generalMenuTab', 'columnsMenuTab'] if filterable else []
+            menuTabs=['filterMenuTab', 'generalMenuTab', 'columnsMenuTab'] if filterable else [],
+            minWidth=120,  # Set minimum column width
+            width=150,     # Set default column width
+            suppressSizeToFit=False  # Allow columns to be resized to fit content
         )
         
         # Configure selection
@@ -85,6 +88,15 @@ def create_aggrid_table(df, height=400, selection_mode='multiple', enable_enterp
         
         # Configure enhanced column types for better filtering and grouping
         for col in df.columns:
+            # Set specific widths for important columns
+            col_width = 150  # default
+            if any(keyword in col.lower() for keyword in ['sku', 'id', 'number']):
+                col_width = 180  # wider for SKUs and IDs
+            elif any(keyword in col.lower() for keyword in ['name', 'description']):
+                col_width = 200  # wider for names
+            elif any(keyword in col.lower() for keyword in ['qty', 'quantity', 'balance']):
+                col_width = 120  # narrower for numbers
+            
             if df[col].dtype in ['int64', 'float64']:
                 # Numeric columns with enhanced number filter and aggregation
                 gb.configure_column(
@@ -93,7 +105,9 @@ def create_aggrid_table(df, height=400, selection_mode='multiple', enable_enterp
                     filter="agNumberColumnFilter",
                     enableValue=True,  # Enable for aggregation
                     aggFunc=['sum', 'avg', 'min', 'max', 'count'],
-                    floatingFilter=True
+                    floatingFilter=True,
+                    width=col_width,
+                    minWidth=100
                 )
             elif df[col].dtype == 'datetime64[ns]':
                 # Date columns with enhanced date filter
@@ -101,7 +115,9 @@ def create_aggrid_table(df, height=400, selection_mode='multiple', enable_enterp
                     col,
                     filter="agDateColumnFilter",
                     type=["dateColumn"],
-                    floatingFilter=True
+                    floatingFilter=True,
+                    width=col_width,
+                    minWidth=120
                 )
             else:
                 # Text columns with enhanced text filter and grouping
@@ -109,7 +125,9 @@ def create_aggrid_table(df, height=400, selection_mode='multiple', enable_enterp
                     col,
                     filter="agTextColumnFilter",
                     enableRowGroup=True,  # Enable for grouping
-                    floatingFilter=True
+                    floatingFilter=True,
+                    width=col_width,
+                    minWidth=120
                 )
         
         # Configure sidebar with working configuration for streamlit-aggrid 1.0.5
@@ -388,8 +406,35 @@ def render_inventory_analysis(processed_orders, inventory_df):
     st.subheader("📦 Complete Inventory")
     st.write("**All inventory items across warehouses:** (Use sidebar to filter and group)")
     
-    # Prepare full inventory for display
-    full_inventory_df = inventory_summary.copy()
+    # Use the already-processed inventory summary from session state if available
+    if 'inventory_summary' in st.session_state and not st.session_state.inventory_summary.empty:
+        full_inventory_df = st.session_state.inventory_summary.copy()
+        st.info(f"📊 Showing {len(full_inventory_df)} inventory items with updated balances from processed orders")
+    else:
+        # Fallback: use raw inventory data if no processed summary is available
+        if inventory_df is not None:
+            # Use original inventory data but format it consistently
+            full_inventory_df = inventory_df.copy()
+            
+            # Standardize column names to match the expected format
+            if 'WarehouseName' in full_inventory_df.columns:
+                full_inventory_df['Warehouse'] = full_inventory_df['WarehouseName']
+            if 'Sku' in full_inventory_df.columns:
+                full_inventory_df['Inventory SKU'] = full_inventory_df['Sku']
+            if 'Balance' in full_inventory_df.columns:
+                # Format balance with commas for display
+                full_inventory_df['Current Balance'] = full_inventory_df['Balance'].apply(
+                    lambda x: f"{x:,.0f}" if pd.notna(x) else "0"
+                )
+            elif 'AvailableQty' in full_inventory_df.columns:
+                full_inventory_df['Current Balance'] = full_inventory_df['AvailableQty'].apply(
+                    lambda x: f"{x:,.0f}" if pd.notna(x) else "0"
+                )
+            
+            st.warning("📋 Showing raw inventory data - no orders have been processed yet")
+        else:
+            st.error("❌ No inventory data available")
+            return
     
     # Create ag-Grid table for full inventory
     full_inventory_table = create_aggrid_table(
@@ -399,7 +444,7 @@ def render_inventory_analysis(processed_orders, inventory_df):
         theme="alpine",
         selection_mode='multiple',
         show_hints=False,
-        enable_enterprise_modules=False,
+        enable_enterprise_modules=True,  # Enable for copy/export functionality
         enable_sidebar=True,
         enable_pivot=True,
         enable_value_aggregation=True,
@@ -412,19 +457,23 @@ def render_inventory_analysis(processed_orders, inventory_df):
         selected_inventory = pd.DataFrame(full_inventory_table['grid_response']['selected_rows'])
         st.info(f"📊 Selected {full_inventory_table['selected_count']} inventory items")
         
-        # Show summary of selected inventory
+        # Show summary of selected inventory (using DataProcessor column names)
         col1, col2, col3 = st.columns(3)
         with col1:
-            if 'AvailableQty' in selected_inventory.columns:
-                total_available = pd.to_numeric(selected_inventory['AvailableQty'], errors='coerce').sum()
-                st.metric("📦 Total Available Qty", f"{total_available:,.0f}")
+            if 'Current Balance' in selected_inventory.columns:
+                total_balance = pd.to_numeric(selected_inventory['Current Balance'].str.replace(',', ''), errors='coerce').sum()
+                st.metric("📦 Total Current Balance", f"{total_balance:,.0f}")
         with col2:
-            if 'Balance' in selected_inventory.columns:
-                total_balance = pd.to_numeric(selected_inventory['Balance'], errors='coerce').sum()
-                st.metric("⚖️ Total Balance", f"{total_balance:,.0f}")
+            if 'Inventory SKU' in selected_inventory.columns:
+                unique_skus = selected_inventory['Inventory SKU'].nunique()
+                st.metric("📦 Unique SKUs", unique_skus)
         with col3:
-            warehouses = selected_inventory['WarehouseName'].nunique() if 'WarehouseName' in selected_inventory.columns else 0
-            st.metric("🏭 Warehouses", warehouses)
+            if 'Warehouse' in selected_inventory.columns:
+                warehouses = selected_inventory['Warehouse'].nunique()
+                st.metric("🏭 Warehouses", warehouses)
+            elif 'WarehouseName' in selected_inventory.columns:
+                warehouses = selected_inventory['WarehouseName'].nunique()
+                st.metric("🏭 Warehouses", warehouses)
 
 def render_summary_dashboard(processed_orders, inventory_df, processing_stats=None, warehouse_performance=None):
     """
