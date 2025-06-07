@@ -744,14 +744,6 @@ def render_orders_tab(processed_orders, shortage_summary=None):
         else:
             shortage_count = 0
             
-        # Show alerts if there are issues - use shortage_count for consistency
-        if issues > 0:
-            # Make sure issues count and shortage_count are consistent
-            if shortage_count > 0 and shortage_count != issues:
-                st.warning(f"⚠️ {issues} items have issues ({shortage_count} inventory shortages) - Check the 📦 Inventory tab for shortage details!")
-            else:
-                st.warning(f"⚠️ {issues} items have issues - Check the 📦 Inventory tab for shortage details!")
-            
         if shortage_summary is not None and not shortage_summary.empty:
             
             # Find SKU column using flexible matching patterns
@@ -806,12 +798,11 @@ def render_orders_tab(processed_orders, shortage_summary=None):
             
             if shortage_count > 0:
                 # Create a clearer, more structured shortage message
-                st.error(f"⚠️ INVENTORY SHORTAGES DETECTED:\n" +
+                st.info(f"⚠️ INVENTORY SHORTAGES DETECTED:\n" +
                        f"• {shortage_count} line items with shortages\n" +
                        f"• {unique_skus} unique SKUs affected\n" +
                        f"• {affected_orders} orders impacted" +
-                       (f"\n• {duplicate_count} items with multiple shortage issues" if duplicate_count > 0 else "") +
-                       "\n\nExpand below for detailed shortage information!")
+                       (f"\n• {duplicate_count} items with multiple shortage issues" if duplicate_count > 0 else ""))
                 
                 # Add an expander with detailed shortage information including fulfillment center and order IDs
                 with st.expander("📋 View Detailed Shortages by Fulfillment Center", expanded=False):
