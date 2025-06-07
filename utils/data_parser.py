@@ -37,7 +37,7 @@ inventory_columns = [
     "BatchCode",
     "AvailableQty",
     "DaysOnHand",
-    "Balance"
+    "Balance",
 ]
 
 logger = logging.getLogger(__name__)
@@ -162,8 +162,11 @@ class DataParser:
             # Skip the first row since it was column names
             df = df.iloc[1:].copy()
             
-            # Select only the columns we need
-            df = df[inventory_columns]
+            # Select only the columns we need, adding any missing columns with default values
+            for col in inventory_columns:
+                if col not in df.columns:
+                    logger.warning(f"Required column '{col}' not found in inventory file, adding with default values")
+                    df[col] = None if col not in ['AvailableQty', 'Balance', 'DaysOnHand'] else 0
             
             # Convert numeric columns, handling commas
             for col in ['AvailableQty', 'Balance']:

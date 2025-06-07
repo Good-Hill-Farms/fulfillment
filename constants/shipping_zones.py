@@ -145,17 +145,17 @@ def load_shipping_zones_from_json(file_path):
             # Create result data
             for zip_prefix in all_zips:
                 oxnard_zone = (
-                    int(zip_to_oxnard_zone.get(zip_prefix, 0))
+                    zip_to_oxnard_zone.get(zip_prefix, "0")
                     if zip_prefix in zip_to_oxnard_zone
                     else None
                 )
                 moorpark_zone = (
-                    int(zip_to_moorpark_zone.get(zip_prefix, 0))
+                    zip_to_moorpark_zone.get(zip_prefix, "0")
                     if zip_prefix in zip_to_moorpark_zone
                     else None
                 )
                 wheeling_zone = (
-                    int(zip_to_wheeling_zone.get(zip_prefix, 0))
+                    zip_to_wheeling_zone.get(zip_prefix, "0")
                     if zip_prefix in zip_to_wheeling_zone
                     else None
                 )
