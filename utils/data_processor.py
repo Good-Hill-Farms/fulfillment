@@ -44,6 +44,12 @@ class DataProcessor:
         self._airtable_handler = AirtableHandler()
         # SKU mappings cache
         self.sku_mappings = None
+        
+        # Staging workflow state
+        self.staged_orders = pd.DataFrame()
+        self.orders_in_processing = pd.DataFrame()
+        self.initial_inventory = pd.DataFrame()
+        self.current_inventory_state = {}
 
     def normalize_warehouse_name(self, warehouse_name, log_transformations=True) -> str:
         """
@@ -963,6 +969,11 @@ class DataProcessor:
         
         # Convert initial inventory state dictionary to proper dataframe
         initial_inventory_df = self._convert_initial_inventory_to_df(initial_inventory_state)
+        
+        # Store results in instance variables for staging workflow
+        self.orders_in_processing = output_df.copy()
+        self.initial_inventory = initial_inventory_df.copy()
+        self.current_inventory_state = running_balances.copy()
         
         # Return dictionary with all needed data to match what app.py expects
         return {
@@ -2674,6 +2685,323 @@ class DataProcessor:
         except Exception as e:
             logger.error(f"Error loading delivery services: {str(e)}")
             return default_service
+
+    # ============================================================================
+    # STAGING WORKFLOW METHODS
+    # ============================================================================
+    
+    def initialize_workflow(self, orders_df, inventory_df):
+        """
+        Initialize the staging workflow with orders and inventory data.
+        
+        Args:
+            orders_df (DataFrame): Orders dataframe
+            inventory_df (DataFrame): Initial inventory dataframe
+            
+        Returns:
+            dict: Initial processing results
+        """
+        # Load SKU mappings if not already loaded
+        if self.sku_mappings is None:
+            self.sku_mappings = self.load_sku_mappings()
+            
+        # Process initial orders
+        logger.info("Initializing workflow with orders and inventory processing...")
+        initial_results = self.process_orders(orders_df, inventory_df)
+        
+        # Clear any existing staged orders for fresh start
+        self.staged_orders = pd.DataFrame()
+        
+        logger.info(f"Workflow initialized with {len(self.orders_in_processing)} orders in processing")
+        
+        return initial_results
+    
+    def stage_selected_orders(self, order_indices, orders_df=None):
+        """
+        Move selected order items to staging.
+        
+        Args:
+            order_indices (list): List of order indices to stage
+            orders_df (DataFrame, optional): Orders dataframe. Uses self.orders_in_processing if not provided
+            
+        Returns:
+            dict: Summary of staging operation
+        """
+        if orders_df is None:
+            orders_df = self.orders_in_processing
+            
+        if orders_df.empty:
+            return {"error": "No orders available for staging"}
+            
+        # Validate indices
+        valid_indices = [idx for idx in order_indices if idx < len(orders_df)]
+        invalid_indices = [idx for idx in order_indices if idx >= len(orders_df)]
+        
+        if invalid_indices:
+            logger.warning(f"Invalid order indices: {invalid_indices}")
+            
+        if not valid_indices:
+            return {"error": "No valid order indices provided"}
+            
+        # Select orders to stage
+        orders_to_stage = orders_df.iloc[valid_indices].copy()
+        
+        # Add staging timestamp
+        orders_to_stage['staged_at'] = pd.Timestamp.now()
+        
+        # Add to staged orders
+        if self.staged_orders.empty:
+            self.staged_orders = orders_to_stage
+        else:
+            self.staged_orders = pd.concat([self.staged_orders, orders_to_stage], ignore_index=True)
+            
+        # Remove from orders in processing
+        self.orders_in_processing = orders_df.drop(orders_df.index[valid_indices]).reset_index(drop=True)
+        
+        logger.info(f"Staged {len(valid_indices)} order items")
+        
+        return {
+            "staged_count": len(valid_indices),
+            "remaining_in_processing": len(self.orders_in_processing),
+            "total_staged": len(self.staged_orders)
+        }
+    
+    def calculate_inventory_minus_staged(self, inventory_df=None):
+        """
+        Calculate inventory minus staged orders to get available inventory for processing.
+        
+        Args:
+            inventory_df (DataFrame, optional): Initial inventory. Uses self.initial_inventory if not provided
+            
+        Returns:
+            dict: Dictionary of {sku|warehouse: available_balance}
+        """
+        if inventory_df is None:
+            inventory_df = self.initial_inventory
+            
+        if inventory_df.empty:
+            logger.warning("No initial inventory available")
+            return {}
+            
+        # Start with initial inventory balances
+        available_inventory = {}
+        
+        # Find SKU and balance columns
+        sku_column, balance_column = self._find_sku_columns(inventory_df)
+        if not sku_column or not balance_column:
+            logger.error("Could not find SKU or balance columns in inventory")
+            return {}
+            
+        # Initialize with initial inventory
+        for _, row in inventory_df.iterrows():
+            sku = row[sku_column]
+            warehouse = self.normalize_warehouse_name(row.get('WarehouseName', 'Oxnard'))
+            balance = float(row[balance_column]) if pd.notna(row[balance_column]) else 0
+            
+            composite_key = f"{sku}|{warehouse}"
+            available_inventory[composite_key] = balance
+            
+        # Subtract staged order quantities
+        if not self.staged_orders.empty:
+            for _, staged_order in self.staged_orders.iterrows():
+                sku = staged_order.get('sku', '')
+                warehouse = self.normalize_warehouse_name(staged_order.get('Fulfillment Center', 'Oxnard'))
+                quantity = float(staged_order.get('Transaction Quantity', 0))
+                
+                composite_key = f"{sku}|{warehouse}"
+                if composite_key in available_inventory:
+                    available_inventory[composite_key] -= quantity
+                    
+        return available_inventory
+    
+    def recalculate_orders_with_updated_inventory(self, sku_mappings_updates=None):
+        """
+        Recalculate orders in processing using updated SKU mappings and inventory minus staged orders.
+        
+        Args:
+            sku_mappings_updates (dict, optional): Updated SKU mappings to apply
+            
+        Returns:
+            dict: Recalculated orders and inventory data
+        """
+        if self.orders_in_processing.empty:
+            return {"error": "No orders in processing to recalculate"}
+            
+        # Update SKU mappings if provided
+        if sku_mappings_updates:
+            self.update_sku_mappings(sku_mappings_updates)
+            
+        # Calculate available inventory (initial - staged)
+        available_inventory = self.calculate_inventory_minus_staged()
+        
+        # Create adjusted inventory DataFrame for processing
+        adjusted_inventory_rows = []
+        for composite_key, balance in available_inventory.items():
+            if '|' in composite_key:
+                sku, warehouse = composite_key.split('|', 1)
+                adjusted_inventory_rows.append({
+                    'Sku': sku,
+                    'WarehouseName': warehouse,
+                    'Balance': max(0, balance)  # Ensure non-negative
+                })
+                
+        adjusted_inventory_df = pd.DataFrame(adjusted_inventory_rows)
+        
+        # Reprocess orders with adjusted inventory
+        logger.info("Recalculating orders with updated inventory (initial - staged)")
+        
+        # Convert orders in processing back to input format for reprocessing
+        orders_input = self._convert_processed_orders_to_input_format(self.orders_in_processing)
+        
+        # Process with updated mappings and adjusted inventory
+        recalculated_data = self.process_orders(
+            orders_df=orders_input,
+            inventory_df=adjusted_inventory_df,
+            sku_mappings=self.sku_mappings
+        )
+        
+        # Update orders in processing
+        self.orders_in_processing = recalculated_data['orders']
+        
+        return recalculated_data
+    
+    def update_sku_mappings(self, mappings_updates):
+        """
+        Update SKU mappings with user changes.
+        
+        Args:
+            mappings_updates (dict): Dictionary of SKU mapping updates
+        """
+        if not self.sku_mappings:
+            logger.warning("No existing SKU mappings to update")
+            return
+            
+        # Apply updates to current mappings
+        for warehouse, warehouse_updates in mappings_updates.items():
+            if warehouse not in self.sku_mappings:
+                self.sku_mappings[warehouse] = {"singles": {}, "bundles": {}}
+                
+            # Update singles
+            if "singles" in warehouse_updates:
+                self.sku_mappings[warehouse]["singles"].update(warehouse_updates["singles"])
+                
+            # Update bundles
+            if "bundles" in warehouse_updates:
+                self.sku_mappings[warehouse]["bundles"].update(warehouse_updates["bundles"])
+                
+        logger.info("SKU mappings updated")
+    
+    def get_inventory_calculations(self):
+        """
+        Get various inventory calculations for the UI.
+        
+        Returns:
+            dict: Various inventory views
+        """
+        # Calculate inventory minus orders in processing
+        inventory_minus_processing = self._calculate_inventory_minus_orders(self.orders_in_processing)
+        
+        # Calculate inventory minus staged orders
+        inventory_minus_staged = self.calculate_inventory_minus_staged()
+        
+        return {
+            "initial_inventory": self.initial_inventory,
+            "inventory_minus_processing": inventory_minus_processing,
+            "inventory_minus_staged": inventory_minus_staged,
+            "orders_in_processing": self.orders_in_processing,
+            "staged_orders": self.staged_orders,
+            "staging_summary": {
+                "total_orders_staged": len(self.staged_orders),
+                "total_orders_in_processing": len(self.orders_in_processing),
+                "unique_skus_staged": self.staged_orders['sku'].nunique() if not self.staged_orders.empty else 0,
+                "unique_skus_in_processing": self.orders_in_processing['sku'].nunique() if not self.orders_in_processing.empty else 0
+            }
+        }
+    
+    def _calculate_inventory_minus_orders(self, orders_df):
+        """
+        Calculate inventory minus specified orders.
+        
+        Args:
+            orders_df (DataFrame): Orders to subtract from inventory
+            
+        Returns:
+            dict: Dictionary of {sku|warehouse: remaining_balance}
+        """
+        if self.initial_inventory.empty:
+            return {}
+            
+        # Start with initial inventory
+        remaining_inventory = {}
+        
+        # Initialize with initial inventory
+        for _, row in self.initial_inventory.iterrows():
+            sku = row['sku']
+            warehouse = row['warehouse']
+            balance = float(row['balance'])
+            
+            composite_key = f"{sku}|{warehouse}"
+            remaining_inventory[composite_key] = balance
+            
+        # Subtract order quantities
+        if not orders_df.empty:
+            for _, order in orders_df.iterrows():
+                sku = order.get('sku', '')
+                warehouse = self.normalize_warehouse_name(order.get('Fulfillment Center', 'Oxnard'))
+                quantity = float(order.get('Transaction Quantity', 0))
+                
+                composite_key = f"{sku}|{warehouse}"
+                if composite_key in remaining_inventory:
+                    remaining_inventory[composite_key] -= quantity
+                    
+        return remaining_inventory
+    
+    def _convert_processed_orders_to_input_format(self, processed_orders_df):
+        """
+        Convert processed orders back to input format for reprocessing.
+        
+        Args:
+            processed_orders_df (DataFrame): Processed orders dataframe
+            
+        Returns:
+            DataFrame: Orders in input format
+        """
+        # Group by order to reconstruct original order structure
+        input_orders = []
+        
+        for order_id, order_group in processed_orders_df.groupby('order id'):
+            # Take the first row as the base order info
+            base_order = order_group.iloc[0].copy()
+            
+            # Use the original Shopify SKU and quantity
+            input_orders.append({
+                'order id': base_order.get('order id', ''),
+                'externalorderid': base_order.get('externalorderid', ''),
+                'ordernumber': base_order.get('ordernumber', ''),
+                'CustomerFirstName': base_order.get('CustomerFirstName', ''),
+                'customerLastname': base_order.get('customerLastname', ''),
+                'customeremail': base_order.get('customeremail', ''),
+                'customerphone': base_order.get('customerphone', ''),
+                'shiptoname': base_order.get('shiptoname', ''),
+                'shiptostreet1': base_order.get('shiptostreet1', ''),
+                'shiptostreet2': base_order.get('shiptostreet2', ''),
+                'shiptocity': base_order.get('shiptocity', ''),
+                'shiptostate': base_order.get('shiptostate', ''),
+                'shiptopostalcode': base_order.get('shiptopostalcode', ''),
+                'note': base_order.get('note', ''),
+                'placeddate': base_order.get('placeddate', ''),
+                'preferredcarrierserviceid': base_order.get('preferredcarrierserviceid', ''),
+                'totalorderamount': base_order.get('totalorderamount', ''),
+                'shopsku': base_order.get('shopifysku2', ''),  # Use original Shopify SKU
+                'shopquantity': base_order.get('shopquantity', 1),
+                'externalid': base_order.get('externalid', ''),
+                'Tags': base_order.get('Tags', ''),
+                'MAX PKG NUM': base_order.get('MAX PKG NUM', ''),
+                'Fulfillment Center': base_order.get('Fulfillment Center', '')
+            })
+            
+        return pd.DataFrame(input_orders)
+
 
 if __name__ == "__main__":
     import sys

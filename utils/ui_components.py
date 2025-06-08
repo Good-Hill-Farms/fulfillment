@@ -1,5 +1,3 @@
-from datetime import datetime
-
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -24,11 +22,131 @@ def render_header():
     """
     )
 
+def render_workflow_status():
+    """Render the workflow status with statistics"""
+    # Check workflow state
+    has_data = st.session_state.orders_df is not None and st.session_state.inventory_df is not None
+    workflow_initialized = st.session_state.get('workflow_initialized', False)
+    has_staging = 'staging_processor' in st.session_state and st.session_state.staging_processor
+    
+    # Get statistics
+    if has_staging and workflow_initialized:
+        staging_processor = st.session_state.staging_processor
+        inventory_calcs = staging_processor.get_inventory_calculations()
+        summary = inventory_calcs['staging_summary']
+        
+        orders_in_processing = summary['total_orders_in_processing']
+        orders_staged = summary['total_orders_staged']
+        total_orders_processed = orders_in_processing + orders_staged
+        
+        inv_minus_processing = len(inventory_calcs.get('inventory_minus_processing', {}))
+        inv_minus_staged = len(inventory_calcs.get('inventory_minus_staged', {}))
+    else:
+        orders_in_processing = 0
+        orders_staged = 0
+        total_orders_processed = 0
+        inv_minus_processing = 0
+        inv_minus_staged = 0
+    
+    # Progress calculation
+    completed_steps = 0
+    total_steps = 7
+    
+    if has_data: completed_steps += 1
+    if workflow_initialized: completed_steps += 2  # Parse + Process
+    if orders_in_processing > 0 or orders_staged > 0: completed_steps += 1
+    if orders_staged > 0: completed_steps += 1
+    
+    progress_percentage = completed_steps / total_steps
+    
+    with st.expander(f"📋 Workflow Status ({progress_percentage:.0%} complete)", expanded=False):
+        # Workflow steps with detailed descriptions
+        workflow_steps = [
+            {
+                "step": "📤 Upload Orders/Inventory",
+                "status": "✅" if has_data else "⏳",
+                "description": f"Orders: {len(st.session_state.orders_df) if st.session_state.orders_df is not None else 0} | Inventory: {len(st.session_state.inventory_df) if st.session_state.inventory_df is not None else 0}",
+                "completed": has_data
+            },
+            {
+                "step": "🔧 Parse/Normalize Data", 
+                "status": "✅" if workflow_initialized else "⏳",
+                "description": f"SKU mappings loaded: {'Yes' if st.session_state.sku_mappings else 'No'}",
+                "completed": workflow_initialized
+            },
+            {
+                "step": "⚙️ Process with SKU Mapping & Inventory",
+                "status": "✅" if workflow_initialized else "⏳", 
+                "description": f"Total orders processed: {total_orders_processed}",
+                "completed": workflow_initialized
+            },
+            {
+                "step": "📊 Orders in Processing & Inventory Calculations",
+                "status": "✅" if orders_in_processing > 0 or orders_staged > 0 else "⏳",
+                "description": f"Processing: {orders_in_processing} orders | Inventory items: {inv_minus_processing}",
+                "completed": orders_in_processing > 0 or orders_staged > 0
+            },
+            {
+                "step": "🏷️ Move Orders to Staging",
+                "status": "✅" if orders_staged > 0 else "⏳",
+                "description": f"Staged: {orders_staged} orders | Remaining in processing: {orders_in_processing}",
+                "completed": orders_staged > 0
+            },
+            {
+                "step": "🔄 Change Bundle Rules",
+                "status": "🔄" if orders_staged > 0 else "⏳",
+                "description": "Edit bundle components in SKU Mapping tab",
+                "completed": False,
+                "in_progress": orders_staged > 0
+            },
+            {
+                "step": "⚡ Apply Changes to Processing Queue", 
+                "status": "🔄" if orders_staged > 0 else "⏳",
+                "description": f"Using inventory minus staged ({inv_minus_staged} items available)",
+                "completed": False,
+                "in_progress": orders_staged > 0
+            }
+        ]
+        
+        # Display workflow in columns with descriptions
+        cols = st.columns(7)
+        
+        for i, step_info in enumerate(workflow_steps):
+            with cols[i]:
+                # Status icon and step name
+                status_icon = step_info["status"]
+                step_name = step_info["step"].split(" ", 1)[1]  # Remove emoji
+                
+                # Color coding
+                if step_info["completed"]:
+                    st.success(f"{status_icon} {step_name}")
+                elif step_info.get("in_progress", False):
+                    st.info(f"{status_icon} {step_name}")
+                else:
+                    st.warning(f"{status_icon} {step_name}")
+                
+                # Description
+                st.caption(step_info["description"])
+        
+        # Progress bar
+        st.progress(progress_percentage)
+        
+        # Next action guidance
+        if workflow_initialized:
+            if orders_staged > 0 and orders_in_processing > 0:
+                st.info("🔄 Next: Edit bundle rules in SKU Mapping tab, then recalculate in Orders tab")
+            elif orders_in_processing > 0 and orders_staged == 0:
+                st.info("🏷️ Next: Select orders in Orders tab and move to staging")
+            elif total_orders_processed == 0:
+                st.info("📤 Next: Upload orders and inventory files")
+            else:
+                st.success("✅ Workflow complete")
+
 def create_aggrid_table(df, height=400, selection_mode='multiple', enable_enterprise_modules=True, 
                        fit_columns_on_grid_load=False, theme='alpine', key=None, groupable=True, 
                        filterable=True, sortable=True, editable=False, show_hints=False, enable_download=True,
                        enable_sidebar=True, enable_pivot=True, enable_value_aggregation=True, 
-                       enhanced_menus=True):
+                       enhanced_menus=True, suppress_callback_exceptions=True):
     """
     Create an enhanced ag-Grid table with auto-sizing, filtering, grouping, sorting, and download capabilities.
     
@@ -50,6 +168,7 @@ def create_aggrid_table(df, height=400, selection_mode='multiple', enable_enterp
         enable_pivot: Enable pivot functionality
         enable_value_aggregation: Enable value aggregation in groups
         enhanced_menus: Enable enhanced context menus and column menu options
+        suppress_callback_exceptions: Suppress callback exceptions for better performance
     
     Returns:
         dict: Contains AgGrid response and additional info
@@ -169,7 +288,7 @@ def create_aggrid_table(df, height=400, selection_mode='multiple', enable_enterp
         # Build grid options
         grid_options = gb.build()     
         
-        # Create the AgGrid with simplified configuration  
+        # Create the AgGrid with original working configuration
         grid_response = AgGrid(
             df,
             gridOptions=grid_options,
@@ -367,7 +486,6 @@ def render_inventory_analysis(processed_orders, inventory_df):
             st.error("Inventory data is missing required quantity columns (AvailableQty or Balance)")
             return
             
-        inventory_summary = inventory_df.groupby(['WarehouseName', 'Sku']).agg(agg_dict).reset_index()
         
         # Calculate order quantities by SKU
         if 'sku' in processed_orders.columns and 'Transaction Quantity' in processed_orders.columns:
@@ -377,9 +495,6 @@ def render_inventory_analysis(processed_orders, inventory_df):
             order_quantities = orders_in_processing.groupby(['sku', 'Fulfillment Center']).agg({
                 'Transaction Quantity': 'sum'
             }).reset_index()
-            
-            # Create a copy of inventory for projected calculations
-            projected_inventory = inventory_summary.copy()
             
             # Map fulfillment centers to warehouse names
             fc_to_warehouse = {
@@ -465,17 +580,6 @@ def render_inventory_analysis(processed_orders, inventory_df):
             'Transaction Quantity': 'sum'
         }).reset_index()
         
-        # Create a copy of inventory for staged calculations
-        staged_inventory = inventory_summary.copy()
-        
-        # Create columns for before/after staged
-        if 'Balance' in staged_inventory.columns and staged_inventory['Balance'].sum() > 0:
-            staged_inventory['Before Staged'] = staged_inventory['Balance']
-            staged_inventory['After Staged'] = staged_inventory['Balance']
-        elif 'AvailableQty' in staged_inventory.columns:
-            staged_inventory['Before Staged'] = staged_inventory['AvailableQty']
-            staged_inventory['After Staged'] = staged_inventory['AvailableQty']
-        
         # Update inventory based on staged orders
         for _, row in staged_qty.iterrows():
             sku = row['sku']
@@ -524,39 +628,6 @@ def render_inventory_analysis(processed_orders, inventory_df):
             )
         else:
             st.info("No inventory changes detected from staged orders")
-    
-    # Add complete inventory view
-    st.markdown("---")
-    st.subheader("📦 Complete Inventory")
-    st.write("**All inventory items across warehouses:** (Use sidebar to filter and group)")
-    
-    # Use the already-processed inventory summary from session state if available
-    if 'inventory_summary' in st.session_state and not st.session_state.inventory_summary.empty:
-        full_inventory_df = st.session_state.inventory_summary.copy()
-        st.info(f"📊 Showing {len(full_inventory_df)} inventory items with updated balances from processed orders")
-    else:
-        # Fallback: use raw inventory data if no processed summary is available
-        if inventory_df is not None:
-            full_inventory_df = inventory_df.copy()
-            
-            # Standardize column names
-            if 'WarehouseName' in full_inventory_df.columns:
-                full_inventory_df['Warehouse'] = full_inventory_df['WarehouseName']
-            if 'Sku' in full_inventory_df.columns:
-                full_inventory_df['Inventory SKU'] = full_inventory_df['Sku']
-            if 'Balance' in full_inventory_df.columns:
-                full_inventory_df['Current Balance'] = full_inventory_df['Balance'].apply(
-                    lambda x: f"{x:,.0f}" if pd.notna(x) else "0"
-                )
-            elif 'AvailableQty' in full_inventory_df.columns:
-                full_inventory_df['Current Balance'] = full_inventory_df['AvailableQty'].apply(
-                    lambda x: f"{x:,.0f}" if pd.notna(x) else "0"
-                )
-            
-            st.warning("📋 Showing raw inventory data - no orders have been processed yet")
-        else:
-            st.error("❌ No inventory data available")
-            return
     
     # Display complete inventory
     create_aggrid_table(
@@ -704,13 +775,24 @@ def render_orders_tab(processed_orders, shortage_summary=None):
     """Renders the Orders tab with data table and metrics"""
     st.markdown("**Orders in Processing**")
     
+    # Get key prefix for dynamic keys to force UI refresh when necessary
+    key_prefix = st.session_state.get('key_prefix', 0)
+    
+    # Always use the most up-to-date processed_orders from session state if available
+    if 'processed_orders' in st.session_state:
+        processed_orders = st.session_state.processed_orders
+    
     if processed_orders is not None and not processed_orders.empty:
         # First, ensure the staged column exists
         if 'staged' not in processed_orders.columns:
             processed_orders['staged'] = False
             
-        # Filter to only show unstaged orders
+        # Filter to only show unstaged orders (use boolean value to ensure correct filtering)
         display_orders = processed_orders[processed_orders['staged'] == False].copy()
+        
+        # Keep track of counts for reference
+        total_orders = len(processed_orders)
+        filtered_orders = len(display_orders)
         
         # Don't show the staged column to the user
         if 'staged' in display_orders.columns:
@@ -729,7 +811,7 @@ def render_orders_tab(processed_orders, shortage_summary=None):
         with col3:
             issues = display_orders[display_orders["Issues"] != ""].shape[0] if "Issues" in display_orders.columns else 0
             issue_rate = round((issues / len(display_orders)) * 100, 1) if len(display_orders) > 0 else 0
-            st.metric("⚠️ Items with Issues", f"{issues:,}", delta=f"{issue_rate}% of total", delta_color="inverse")
+            st.metric("⚠️ Order Lines with Issues", f"{issues:,}", delta=f"{issue_rate}% of total", delta_color="inverse")
         
         with col4:
             fulfillment_centers = display_orders["Fulfillment Center"].nunique() if "Fulfillment Center" in display_orders.columns else 0
@@ -790,19 +872,19 @@ def render_orders_tab(processed_orders, shortage_summary=None):
                 # If we didn't find an order column but found a SKU column, assume 1 order per shortage
                 affected_orders = shortage_count
             
-            # Calculate duplicates
+            # Calculate items with multiple issues (duplicates)
             if 'Issues' in display_orders.columns:
-                duplicate_count = len(display_orders[display_orders['Issues'] != '']) - shortage_count if shortage_count > 0 else 0
+                multiple_issues_count = len(display_orders[display_orders['Issues'] != '']) - shortage_count if shortage_count > 0 else 0
             else:
-                duplicate_count = 0
+                multiple_issues_count = 0
             
             if shortage_count > 0:
                 # Create a clearer, more structured shortage message
                 st.info(f"⚠️ INVENTORY SHORTAGES DETECTED:\n" +
-                       f"• {shortage_count} line items with shortages\n" +
-                       f"• {unique_skus} unique SKUs affected\n" +
+                       f"• {shortage_count} inventory shortage instances\n" +
+                       f"• {unique_skus} unique Warehouse SKUs affected\n" +
                        f"• {affected_orders} orders impacted" +
-                       (f"\n• {duplicate_count} items with multiple shortage issues" if duplicate_count > 0 else ""))
+                       (f"\n• {multiple_issues_count} additional shortage flags (line items with multiple shortage types)" if multiple_issues_count > 0 else ""))
                 
                 # Add an expander with detailed shortage information including fulfillment center and order IDs
                 with st.expander("📋 View Detailed Shortages by Fulfillment Center", expanded=False):
@@ -868,111 +950,20 @@ def render_orders_tab(processed_orders, shortage_summary=None):
                             st.info("Could not identify necessary columns for grouping in shortage data")
                     else:
                         st.info("No shortage data available")
-                
-                # Add an expander with a single, simplified grouped shortages table
-                with st.expander("📦 View Grouped Shortages", expanded=False):
-                    if shortage_summary is not None and not shortage_summary.empty:
-                        # Find important columns
-                        sku_col = next((col for col in shortage_summary.columns if any(keyword in col.lower() for keyword in ['sku', 'item', 'product'])), None)
-                        order_col = next((col for col in shortage_summary.columns if any(keyword in col.lower() for keyword in ['order', 'ordernumber', 'orderid'])), None)
-                        qty_col = next((col for col in shortage_summary.columns if any(keyword in col.lower() for keyword in ['qty', 'quantity', 'amount'])), None)
-                        
-                        # Create a clean summary table with only the important columns
-                        cols_to_keep = [col for col in [sku_col, order_col, qty_col] if col is not None]
-                        
-                        if cols_to_keep:
-                            clean_summary = shortage_summary[cols_to_keep].copy()
-                            
-                            # Rename columns for clarity
-                            new_names = {}
-                            if sku_col: new_names[sku_col] = 'SKU'
-                            if order_col: new_names[order_col] = 'Order Number'
-                            if qty_col: new_names[qty_col] = 'Shortage Qty'
-                            
-                            # Apply renames if we have any
-                            if new_names:
-                                clean_summary = clean_summary.rename(columns=new_names)
-                            
-                            # Convert to aggregated view with counts
-                            if 'SKU' in clean_summary.columns:
-                                # Count shortages by SKU
-                                agg_dict = {'Order Number': 'nunique'} if 'Order Number' in clean_summary.columns else {}
-                                if 'Shortage Qty' in clean_summary.columns:
-                                    agg_dict['Shortage Qty'] = 'sum'
-                                    
-                                # Create the grouped summary with counts
-                                grouped_summary = clean_summary.groupby('SKU').agg(agg_dict).reset_index()
-                                
-                                # Rename aggregated columns
-                                col_renames = {}
-                                if 'Order Number' in grouped_summary.columns:
-                                    col_renames['Order Number'] = 'Orders Affected'
-                                
-                                if col_renames:
-                                    grouped_summary = grouped_summary.rename(columns=col_renames)
-                                    
-                                # Now add the actual order numbers for each SKU
-                                if 'Order Number' in clean_summary.columns:
-                                    # Group by SKU and collect all order numbers as a list
-                                    orders_by_sku = clean_summary.groupby('SKU')['Order Number'].apply(lambda x: ', '.join(sorted(set(x.astype(str))))).reset_index()
-                                    orders_by_sku.rename(columns={'Order Number': 'Affected Order Numbers'}, inplace=True)
-                                    
-                                    # Merge with the grouped summary
-                                    grouped_summary = grouped_summary.merge(orders_by_sku, on='SKU', how='left')
-                                    
-                                # Add 'Line Items' count
-                                items_per_sku = clean_summary.groupby('SKU').size().reset_index()
-                                items_per_sku.columns = ['SKU', 'Line Items']
-                                grouped_summary = grouped_summary.merge(items_per_sku, on='SKU', how='left')
-                                
-                                # Reorder columns
-                                cols_order = ['SKU', 'Line Items']
-                                if 'Orders Affected' in grouped_summary.columns:
-                                    cols_order.append('Orders Affected')
-                                if 'Shortage Qty' in grouped_summary.columns:
-                                    cols_order.append('Shortage Qty')
-                                    
-                                # Get final columns in right order
-                                final_cols = [col for col in cols_order if col in grouped_summary.columns]
-                                grouped_summary = grouped_summary[final_cols].sort_values('Line Items', ascending=False)
-                                
-                                # Display with a standard dataframe for simplified view
-                                st.markdown("**Shortage Summary by SKU**")
-                                # Use standard dataframe display for a cleaner, simpler look
-                                st.dataframe(
-                                    grouped_summary,
-                                    height=500,  # Increased height for visibility
-                                    use_container_width=True,
-                                    hide_index=True
-                                )
-                            else:
-                                # Fallback to showing the raw shortage summary
-                                st.markdown("**Shortage Details**")
-                                create_aggrid_table(
-                                    shortage_summary,
-                                    height=400,
-                                    key="shortage_details_table",
-                                    theme="alpine",
-                                    selection_mode='multiple',
-                                    enable_enterprise_modules=True,
-                                    show_hints=False
-                                )
-                        else:
-                            st.write("Could not identify key columns in the shortage summary.")
-                    else:
-                        st.info("No shortage data available.")
-        
+
         # Create AgGrid table
         gb = GridOptionsBuilder.from_dataframe(display_orders)
         gb.configure_selection(selection_mode='multiple', use_checkbox=True)
         gridOptions = gb.build()
         
+        # Use key_prefix to force grid refresh when items are moved back from staging
         grid_response = create_aggrid_table(
             display_orders,
             height=600,
             selection_mode='multiple',
             enable_enterprise_modules=True,
-            theme='alpine'
+            theme='alpine',
+            key=f"orders_grid_{key_prefix}"
         )
         
         # Show selected rows info and staging option
@@ -1006,42 +997,401 @@ def render_orders_tab(processed_orders, shortage_summary=None):
                 
             # Display additional statistics that the user requested
             st.info(f"📊 Summary: {selected_line_items} line items | {selected_unique_orders} unique orders | {selected_with_issues} items with issues | {selected_orders_with_issues} unique orders with issues")
+            
+            # Bundle adjustment section
+            bundle_skus = [row.get('sku', '') for row in selected_rows if row.get('sku', '').startswith('f.')]
+            if bundle_skus:
+                with st.expander("🔧 Adjust Bundle Components", expanded=False):
+                    st.markdown("**Bundle SKUs in Selection:**")
+                    unique_bundles = list(set(bundle_skus))
+                    for bundle_sku in unique_bundles:
+                        st.code(bundle_sku)
+                    
+                    st.markdown("**Quick Bundle Adjustments:**")
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        if st.button("📝 Edit Bundle Mappings"):
+                            st.info("Navigate to the ⚙️ SKU Mapping tab to edit bundle components, then return here to recalculate.")
+                    
+                    with col2:
+                        if st.button("🔄 Recalculate with Current Mappings"):
+                            if ('staging_processor' in st.session_state and 
+                                st.session_state.staging_processor and 
+                                st.session_state.workflow_initialized):
+                                try:
+                                    with st.spinner("Recalculating orders with current bundle mappings..."):
+                                        recalc_result = st.session_state.staging_processor.recalculate_orders_with_updated_inventory()
+                                        
+                                        if 'error' in recalc_result:
+                                            st.warning(f"Recalculation: {recalc_result['error']}")
+                                        else:
+                                            st.session_state.processed_orders = st.session_state.staging_processor.orders_in_processing.copy()
+                                            st.success("✅ Orders recalculated with current bundle mappings!")
+                                            st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error recalculating: {e}")
+                            else:
+                                st.error("Staging processor not available")
                 
             if st.button("Move Selected to Staging"):
-                if 'staged_orders' not in st.session_state:
-                    st.session_state.staged_orders = pd.DataFrame()
-                
-                # Ensure the 'staged' column exists in processed_orders
-                if 'staged' not in processed_orders.columns:
-                    processed_orders['staged'] = False
+                # Use staging processor if available
+                if ('staging_processor' in st.session_state and 
+                    st.session_state.staging_processor and 
+                    st.session_state.workflow_initialized):
                     
-                # For each selected row, find and mark corresponding rows in processed_orders as staged
-                for row in selected_rows:
-                    # Create match conditions based on available unique identifiers
-                    if 'ordernumber' in row and 'sku' in row:
-                        # Match by order number and SKU
-                        mask = (
-                            (processed_orders['ordernumber'] == row['ordernumber']) & 
-                            (processed_orders['sku'] == row['sku'])
-                        )
-                        # Mark matching rows as staged
-                        processed_orders.loc[mask, 'staged'] = True
-                
-                # Update session state with both staged orders and processed orders
-                st.session_state.staged_orders = processed_orders[processed_orders['staged'] == True].copy()
-                st.session_state.processed_orders = processed_orders
-                
-                # Display detailed success message
-                st.success(f"✅ Moved to staging: {selected_line_items} line items | {selected_unique_orders} unique orders | {selected_total_qty:.0f} total units")
+                    try:
+                        # Get the indices of selected rows in orders_in_processing
+                        order_indices = []
+                        
+                        # Find indices by matching selected rows to orders_in_processing
+                        for selected_row in selected_rows:
+                            for idx, order_row in st.session_state.staging_processor.orders_in_processing.iterrows():
+                                if (selected_row.get('ordernumber') == order_row.get('ordernumber') and
+                                    selected_row.get('sku') == order_row.get('sku')):
+                                    order_indices.append(idx)
+                                    break
+                        
+                        if order_indices:
+                            # Use staging processor to stage orders
+                            staging_result = st.session_state.staging_processor.stage_selected_orders(order_indices)
+                            
+                            # Step 1: Get the staged items to mark in processed_orders
+                            newly_staged_items = st.session_state.staging_processor.staged_orders.copy()
+                            
+                            # Step 2: Update processed_orders with staged flag
+                            # Instead of replacing processed_orders, we'll update the 'staged' flag for moved items
+                            for _, row in newly_staged_items.iterrows():
+                                if 'ordernumber' in row and 'sku' in row:
+                                    # Find matching rows in processed_orders
+                                    mask = ((st.session_state.processed_orders['ordernumber'] == row['ordernumber']) & 
+                                           (st.session_state.processed_orders['sku'] == row['sku']))
+                                    # Mark as staged
+                                    st.session_state.processed_orders.loc[mask, 'staged'] = True
+                            
+                            # Step 3: Update staged_orders as a filtered view of processed_orders
+                            st.session_state.staged_orders = st.session_state.processed_orders[st.session_state.processed_orders['staged'] == True].copy()
+                            
+                            # Increment key_prefix to force UI refresh
+                            if 'key_prefix' not in st.session_state:
+                                st.session_state.key_prefix = 0
+                            st.session_state.key_prefix += 1
+                            
+                            # Display success message
+                            st.success(f"✅ Staging completed: {staging_result['staged_count']} items staged | "
+                                     f"{staging_result['remaining_in_processing']} remaining in processing")
+                        else:
+                            st.error("Could not find selected orders in processing queue")
+                    
+                    except Exception as e:
+                        st.error(f"Error using staging processor: {e}")
+                        # Fallback to legacy method
+                        _legacy_staging_method(selected_rows, processed_orders, selected_line_items, 
+                                                  selected_unique_orders, selected_total_qty)
+                else:
+                    # Legacy staging method for backward compatibility
+                    _legacy_staging_method(selected_rows, processed_orders, selected_line_items, 
+                                              selected_unique_orders, selected_total_qty)
                 
                 # Rerun to update the UI
                 st.rerun()
+    
+    def _legacy_staging_method(self, selected_rows, processed_orders, selected_line_items, selected_unique_orders, selected_total_qty):
+        """Legacy staging method for backward compatibility"""
+        if 'staged_orders' not in st.session_state:
+            st.session_state.staged_orders = pd.DataFrame()
+        
+        # Ensure the 'staged' column exists in processed_orders
+        if 'staged' not in processed_orders.columns:
+            processed_orders['staged'] = False
+            
+        # For each selected row, find and mark corresponding rows in processed_orders as staged
+        for row in selected_rows:
+            # Create match conditions based on available unique identifiers
+            if 'ordernumber' in row and 'sku' in row:
+                # Match by order number and SKU
+                mask = (
+                    (processed_orders['ordernumber'] == row['ordernumber']) & 
+                    (processed_orders['sku'] == row['sku'])
+                )
+                # Mark matching rows as staged
+                processed_orders.loc[mask, 'staged'] = True
+        
+        # Update session state with both staged orders and processed orders
+        st.session_state.staged_orders = processed_orders[processed_orders['staged'] == True].copy()
+        st.session_state.processed_orders = processed_orders
+        
+        # Display detailed success message
+        st.success(f"✅ Moved to staging: {selected_line_items} line items | {selected_unique_orders} unique orders | {selected_total_qty:.0f} total units")
         
         # Show staging count
         st.metric("📋 Orders in Staging", len(st.session_state.get('staged_orders', pd.DataFrame())))
+    
+    # Add recalculation section at the bottom of Orders tab
+    st.markdown("---")
+    st.markdown("**🔄 Recalculation & Bundle Adjustment**")
+    
+    # Check if we have the staging processor available
+    if ('staging_processor' in st.session_state and 
+        st.session_state.staging_processor and 
+        st.session_state.workflow_initialized):
+        
+        # Get current stats
+        staging_processor = st.session_state.staging_processor
+        inventory_calcs = staging_processor.get_inventory_calculations()
+        summary = inventory_calcs['staging_summary']
+        
+        # Display current state
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("📦 Orders in Processing", summary['total_orders_in_processing'])
+        with col2:
+            st.metric("🏷️ Orders Staged", summary['total_orders_staged'])
+        with col3:
+            available_inventory_items = len(inventory_calcs.get('inventory_minus_staged', {}))
+            st.metric("📊 Available Inventory Items", available_inventory_items)
+        
+        # Recalculation options
+        st.markdown("**🔄 Apply Changes to Processing Queue**")
+        
+        recalc_col1, recalc_col2 = st.columns(2)
+        
+        with recalc_col1:
+            st.markdown("Workflow Step 7: Apply bundle changes to remaining orders")
+            st.caption("Recalculates orders left in processing using 'initial inventory minus staged orders'")
+            if st.button("🔄 Recalculate Remaining Processing Orders", type="primary", help="Apply bundle changes to orders left in processing using inventory minus staged orders"):
+                try:
+                    with st.spinner("Recalculating remaining orders in processing with updated inventory (initial - staged)..."):
+                        # Capture BEFORE state for comparison
+                        before_orders = staging_processor.orders_in_processing.copy()
+                        before_inventory = staging_processor.get_inventory_calculations()
+                        
+                        # Count before stats
+                        before_stats = {
+                            'total_orders': len(before_orders),
+                            'orders_with_issues': len(before_orders[before_orders['Issues'] != '']) if 'Issues' in before_orders.columns else 0,
+                            'unique_skus': before_orders['sku'].nunique() if 'sku' in before_orders.columns else 0,
+                            'total_quantity': before_orders['Transaction Quantity'].sum() if 'Transaction Quantity' in before_orders.columns else 0
+                        }
+                        
+                        # This implements step 7 of your workflow:
+                        # Apply on "orders in processing" that was LEFT using "initial inventory" minus "orders in staging"
+                        recalc_result = staging_processor.recalculate_orders_with_updated_inventory()
+                        
+                        if 'error' in recalc_result:
+                            st.warning(f"⚠️ {recalc_result['error']}")
+                        else:
+                            # Capture AFTER state for comparison
+                            after_orders = staging_processor.orders_in_processing.copy()
+                            after_inventory = staging_processor.get_inventory_calculations()
+                            
+                            # Count after stats
+                            after_stats = {
+                                'total_orders': len(after_orders),
+                                'orders_with_issues': len(after_orders[after_orders['Issues'] != '']) if 'Issues' in after_orders.columns else 0,
+                                'unique_skus': after_orders['sku'].nunique() if 'sku' in after_orders.columns else 0,
+                                'total_quantity': after_orders['Transaction Quantity'].sum() if 'Transaction Quantity' in after_orders.columns else 0
+                            }
+                            
+                            # Update session state with the recalculated remaining orders
+                            st.session_state.processed_orders = staging_processor.orders_in_processing.copy()
+                            
+                            # Add staged column for compatibility
+                            if 'staged' not in st.session_state.processed_orders.columns:
+                                st.session_state.processed_orders['staged'] = False
+                            
+                            st.success("✅ Step 7 Complete: Remaining orders in processing recalculated using 'initial inventory minus staged orders'!")
+                            
+                            # Show BEFORE vs AFTER comparison
+                            with st.expander("📊 Recalculation Impact Analysis", expanded=True):
+                                st.markdown("**📈 Before vs After Recalculation Comparison**")
+                                
+                                # Show inventory context first
+                                st.markdown("**📦 Inventory Context for Recalculation**")
+                                st.info("💡 Recalculation uses 'Initial Inventory minus Staged Orders' as available inventory for processing orders")
+                                
+                                # Show available inventory calculation
+                                available_inv = after_inventory['inventory_minus_staged']
+                                if available_inv:
+                                    inv_summary = pd.DataFrame([
+                                        {"Metric": "Available Inventory Items (after staged protection)", "Count": len(available_inv)}
+                                    ])
+                                    st.dataframe(inv_summary, hide_index=True, use_container_width=True)
+                                
+                                # Stats comparison
+                                col1, col2, col3 = st.columns(3)
+                                
+                                with col1:
+                                    st.markdown("**Order Count**")
+                                    orders_change = after_stats['total_orders'] - before_stats['total_orders']
+                                    st.metric("Orders", after_stats['total_orders'], delta=orders_change)
+                                    
+                                with col2:
+                                    st.markdown("**Orders with Issues**")
+                                    issues_change = after_stats['orders_with_issues'] - before_stats['orders_with_issues']
+                                    st.metric("Issues", after_stats['orders_with_issues'], delta=issues_change, delta_color="inverse")
+                                    
+                                with col3:
+                                    st.markdown("**Unique SKUs**")
+                                    skus_change = after_stats['unique_skus'] - before_stats['unique_skus']
+                                    st.metric("SKUs", after_stats['unique_skus'], delta=skus_change)
+                                
+                                # Inventory usage comparison
+                                st.markdown("**📊 Inventory Usage Analysis**")
+                                
+                                inv_usage_tab1, inv_usage_tab2 = st.tabs([
+                                    "📦 Before Recalculation", 
+                                    "🔄 After Recalculation"
+                                ])
+                                
+                                with inv_usage_tab1:
+                                    st.markdown("**Inventory state before recalculation**")
+                                    before_inv_minus_processing = before_inventory['inventory_minus_processing']
+                                    if before_inv_minus_processing:
+                                        before_inv_df = pd.DataFrame([
+                                            {"sku_warehouse": k, "available_balance": v} 
+                                            for k, v in before_inv_minus_processing.items()
+                                        ])
+                                        create_aggrid_table(
+                                            before_inv_df,
+                                            height=200,
+                                            selection_mode='multiple',
+                                            enable_enterprise_modules=True,
+                                            theme='alpine',
+                                            key="before_recalc_inventory",
+                                            filterable=True,
+                                            sortable=True,
+                                            show_hints=False
+                                        )
+                                    else:
+                                        st.info("No before inventory data")
+                                
+                                with inv_usage_tab2:
+                                    st.markdown("**Inventory state after recalculation**")
+                                    after_inv_minus_processing = after_inventory['inventory_minus_processing']
+                                    if after_inv_minus_processing:
+                                        after_inv_df = pd.DataFrame([
+                                            {"sku_warehouse": k, "available_balance": v} 
+                                            for k, v in after_inv_minus_processing.items()
+                                        ])
+                                        create_aggrid_table(
+                                            after_inv_df,
+                                            height=200,
+                                            selection_mode='multiple',
+                                            enable_enterprise_modules=True,
+                                            theme='alpine',
+                                            key="after_recalc_inventory",
+                                            filterable=True,
+                                            sortable=True,
+                                            show_hints=False
+                                        )
+                                    else:
+                                        st.info("No after inventory data")
+                                
+                                # Order-level changes analysis
+                                st.markdown("**🔄 Order Changes Analysis**")
+                                
+                                # Find orders that changed fulfillment center or had issues resolved
+                                if not before_orders.empty and not after_orders.empty:
+                                    # Merge on order number and sku to compare
+                                    comparison_orders = before_orders.merge(
+                                        after_orders, 
+                                        on=['ordernumber', 'sku'], 
+                                        suffixes=('_before', '_after'),
+                                        how='outer'
+                                    )
+                                    
+                                    # Find orders with fulfillment center changes
+                                    fc_changes = comparison_orders[
+                                        comparison_orders['Fulfillment Center_before'] != comparison_orders['Fulfillment Center_after']
+                                    ]
+                                    
+                                    # Find orders with issue status changes
+                                    if 'Issues_before' in comparison_orders.columns and 'Issues_after' in comparison_orders.columns:
+                                        issue_changes = comparison_orders[
+                                            comparison_orders['Issues_before'] != comparison_orders['Issues_after']
+                                        ]
+                                        
+                                        if not issue_changes.empty:
+                                            st.write(f"**🔧 Issues Status Changes:** {len(issue_changes)} order lines")
+                                            
+                                            # Show details of issue changes
+                                            issue_summary = issue_changes[['ordernumber', 'sku', 'Issues_before', 'Issues_after']].copy()
+                                            issue_summary.columns = ['Order Number', 'SKU', 'Issues Before', 'Issues After']
+                                            
+                                            create_aggrid_table(
+                                                issue_summary,
+                                                height=200,
+                                                selection_mode='multiple',
+                                                enable_enterprise_modules=True,
+                                                theme='alpine',
+                                                key="issue_changes_comparison",
+                                                filterable=True,
+                                                sortable=True,
+                                                show_hints=False
+                                            )
+                                    
+                                    if not fc_changes.empty:
+                                        st.write(f"**🏭 Fulfillment Center Changes:** {len(fc_changes)} order lines")
+                                        
+                                        # Show details of FC changes
+                                        fc_summary = fc_changes[['ordernumber', 'sku', 'Fulfillment Center_before', 'Fulfillment Center_after']].copy()
+                                        fc_summary.columns = ['Order Number', 'SKU', 'FC Before', 'FC After']
+                                        
+                                        create_aggrid_table(
+                                            fc_summary,
+                                            height=200,
+                                            selection_mode='multiple',
+                                            enable_enterprise_modules=True,
+                                            theme='alpine',
+                                            key="fc_changes_comparison",
+                                            filterable=True,
+                                            sortable=True,
+                                            show_hints=False
+                                        )
+                                
+                                # Summary message
+                                if issues_change < 0:
+                                    st.success(f"🎉 Great! Recalculation resolved {abs(issues_change)} order issues")
+                                elif issues_change > 0:
+                                    st.warning(f"⚠️ Note: {issues_change} new issues appeared after recalculation")
+                                else:
+                                    st.info("ℹ️ No change in issue count after recalculation")
+                            
+                            st.info("💡 Iterative Workflow: You can now select more orders to stage and repeat the process.")
+                            
+                except Exception as e:
+                    st.error(f"❌ Error during recalculation: {e}")
+        
+        with recalc_col2:
+            st.markdown("Bundle Rule Changes")
+            if st.button("📝 Edit Bundle Mappings", help="Navigate to SKU Mapping tab to edit bundle components"):
+                st.info("👉 Navigate to the ⚙️ SKU Mapping tab to edit bundle components, then return here to recalculate.")
+            
+            # Always indicate that recalculation can be done
+            if summary['total_orders_staged'] > 0:
+                st.success(f"✅ Ready to recalculate {summary['total_orders_in_processing']} orders in processing (inventory allocation accounts for {summary['total_orders_staged']} staged orders)")
+            else:
+                st.success(f"✅ Ready to recalculate {summary['total_orders_in_processing']} orders in processing anytime")
+        
+        # Workflow guidance
+        if summary['total_orders_staged'] > 0 and summary['total_orders_in_processing'] > 0:
+            st.info("""
+            🔄 Current Workflow State: 
+            - ✅ You have {staged} staged orders (their inventory is protected)
+            - ✅ You have {processing} orders left in processing (ready for recalculation with updated inventory)
+            - 🔄 Next: Edit bundle rules in SKU Mapping tab, then click 'Recalculate Remaining Processing Orders'
+            """.format(staged=summary['total_orders_staged'], processing=summary['total_orders_in_processing']))
+        elif summary['total_orders_in_processing'] > 0 and summary['total_orders_staged'] == 0:
+            st.info("🏷️ Next Step: Stage some orders first to begin the iterative workflow with bundle adjustments.")
+    else:
+        st.warning("⚠️ Recalculation not available. Please upload and process files first.")
 
-def render_inventory_tab(inventory_summary, shortage_summary, grouped_shortage_summary, initial_inventory=None, inventory_comparison=None, processed_orders=None):
+def render_inventory_tab(shortage_summary, grouped_shortage_summary, initial_inventory=None, inventory_comparison=None, processed_orders=None):
     """Renders the Inventory tab with all inventory-related information"""
+    from utils.data_processor import DataProcessor
+    from datetime import datetime
     st.header("📦 Inventory & Shortages")
     
     # Display only useful shortage summary information
@@ -1125,40 +1475,6 @@ def render_inventory_tab(inventory_summary, shortage_summary, grouped_shortage_s
                     use_container_width=True,
                     hide_index=True
                 )
-        elif inventory_summary is not None and not inventory_summary.empty:
-            # Fall back to regular inventory summary if comparison not available
-            st.warning("⚠️ Showing raw inventory data - inventory comparison not available")
-            
-            # Find quantity columns
-            qty_col = next((col for col in inventory_summary.columns if any(keyword in col.lower() for keyword in ['qty', 'quantity', 'balance'])), None)
-            
-            if qty_col:
-                # Make a copy to avoid modifying the original
-                inventory_display = inventory_summary.copy()
-                
-                # Rename quantity column for clarity
-                inventory_display = inventory_display.rename(columns={qty_col: 'Quantity'})
-                
-                # Find SKU column
-                sku_col = next((col for col in inventory_display.columns if any(keyword in col.lower() for keyword in ['sku', 'item', 'product'])), None)
-                
-                # Sort the inventory by SKU
-                if sku_col:
-                    inventory_display = inventory_display.sort_values(by=sku_col)
-                
-                st.dataframe(
-                    inventory_display,
-                    height=600,
-                    use_container_width=True,
-                    hide_index=True
-                )
-            else:
-                st.dataframe(
-                    inventory_summary,
-                    height=600,
-                    use_container_width=True,
-                    hide_index=True
-                )
         else:
             st.info("No inventory data available")
     
@@ -1185,20 +1501,269 @@ def render_inventory_tab(inventory_summary, shortage_summary, grouped_shortage_s
         else:
             st.info("No shortages detected")
     
-    # Removed unnecessary tabs to simplify the interface
-
-def render_staging_tab(staged_orders):
-    """Renders the Staging tab with staged orders"""
-    st.markdown("**Staged Orders**")
+def render_staging_tab(staged_orders, staging_processor=None):
+    """Renders the enhanced Staging tab with staging workflow functionality"""
+    st.markdown("**Orders Staged for Processing**")
     
-    # Get only staged orders from processed_orders if available
+    # Check to see if workflow is initialized
+    workflow_initialized = 'staging_processor' in st.session_state and st.session_state.staging_processor is not None and 'workflow_initialized' in st.session_state and st.session_state.workflow_initialized
+    
+    # Show workflow status
+    if staging_processor:
+        st.success("✅ Staging workflow is active and ready")
+        
+        # Get real-time inventory calculations
+        try:
+            inventory_calcs = staging_processor.get_inventory_calculations()
+            summary = inventory_calcs['staging_summary']
+            
+            # Display workflow metrics
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("📦 Orders in Processing", summary['total_orders_in_processing'])
+            with col2:
+                st.metric("🏷️ Orders Staged", summary['total_orders_staged'])
+            with col3:
+                st.metric("🔢 SKUs in Processing", summary['unique_skus_in_processing'])
+            with col4:
+                st.metric("🔢 SKUs Staged", summary['unique_skus_staged'])
+            
+            # Real-time inventory views
+            with st.expander("📊 Real-time Inventory Calculations", expanded=False):
+                # Debug the entire data structure first
+                st.markdown("**🔍 Debug Information**")
+                st.write("Keys in inventory_calcs:", list(inventory_calcs.keys()))
+                st.write("Type of initial_inventory:", type(inventory_calcs['initial_inventory']))
+                st.write("Initial inventory shape:", inventory_calcs['initial_inventory'].shape if hasattr(inventory_calcs['initial_inventory'], 'shape') else "Not a DataFrame")
+                if hasattr(inventory_calcs['initial_inventory'], 'columns'):
+                    st.write("Initial inventory columns:", list(inventory_calcs['initial_inventory'].columns))
+                
+                inv_tab1, inv_tab2, inv_tab3 = st.tabs([
+                    "📦 Initial Inventory",
+                    "📈 Inventory - Processing", 
+                    "🎯 Inventory - Staged"
+                ])
+                
+                with inv_tab1:
+                    st.markdown("**📦 Initial Inventory Data**")
+                    initial_inv = inventory_calcs['initial_inventory']
+                    st.write(f"Data type: {type(initial_inv)}")
+                    st.write(f"Is empty: {initial_inv.empty if hasattr(initial_inv, 'empty') else 'Not a DataFrame'}")
+                    
+                    if hasattr(initial_inv, 'empty') and not initial_inv.empty:
+                        st.write(f"Shape: {initial_inv.shape}")
+                        st.write(f"Columns: {list(initial_inv.columns)}")
+                        st.write("First few rows:")
+                        st.dataframe(initial_inv.head(), use_container_width=True)
+                        
+                        create_aggrid_table(
+                            initial_inv,
+                            height=300,
+                            selection_mode='disabled',  # No selection needed for view-only table
+                            enable_enterprise_modules=True,
+                            theme='alpine',
+                            key="initial_inventory_aggrid",
+                            filterable=True,
+                            sortable=True,
+                            groupable=True,
+                            show_hints=False,
+                            enable_sidebar=True
+                        )
+                    else:
+                        st.info("No initial inventory data or data is not a DataFrame")
+                
+                with inv_tab2:
+                    st.markdown("**Inventory Impact: Initial vs After Processing Orders**")
+                    inv_minus_processing = inventory_calcs['inventory_minus_processing']
+                    initial_inventory = inventory_calcs['initial_inventory']
+                    
+                    # Debug information
+                    st.write("**🔍 Tab 2 Debug:**")
+                    st.write(f"Processing dict keys count: {len(inv_minus_processing) if inv_minus_processing else 0}")
+                    st.write(f"Initial inventory rows: {len(initial_inventory) if hasattr(initial_inventory, '__len__') else 'No length'}")
+                    
+                    if inv_minus_processing and not initial_inventory.empty:
+                        # Create before/after comparison for processing orders
+                        initial_inventory_dict = {}
+                        for _, row in initial_inventory.iterrows():
+                            if 'sku' in row and 'warehouse' in row and 'balance' in row:
+                                key = f"{row['sku']}|{row['warehouse']}"
+                                initial_inventory_dict[key] = float(row['balance'])
+                        
+
+                        
+                        # Create comparison DataFrame
+                        comparison_data = []
+                        for key, after_balance in inv_minus_processing.items():
+                            if "|" in key:
+                                sku, warehouse = key.split("|", 1)
+                                initial_balance = initial_inventory_dict.get(key, 0)
+                                difference = after_balance - initial_balance
+                                
+                                comparison_data.append({
+                                    "Warehouse": warehouse,
+                                    "SKU": sku,
+                                    "Initial Balance": initial_balance,
+                                    "After Processing": after_balance,
+                                    "Difference": difference
+                                })
+                        
+
+                        
+                        if comparison_data:
+                            comparison_df = pd.DataFrame(comparison_data)
+                            # Filter to show only items with changes
+                            changes_df = comparison_df[comparison_df['Difference'] != 0].copy()
+                            
+                            if not changes_df.empty:
+                                st.write(f"Found {len(changes_df)} items with inventory changes:")
+                                create_aggrid_table(
+                                    changes_df,
+                                    height=300,
+                                    selection_mode='disabled',  # View-only inventory comparison
+                                    enable_enterprise_modules=True,
+                                    theme='alpine',
+                                    key="inv_minus_processing_aggrid",
+                                    filterable=True,
+                                    sortable=True,
+                                    groupable=True,
+                                    show_hints=False,
+                                    enable_sidebar=True
+                                )
+                            else:
+                                st.info("No inventory changes from processing orders (all differences are 0)")
+                                # Show full comparison for debugging
+                                with st.expander("Show all inventory items (including no changes)", expanded=False):
+                                    create_aggrid_table(
+                                        comparison_df,
+                                        height=200,
+                                        selection_mode='disabled',  # View-only debug table
+                                        enable_enterprise_modules=True,
+                                        theme='alpine',
+                                        key="inv_minus_processing_aggrid_all",
+                                        filterable=True,
+                                        sortable=True,
+                                        groupable=True,
+                                        show_hints=False,
+                                        enable_sidebar=True
+                                    )
+                        else:
+                            st.info("No comparison data available - no matching keys found")
+                    else:
+                        if initial_inventory.empty:
+                            st.info("No initial inventory data available")
+                        elif not inv_minus_processing:
+                            st.info("No inventory minus processing data available")
+                        else:
+                            st.info("No inventory data available for comparison")
+                
+                with inv_tab3:
+                    st.markdown("**Inventory Impact: Initial vs After Staged Orders**")
+                    inv_minus_staged = inventory_calcs['inventory_minus_staged']
+                    initial_inventory = inventory_calcs['initial_inventory']
+                    
+                    # Debug information
+
+                    
+                    if inv_minus_staged and not initial_inventory.empty:
+                        # Create before/after comparison for staged orders
+                        initial_inventory_dict = {}
+                        for _, row in initial_inventory.iterrows():
+                            if 'sku' in row and 'warehouse' in row and 'balance' in row:
+                                key = f"{row['sku']}|{row['warehouse']}"
+                                initial_inventory_dict[key] = float(row['balance'])
+                        
+
+                        
+                        # Create comparison DataFrame
+                        comparison_data = []
+                        for key, after_balance in inv_minus_staged.items():
+                            if "|" in key:
+                                sku, warehouse = key.split("|", 1)
+                                initial_balance = initial_inventory_dict.get(key, 0)
+                                difference = after_balance - initial_balance
+                                
+                                comparison_data.append({
+                                    "Warehouse": warehouse,
+                                    "SKU": sku,
+                                    "Initial Balance": initial_balance,
+                                    "After Staged": after_balance,
+                                    "Difference": difference
+                                })
+                        
+
+                        
+                        if comparison_data:
+                            comparison_df = pd.DataFrame(comparison_data)
+                            # Filter to show only items with changes
+                            changes_df = comparison_df[comparison_df['Difference'] != 0].copy()
+                            
+                            if not changes_df.empty:
+                                st.write(f"Found {len(changes_df)} items with inventory changes:")
+                                create_aggrid_table(
+                                    changes_df,
+                                    height=300,
+                                    selection_mode='disabled',  # View-only inventory comparison
+                                    enable_enterprise_modules=True,
+                                    theme='alpine',
+                                    key="inv_minus_staged_aggrid",
+                                    filterable=True,
+                                    sortable=True,
+                                    groupable=True,
+                                    show_hints=False,
+                                    enable_sidebar=True
+                                )
+                            else:
+                                st.info("No inventory changes from staged orders (all differences are 0)")
+                                # Show full comparison for debugging
+                                with st.expander("Show all inventory items (including no changes)", expanded=False):
+                                    create_aggrid_table(
+                                        comparison_df,
+                                        height=200,
+                                        selection_mode='multiple',
+                                        enable_enterprise_modules=True,
+                                        theme='alpine',
+                                        key="inv_minus_staged_aggrid_all",
+                                        filterable=True,
+                                        sortable=True,
+                                        groupable=True,
+                                        show_hints=False,
+                                        enable_sidebar=True
+                                    )
+                        else:
+                            st.info("No comparison data available - no matching keys found")
+                    else:
+                        if initial_inventory.empty:
+                            st.info("No initial inventory data available")
+                        elif not inv_minus_staged:
+                            st.info("No inventory minus staged data available")
+                        else:
+                            st.info("No inventory data available for comparison")
+        
+        except Exception as e:
+            st.error(f"Error getting inventory calculations: {e}")
+    else:
+        st.warning("⚠️ Staging workflow not initialized. Please process orders first.")
+    
+    st.markdown("---")
+    st.markdown("**📋 Staged Orders**")
+    
+    # Get staged orders from session state or use the passed parameter
     if 'processed_orders' in st.session_state and not st.session_state.processed_orders.empty:
         if 'staged' in st.session_state.processed_orders.columns:
             # Use only orders marked as staged=True in processed_orders
-            staged_orders = st.session_state.processed_orders[st.session_state.processed_orders['staged'] == True].copy()
+            staged_orders_from_processed = st.session_state.processed_orders[st.session_state.processed_orders['staged'] == True].copy()
             # Remove the staged column as it's not needed in this view
-            if 'staged' in staged_orders.columns:
-                staged_orders = staged_orders.drop(columns=['staged'])
+            if 'staged' in staged_orders_from_processed.columns:
+                staged_orders_from_processed = staged_orders_from_processed.drop(columns=['staged'])
+            # Use this if it has data, otherwise use the passed parameter
+            if not staged_orders_from_processed.empty:
+                staged_orders = staged_orders_from_processed
+    
+    # If we still don't have staged orders, use the session state staged_orders
+    if staged_orders.empty and 'staged_orders' in st.session_state:
+        staged_orders = st.session_state.staged_orders
     
     if not staged_orders.empty:
         # Display key metrics for staged orders with enhanced statistics
@@ -1242,12 +1807,22 @@ def render_staging_tab(staged_orders):
         if 'staging_timestamp' not in staged_orders.columns:
             staged_orders['staging_timestamp'] = pd.Timestamp.now()
         
+        # No debug needed anymore as the synchronization is working properly
+            
+        # Create a unique key for the grid to force refresh when data changes
+        if 'key_prefix' not in st.session_state:
+            st.session_state.key_prefix = 0
+        
+        # Force UI refresh by using a dynamic key
+        grid_key = f"staging_grid_{st.session_state.key_prefix}"
+        
         grid_response = create_aggrid_table(
             staged_orders,
             height=600, # Increased from 400 to 600
             selection_mode='multiple',
             enable_enterprise_modules=True,
-            theme='alpine'
+            theme='alpine',
+            key=grid_key  # Use dynamic key to force refresh
         )
         
         if grid_response['grid_response']['selected_rows']:
@@ -1263,202 +1838,432 @@ def render_staging_tab(staged_orders):
                 selected_qty = sum([row.get('quantity', 0) for row in selected_rows])
                 
                 st.write(f"📦 {selected_qty} units | 🏷️ {selected_skus} unique SKUs | 📝 {selected_orders} orders")
-            
-            if st.button("Remove from Staging"):
-                selected_indices = [row['_selectedRowNodeInfo']['nodeRowIndex'] 
-                                 for row in grid_response['grid_response']['selected_rows']]
-                st.session_state.staged_orders = st.session_state.staged_orders.drop(selected_indices)
-                st.success(f"✅ {selected_count} items removed from staging")
-                st.rerun()
+                
+                if st.button("Remove from Staging"):
+                    # Use staging processor if available
+                    if ('staging_processor' in st.session_state and 
+                        st.session_state.staging_processor and 
+                        st.session_state.workflow_initialized):
+                        
+                        try:
+                            # Get the selected rows
+                            selected_rows_data = [row for row in grid_response['grid_response']['selected_rows']]
+                            
+                            # Update the processed_orders in session state
+                            if 'processed_orders' in st.session_state and 'staged' in st.session_state.processed_orders.columns:
+                                # For each selected row, find and mark corresponding rows in processed_orders as unstaged
+                                for row in selected_rows_data:
+                                    if 'ordernumber' in row and 'sku' in row:
+                                        # Match by order number and SKU
+                                        mask = (
+                                            (st.session_state.processed_orders['ordernumber'] == row['ordernumber']) & 
+                                            (st.session_state.processed_orders['sku'] == row['sku'])
+                                        )
+                                        # Mark matching rows as unstaged
+                                        st.session_state.processed_orders.loc[mask, 'staged'] = False
+                            
+                            # Just ensure staged_orders is properly synchronized with processed_orders after staged flag update
+                            # The staged_orders DataFrame should be a filtered view of processed_orders where staged=True
+                            st.session_state.staged_orders = st.session_state.processed_orders[st.session_state.processed_orders['staged'] == True].copy()
+                            
+                            # Force refresh of the Orders tab UI
+                            if 'key_prefix' not in st.session_state:
+                                st.session_state.key_prefix = 0
+                            st.session_state.key_prefix += 1
+                            
+                            # If we're using the staging processor, synchronize its state too
+                            if hasattr(st.session_state.staging_processor, 'orders_in_processing'):
+                                # Update the staging processor with the current state
+                                st.session_state.staging_processor.orders_in_processing = st.session_state.processed_orders.copy()
+                                st.session_state.staging_processor.staged_orders = st.session_state.staged_orders.copy()
+                                
+                                # Force recalculation of inventory statistics
+                                try:
+                                    # Update inventory calculations to reflect the change
+                                    _ = st.session_state.staging_processor.get_inventory_calculations()
+                                except Exception as calc_error:
+                                    st.warning(f"Note: Statistics may not be immediately accurate. Will update on refresh.")
+                                
+                            st.success(f"✅ {selected_count} items moved back to processing")
+                        except Exception as e:
+                            st.error(f"Error moving items back to processing: {e}")
+                    else:
+                        # Legacy method
+                        selected_indices = [row['_selectedRowNodeInfo']['nodeRowIndex'] 
+                                         for row in grid_response['grid_response']['selected_rows']]
+                        
+                        # Get the selected rows
+                        selected_rows_data = [row for row in grid_response['grid_response']['selected_rows']]
+                        
+                        # Update the processed_orders in session state
+                        if 'processed_orders' in st.session_state and 'staged' in st.session_state.processed_orders.columns:
+                            # For each selected row, find and mark corresponding rows in processed_orders as unstaged
+                            for row in selected_rows_data:
+                                if 'ordernumber' in row and 'sku' in row:
+                                    # Match by order number and SKU
+                                    mask = (
+                                        (st.session_state.processed_orders['ordernumber'] == row['ordernumber']) & 
+                                        (st.session_state.processed_orders['sku'] == row['sku'])
+                                    )
+                                    # Mark matching rows as unstaged
+                                    st.session_state.processed_orders.loc[mask, 'staged'] = False
+                            
+                            # Just ensure staged_orders is properly synchronized with processed_orders after staged flag update
+                            # The staged_orders DataFrame should be a filtered view of processed_orders where staged=True
+                            st.session_state.staged_orders = st.session_state.processed_orders[st.session_state.processed_orders['staged'] == True].copy()
+                    
+                    st.success(f"✅ {selected_count} items moved back to processing")
+                    
+                    # Add a rerun only when we have selected items to move back (safe refresh)
+                    if selected_count > 0:
+                        # Set a flag to avoid infinite loops
+                        if 'just_moved_from_staging' not in st.session_state:
+                            # Force reset of any cached data for the Orders tab
+                            if 'key_prefix' not in st.session_state:
+                                st.session_state.key_prefix = 0
+                            st.session_state.key_prefix += 1
+                            
+                            # Make sure we save back the processed_orders to session state
+                            st.session_state.processed_orders = st.session_state.processed_orders
+                            
+                            st.session_state.just_moved_from_staging = True
+                            st.rerun()
+                        else:
+                            # Reset the flag after one rerun
+                            st.session_state.just_moved_from_staging = False
+    
+    # Simple staging controls - just remove/delete
+    if not staged_orders.empty:
+        st.markdown("---")
+        st.markdown("**🔧 Staging Management**")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**Quick Actions:**")
+            st.caption("• Select items above and use 'Remove from Staging'")
+            st.caption("• Or move individual orders back to processing")
+        
+        with col2:
+            if st.button("🔄 Move All Back to Processing", help="Move all staged orders back to processing queue"):
+                try:
+                    # Mark all staged orders as unstaged in processed_orders
+                    if 'processed_orders' in st.session_state and 'staged' in st.session_state.processed_orders.columns:
+                        # First get the indices of orders that are currently staged
+                        staged_indices = st.session_state.processed_orders.index[st.session_state.processed_orders['staged'] == True].tolist()
+                        
+                        # Now clear the staged flag
+                        st.session_state.processed_orders.loc[st.session_state.processed_orders['staged'] == True, 'staged'] = False
+                        
+                        # If we're using the staging_processor, make sure to synchronize its internal state too
+                        if ('staging_processor' in st.session_state and 
+                            st.session_state.staging_processor and 
+                            hasattr(st.session_state.staging_processor, 'orders_in_processing')):
+                            
+                            # Update staging processor's internal state from session state
+                            st.session_state.staging_processor.orders_in_processing = st.session_state.processed_orders.copy()
+                            st.session_state.staging_processor.staged_orders = pd.DataFrame()
+                            
+                            # Force recalculation of inventory statistics
+                            try:
+                                # Update inventory calculations to reflect the change
+                                _ = st.session_state.staging_processor.get_inventory_calculations()
+                            except Exception as calc_error:
+                                st.warning(f"Note: Statistics may not be immediately accurate. Will update on refresh.")
+                    
+                    # Update staged_orders as a filtered view of processed_orders
+                    st.session_state.staged_orders = st.session_state.processed_orders[st.session_state.processed_orders['staged'] == True].copy()
+                    
+                    st.success("✅ All staged orders moved back to processing")
+                    
+                    # Add a safe rerun with anti-loop protection
+                    if 'just_moved_all_from_staging' not in st.session_state:
+                        st.session_state.just_moved_all_from_staging = True
+                        st.rerun()
+                    else:
+                        # Reset the flag after one rerun
+                        st.session_state.just_moved_all_from_staging = False
+                except Exception as e:
+                    st.error(f"Error moving orders back: {e}")
 
 def render_sku_mapping_editor(sku_mappings, data_processor):
-    """Renders the SKU Mapping editor interface"""
-    st.markdown("**SKU Mapping Adjustments**")
+    """Renders the SKU Mapping display with warehouse tabs and proper bundle editing"""
+    st.markdown("**SKU Mapping**")
     
-    # Convert dictionary to DataFrame if needed
+    # Debug info
     if sku_mappings is not None:
         if isinstance(sku_mappings, dict):
-            # Create a flattened view of the mappings for editing
-            rows = []
-            for center, mappings in sku_mappings.get('mappings', {}).items():
-                for shopify_sku, inventory_sku in mappings.items():
-                    rows.append({
-                        "fulfillment_center": center,
-                        "shopify_sku": shopify_sku,
-                        "inventory_sku": inventory_sku
-                    })
-            
-            # Convert to DataFrame if there are mappings
-            if rows:
-                sku_df = pd.DataFrame(rows)
-            else:
-                sku_df = pd.DataFrame(columns=["fulfillment_center", "shopify_sku", "inventory_sku"])
+            warehouses = list(sku_mappings.keys())
+            st.info(f"📁 Loaded SKU mappings for warehouses: {', '.join(warehouses)}")
         else:
-            # If it's already a DataFrame, use it directly
-            sku_df = sku_mappings
-        
-        # Check if DataFrame is not empty
-        if not sku_df.empty:
-            # Use AgGrid for better filtering and sorting capabilities
-            gb = GridOptionsBuilder.from_dataframe(sku_df)
+            st.info(f"📁 Loaded SKU mappings as DataFrame with {len(sku_mappings)} rows")
+    else:
+        st.warning("⚠️ No SKU mappings loaded. Please check if airtable_sku_mappings.json exists.")
+        return
+    
+    if not isinstance(sku_mappings, dict):
+        st.error("SKU mappings should be a dictionary structure from JSON file.")
+        return
+    
+    # Create warehouse tabs
+    warehouse_names = [w for w in sku_mappings.keys() if w in ['Oxnard', 'Wheeling']]
+    if not warehouse_names:
+        st.warning("No warehouse data found (looking for 'Oxnard' and 'Wheeling').")
+        return
+    
+    # Create tabs for each warehouse
+    if len(warehouse_names) == 1:
+        warehouse_tabs = [st.container()]
+        active_warehouse = warehouse_names[0]
+    else:
+        warehouse_tabs = st.tabs([f"🏢 {warehouse}" for warehouse in warehouse_names])
+    
+    # Process each warehouse
+    for tab_index, warehouse in enumerate(warehouse_names):
+        with warehouse_tabs[tab_index] if len(warehouse_names) > 1 else warehouse_tabs[0]:
+            st.markdown(f"**{warehouse} Warehouse**")
             
-            # Configure grid options for better usability
-            gb.configure_default_column(
-                resizable=True,
-                filterable=True,
-                sortable=True,
-                editable=True
-            )
+            warehouse_data = sku_mappings.get(warehouse, {})
+            singles_data = warehouse_data.get('singles', {})
+            bundles_data = warehouse_data.get('bundles', {})
             
-            # Add specific filter options for each column
-            gb.configure_column("fulfillment_center", filter_params={"filterType": "text"})
-            gb.configure_column("shopify_sku", filter_params={"filterType": "text"})
-            gb.configure_column("inventory_sku", filter_params={"filterType": "text"})
+            # Create sub-tabs for Singles and Bundles within each warehouse
+            singles_tab, bundles_tab = st.tabs(["📦 Singles", "🎁 Bundles"])
             
-            # Enable pagination and set page size
-            gb.configure_pagination(enabled=True, paginationAutoPageSize=False, paginationPageSize=25)
-            
-            # Enable row selection
-            gb.configure_selection(selection_mode="multiple", use_checkbox=True)
-            
-            # Configure sidebar for column filtering
-            gb.configure_side_bar()
-            
-            # Build grid options
-            grid_options = gb.build()
-            
-            # Render the AgGrid table with increased height
-            grid_response = AgGrid(
-                sku_df,
-                gridOptions=grid_options,
-                height=600,  # Increased height for better visibility
-                data_return_mode="filtered_and_sorted",
-                update_mode="value_changed",
-                fit_columns_on_grid_load=True,
-                theme="alpine",
-                allow_unsafe_jscode=True,
-                enable_enterprise_modules=True,
-                key="sku_mapping_grid"
-            )
-            
-            # Get the updated dataframe
-            edited_df = grid_response["data"]
-            
-            if st.button("Apply SKU Mapping Changes"):
-                st.session_state.sku_mappings = edited_df
+            # SINGLES TAB
+            with singles_tab:
+                st.markdown(f"**Single SKU Mappings - {warehouse}**")
                 
-                # Trigger reprocessing of orders with new mappings
-                if (st.session_state.orders_df is not None and 
-                    st.session_state.inventory_df is not None):
-                    with st.spinner("Recalculating allocations using inventory minus staged orders..."):
-                        # First, get our inventory dataframe
-                        inventory_df = st.session_state.inventory_df.copy()
+                if singles_data:
+                    # Convert singles to DataFrame
+                    singles_rows = []
+                    for order_sku, mapping_data in singles_data.items():
+                        singles_rows.append({
+                            "order_sku": order_sku,
+                            "picklist_sku": mapping_data.get('picklist_sku', ''),
+                            "actualqty": mapping_data.get('actualqty', 1.0),
+                            "total_pick_weight": mapping_data.get('total_pick_weight', 0.0),
+                            "pick_type": mapping_data.get('pick_type', ''),
+                            "notes": mapping_data.get('notes', ''),
+                            "airtable_id": mapping_data.get('airtable_id', '')
+                        })
+                    
+                    singles_df = pd.DataFrame(singles_rows)
+                    
+                    # Show summary metrics
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("📦 Total Singles", len(singles_df))
+                    with col2:
+                        unique_pick_types = singles_df['pick_type'].nunique()
+                        st.metric("🏷️ Pick Types", unique_pick_types)
+                    with col3:
+                        total_weight = singles_df['total_pick_weight'].sum()
+                        st.metric("⚖️ Total Weight", f"{total_weight:.1f}")
+                    
+                    # Format display
+                    display_singles = singles_df.copy()
+                    display_singles['actualqty'] = display_singles['actualqty'].round(2)
+                    display_singles['total_pick_weight'] = display_singles['total_pick_weight'].round(3)
+                    
+                    # Create editable table
+                    create_aggrid_table(
+                        display_singles,
+                        height=500,
+                        selection_mode='multiple',
+                        enable_enterprise_modules=True,
+                        theme='alpine',
+                        key=f"singles_{warehouse}",
+                        filterable=True,
+                        sortable=True,
+                        groupable=True,
+                        editable=True,
+                        show_hints=True,
+                        enable_sidebar=True
+                    )
+                else:
+                    st.info(f"No single SKU mappings found for {warehouse}")
+            
+            # BUNDLES TAB
+            with bundles_tab:
+                st.markdown(f"**Bundle Mappings - {warehouse}**")
+                
+                if bundles_data:
+                    # Convert bundles to DataFrame showing each component
+                    bundle_rows = []
+                    for bundle_sku, components in bundles_data.items():
+                        if isinstance(components, list):
+                            for i, comp in enumerate(components):
+                                bundle_rows.append({
+                                    "bundle_sku": bundle_sku,
+                                    "component_index": i + 1,
+                                    "component_sku": comp.get('component_sku', ''),
+                                    "actualqty": comp.get('actualqty', 1.0),
+                                    "weight": comp.get('weight', 0.0),
+                                    "pick_type": comp.get('pick_type', ''),
+                                    "pick_type_inventory": comp.get('pick_type_inventory', ''),
+                                    "total_components": len(components)
+                                })
+                    
+                    if bundle_rows:
+                        bundles_df = pd.DataFrame(bundle_rows)
                         
-                        # Extract only staged orders if they exist
-                        if ('staged' in st.session_state.processed_orders.columns and 
-                            st.session_state.processed_orders[st.session_state.processed_orders['staged'] == True].shape[0] > 0):
+                        # Show summary metrics
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            unique_bundles = bundles_df['bundle_sku'].nunique()
+                            st.metric("🎁 Total Bundles", unique_bundles)
+                        with col2:
+                            total_components = len(bundles_df)
+                            st.metric("🧩 Total Components", total_components)
+                        with col3:
+                            unique_component_skus = bundles_df['component_sku'].nunique()
+                            st.metric("📦 Unique Component SKUs", unique_component_skus)
+                        with col4:
+                            total_weight = bundles_df['weight'].sum()
+                            st.metric("⚖️ Total Weight", f"{total_weight:.1f}")
+                        
+                        # Bundle overview
+                        with st.expander("📋 Bundle Overview", expanded=False):
+                            bundle_summary = bundles_df.groupby('bundle_sku').agg({
+                                'component_sku': 'count',
+                                'actualqty': 'sum',
+                                'weight': 'sum'
+                            }).reset_index()
+                            bundle_summary.columns = ['Bundle SKU', 'Component Count', 'Total Qty', 'Total Weight']
                             
-                            # Get staged orders
-                            staged_orders = st.session_state.processed_orders[st.session_state.processed_orders['staged'] == True].copy()
-                            
-                            # Create adjusted inventory by subtracting staged orders quantities
-                            # Group staged orders by SKU and Fulfillment Center
-                            if 'sku' in staged_orders.columns and 'Fulfillment Center' in staged_orders.columns:
-                                staged_quantities = staged_orders.groupby(['sku', 'Fulfillment Center'])['quantity'].sum().reset_index()
-                                
-                                # Only proceed if we have staged quantities
-                                if not staged_quantities.empty:
-                                    st.info(f"Adjusting inventory based on {len(staged_orders)} staged orders before recalculation")
-                                    
-                                    # Convert staged quantities to a dictionary for faster lookups
-                                    staged_qty_dict = {}
-                                    for _, row in staged_quantities.iterrows():
-                                        key = (row['sku'], row['Fulfillment Center'])
-                                        staged_qty_dict[key] = row['quantity']
-                                    
-                                    # Adjust inventory quantities
-                                    if 'sku' in inventory_df.columns and 'warehouse' in inventory_df.columns and 'quantity' in inventory_df.columns:
-                                        for idx, row in inventory_df.iterrows():
-                                            sku = row['sku']
-                                            warehouse = row['warehouse']
-                                            
-                                            # Check if this SKU+warehouse combination has staged orders
-                                            staged_key = (sku, warehouse)
-                                            if staged_key in staged_qty_dict:
-                                                # Subtract staged quantity from inventory
-                                                current_qty = inventory_df.loc[idx, 'quantity']
-                                                adjusted_qty = max(0, current_qty - staged_qty_dict[staged_key])
-                                                inventory_df.loc[idx, 'quantity'] = adjusted_qty
+                            st.dataframe(
+                                bundle_summary,
+                                height=300,
+                                use_container_width=True,
+                                hide_index=True
+                            )
                         
-                        # Get only unstaged orders for recalculation
-                        orders_to_process = st.session_state.orders_df.copy()
-                        if 'staged' in st.session_state.processed_orders.columns:
-                            # Map staged status from processed orders to original orders based on order number and line item
-                            # This requires joining the dataframes to transfer the 'staged' flag
-                            if 'ordernumber' in orders_to_process.columns and 'ordernumber' in st.session_state.processed_orders.columns:
-                                # Create a unique identifier for each line item (order number + sku)
-                                orders_to_process['order_line_key'] = orders_to_process['ordernumber'] + "_" + orders_to_process['sku'].astype(str)
-                                
-                                # Create the same key in processed orders
-                                processed_with_key = st.session_state.processed_orders.copy()
-                                processed_with_key['order_line_key'] = processed_with_key['ordernumber'] + "_" + processed_with_key['sku'].astype(str)
-                                
-                                # Create a mapping of line items that are staged
-                                staged_keys = set(processed_with_key[processed_with_key['staged'] == True]['order_line_key'])
-                                
-                                # Filter out staged orders from orders_to_process
-                                orders_to_process = orders_to_process[~orders_to_process['order_line_key'].isin(staged_keys)]
-                                
-                                # Remove temporary column
-                                orders_to_process = orders_to_process.drop(columns=['order_line_key'])
+                        # Format display
+                        display_bundles = bundles_df.copy()
+                        display_bundles['actualqty'] = display_bundles['actualqty'].round(2)
+                        display_bundles['weight'] = display_bundles['weight'].round(3)
                         
-                        # Process orders with new SKU mappings using adjusted inventory
-                        result = data_processor.process_orders(
-                            orders_to_process,  # Only process unstaged orders
-                            inventory_df,       # Use inventory adjusted for staged orders
-                            st.session_state.shipping_zones_df,
-                            edited_df
+                        # Create editable table for bundle components
+                        grid_response = create_aggrid_table(
+                            display_bundles,
+                            height=500,
+                            selection_mode='multiple',
+                            enable_enterprise_modules=True,
+                            theme='alpine',
+                            key=f"bundles_{warehouse}",
+                            filterable=True,
+                            sortable=True,
+                            groupable=True,
+                            editable=True,
+                            show_hints=True,
+                            enable_sidebar=True
                         )
                         
-                        # Get the processed orders result
-                        new_processed_orders = result['orders']
+                        # Bundle editing controls
+                        st.markdown("---")
+                        st.markdown("**🔧 Bundle Component Editing**")
                         
-                        # If we have staged orders, we need to preserve them
-                        if 'staged' in st.session_state.processed_orders.columns:
-                            # Get existing staged orders
-                            staged_orders = st.session_state.processed_orders[st.session_state.processed_orders['staged'] == True].copy()
+                        # Show selected components
+                        if grid_response['grid_response']['selected_rows']:
+                            selected = grid_response['grid_response']['selected_rows']
+                            st.success(f"✅ Selected {len(selected)} component(s)")
                             
-                            # Add 'staged' column to new processed orders if it doesn't exist
-                            if 'staged' not in new_processed_orders.columns:
-                                new_processed_orders['staged'] = False
-                                
-                            # Combine staged orders with new processed orders
-                            if not staged_orders.empty:
-                                st.session_state.processed_orders = pd.concat([staged_orders, new_processed_orders])
-                                st.success(f"✅ SKU mapping applied to {len(new_processed_orders)} orders in processing while preserving {len(staged_orders)} staged orders")
+                            # Component editing form
+                            with st.expander("✏️ Edit Selected Components", expanded=True):
+                                if len(selected) == 1:
+                                    comp = selected[0]
+                                    st.markdown(f"**Editing component in bundle: {comp.get('bundle_sku')}**")
+                                    
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        edit_component_sku = st.text_input("Component SKU", value=comp.get('component_sku', ''), key=f"edit_comp_sku_{warehouse}")
+                                        edit_qty = st.number_input("Quantity", value=float(comp.get('actualqty', 1.0)), min_value=0.1, step=0.1, key=f"edit_qty_{warehouse}")
+                                        edit_weight = st.number_input("Weight", value=float(comp.get('weight', 0.0)), min_value=0.0, step=0.1, key=f"edit_weight_{warehouse}")
+                                    
+                                    with col2:
+                                        edit_pick_type = st.text_input("Pick Type", value=comp.get('pick_type', ''), key=f"edit_pick_type_{warehouse}")
+                                        edit_pick_type_inv = st.text_input("Pick Type Inventory", value=comp.get('pick_type_inventory', ''), key=f"edit_pick_inv_{warehouse}")
+                                    
+                                    col1, col2, col3 = st.columns(3)
+                                    with col1:
+                                        if st.button("💾 Save Changes", key=f"save_comp_{warehouse}"):
+                                            st.success("✅ Component updated! (Save to JSON will be implemented)")
+                                    with col2:
+                                        if st.button("❌ Remove Component", key=f"remove_comp_{warehouse}"):
+                                            st.warning("⚠️ Component will be removed from bundle")
+                                    with col3:
+                                        if st.button("🔄 Reset", key=f"reset_comp_{warehouse}"):
+                                            st.rerun()
+                                else:
+                                    st.info("Select exactly one component to edit, or use bulk operations below")
+                                    
+                                    if st.button("❌ Remove All Selected", key=f"remove_selected_{warehouse}"):
+                                        st.warning(f"⚠️ Will remove {len(selected)} components from their bundles")
+                        
+                        # Add new component
+                        with st.expander("➕ Add Component to Bundle", expanded=False):
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                new_bundle = st.selectbox("Select Bundle", options=list(bundles_data.keys()), key=f"new_bundle_{warehouse}")
+                                new_comp_sku = st.text_input("Component SKU", placeholder="e.g., apple-10x05", key=f"new_comp_sku_{warehouse}")
+                                new_qty = st.number_input("Quantity", min_value=0.1, value=1.0, step=0.1, key=f"new_qty_{warehouse}")
+                            
+                            with col2:
+                                new_weight = st.number_input("Weight", min_value=0.0, value=0.0, step=0.1, key=f"new_weight_{warehouse}")
+                                new_pick_type = st.text_input("Pick Type", placeholder="e.g., Fruit: Apple", key=f"new_pick_type_{warehouse}")
+                                new_pick_inv = st.text_input("Pick Type Inventory", key=f"new_pick_inv_{warehouse}")
+                            
+                            if st.button("➕ Add Component", key=f"add_comp_{warehouse}"):
+                                if new_bundle and new_comp_sku:
+                                    st.success(f"✅ Ready to add '{new_comp_sku}' to bundle '{new_bundle}'")
+                                    st.info("💡 Addition will update the JSON file")
+                                else:
+                                    st.error("❌ Please select bundle and enter component SKU")
+                        
+                        # Create new bundle
+                        with st.expander("🎁 Create New Bundle", expanded=False):
+                            new_bundle_sku = st.text_input("New Bundle SKU", placeholder=f"e.g., m.{warehouse.lower()}_special", key=f"new_bundle_sku_{warehouse}")
+                            new_components_text = st.text_area(
+                                "Component SKUs (one per line or comma-separated)",
+                                placeholder="apple-10x05\norange-12x06\nor: apple-10x05, orange-12x06",
+                                key=f"new_components_{warehouse}"
+                            )
+                            
+                            if st.button("🎁 Create Bundle", key=f"create_bundle_{warehouse}"):
+                                if new_bundle_sku and new_components_text:
+                                    # Parse components (handle both line-separated and comma-separated)
+                                    if '\n' in new_components_text:
+                                        components = [c.strip() for c in new_components_text.split('\n') if c.strip()]
+                                    else:
+                                        components = [c.strip() for c in new_components_text.split(',') if c.strip()]
+                                    
+                                    st.success(f"✅ Ready to create bundle '{new_bundle_sku}' with {len(components)} components")
+                                    st.info("💡 Bundle creation will update the JSON file")
+                                else:
+                                    st.error("❌ Please enter bundle SKU and components")
+                    else:
+                        st.info("No valid bundle components found")
+                else:
+                    st.info(f"No bundle mappings found for {warehouse}")
+                    
+                    # Create first bundle interface
+                    with st.expander("🎁 Create Your First Bundle", expanded=True):
+                        st.markdown("**No bundles found. Create your first bundle:**")
+                        
+                        first_bundle_sku = st.text_input("Bundle SKU", placeholder=f"e.g., m.{warehouse.lower()}_starter", key=f"first_bundle_{warehouse}")
+                        first_components = st.text_area(
+                            "Component SKUs (one per line)",
+                            placeholder="apple-10x05\norange-12x06\nmango-09x16",
+                            key=f"first_components_{warehouse}"
+                        )
+                        
+                        if st.button("🎁 Create First Bundle", key=f"create_first_{warehouse}"):
+                            if first_bundle_sku and first_components:
+                                components = [c.strip() for c in first_components.split('\n') if c.strip()]
+                                st.success(f"✅ Ready to create first bundle '{first_bundle_sku}' with {len(components)} components")
+                                st.info("💡 Bundle creation will update airtable_sku_mappings.json")
                             else:
-                                st.session_state.processed_orders = new_processed_orders
-                                st.success(f"✅ SKU mapping applied to all {len(new_processed_orders)} orders in processing")
-                        else:
-                            # No staged orders, just update all processed orders
-                            st.session_state.processed_orders = new_processed_orders
-                            st.success(f"✅ SKU mapping applied to all {len(new_processed_orders)} orders in processing")
-                        
-                        # Update other session state variables
-                        st.session_state.inventory_summary = result['inventory_summary']
-                        st.session_state.shortage_summary = result['shortage_summary']
-                        st.session_state.grouped_shortage_summary = result['grouped_shortage_summary']
-                        
-                        # Add inventory_comparison for orders minus orders in processing
-                        if 'inventory_comparison' in result:
-                            st.session_state.inventory_comparison = result['inventory_comparison']
-                            # Save the comparison to CSV for reference
-                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                            comparison_filename = f"inventory_comparison_{timestamp}.csv"
-                            result['inventory_comparison'].to_csv(comparison_filename, index=False)
-                            st.success(f"📊 Inventory comparison saved to {comparison_filename}")
-                        else:
-                            st.warning("⚠️ Inventory comparison data not available")
-                        
-                        # Rerun to update the UI
-                        st.rerun()
+                                st.error("❌ Please enter bundle SKU and components")
+    
