@@ -397,6 +397,15 @@ def render_inventory_analysis(processed_orders, inventory_df):
     # Create tabs for different inventory views with Grouped Shortages as first tab
     inv_tab_shortages, inv_tab1, inv_tab2 = st.tabs(["⚠️ Grouped Shortages", "📦 Inventory minus Orders", "🎯 Inventory minus Staged Orders"])
     
+    # Initialize staged_inventory with initial inventory data
+    staged_inventory = inventory_df.copy()
+    if 'Balance' in staged_inventory.columns:
+        staged_inventory['Before Staged'] = staged_inventory['Balance']
+        staged_inventory['After Staged'] = staged_inventory['Balance']
+    elif 'AvailableQty' in staged_inventory.columns:
+        staged_inventory['Before Staged'] = staged_inventory['AvailableQty']
+        staged_inventory['After Staged'] = staged_inventory['AvailableQty']
+    
     # First tab: Grouped Shortages
     with inv_tab_shortages:
         st.markdown("**⚠️ Inventory Shortages by Group**")
@@ -1081,9 +1090,17 @@ def render_orders_tab(processed_orders, shortage_summary=None):
                     with col2:
                         if st.button("🎯 Stage & Edit Bundles"):
                             st.caption("Stage selected orders first, then edit bundles safely")
-                            if ('staging_processor' in st.session_state and 
-                                st.session_state.staging_processor and 
-                                st.session_state.workflow_initialized):
+                            # Initialize staging processor if needed
+                            if st.session_state.staging_processor is None and st.session_state.get('workflow_initialized', False):
+                                from utils.data_processor import DataProcessor
+                                st.session_state.staging_processor = DataProcessor()
+                                st.session_state.staging_processor.initialize_workflow(
+                                    st.session_state.orders_df,
+                                    st.session_state.inventory_df
+                                )
+                            
+                            if (st.session_state.staging_processor is not None and 
+                                st.session_state.get('workflow_initialized', False)):
                                 try:
                                     # Stage selected orders first
                                     order_indices = []
@@ -1112,9 +1129,17 @@ def render_orders_tab(processed_orders, shortage_summary=None):
                     with col3:
                         if st.button("🔄 Smart Recalculate"):
                             st.caption("Uses Available for Recalculation (Initial - Staged) inventory")
-                            if ('staging_processor' in st.session_state and 
-                                st.session_state.staging_processor and 
-                                st.session_state.workflow_initialized):
+                            # Initialize staging processor if needed
+                            if st.session_state.staging_processor is None and st.session_state.get('workflow_initialized', False):
+                                from utils.data_processor import DataProcessor
+                                st.session_state.staging_processor = DataProcessor()
+                                st.session_state.staging_processor.initialize_workflow(
+                                    st.session_state.orders_df,
+                                    st.session_state.inventory_df
+                                )
+                            
+                            if (st.session_state.staging_processor is not None and 
+                                st.session_state.get('workflow_initialized', False)):
                                 try:
                                     with st.spinner("Smart recalculating with Available for Recalculation inventory..."):
                                         # Get before state
@@ -1144,10 +1169,18 @@ def render_orders_tab(processed_orders, shortage_summary=None):
                                 st.error("Staging processor not available")
                 
             if st.button("Move Selected to Staging"):
+                # Initialize staging processor if needed
+                if st.session_state.staging_processor is None and st.session_state.get('workflow_initialized', False):
+                    from utils.data_processor import DataProcessor
+                    st.session_state.staging_processor = DataProcessor()
+                    st.session_state.staging_processor.initialize_workflow(
+                        st.session_state.orders_df,
+                        st.session_state.inventory_df
+                    )
+                
                 # Use staging processor if available
-                if ('staging_processor' in st.session_state and 
-                    st.session_state.staging_processor and 
-                    st.session_state.workflow_initialized):
+                if (st.session_state.staging_processor is not None and 
+                    st.session_state.get('workflow_initialized', False)):
                     
                     try:
                         # Get the indices of selected rows in orders_in_processing
@@ -1240,10 +1273,35 @@ def render_orders_tab(processed_orders, shortage_summary=None):
     st.markdown("---")
     st.markdown("**🔄 Recalculation & Bundle Adjustment**")
     
-    # Check if we have the staging processor available
-    if ('staging_processor' in st.session_state and 
-        st.session_state.staging_processor and 
-        st.session_state.workflow_initialized):
+    # Check if we have the staging processor available and workflow is initialized
+    if (st.session_state.get('workflow_initialized', False) and
+        'processed_orders' in st.session_state and 
+        st.session_state.processed_orders is not None):
+        
+        # Initialize staging processor if needed
+        if st.session_state.staging_processor is None:
+            from utils.data_processor import DataProcessor
+            st.session_state.staging_processor = DataProcessor()
+            # Re-initialize with current data
+            result = st.session_state.staging_processor.initialize_workflow(
+                st.session_state.orders_df,
+                st.session_state.inventory_df
+            )
+            # Sync with existing processed_orders if available
+            if 'orders' in result:
+                if st.session_state.processed_orders is None:
+                    st.session_state.processed_orders = result['orders']
+                    if 'staged' not in st.session_state.processed_orders.columns:
+                        st.session_state.processed_orders['staged'] = False
+                else:
+                    # If we have existing processed_orders, sync the staging processor with them
+                    # This ensures the staging processor knows about already staged items
+                    st.session_state.staging_processor.orders_in_processing = st.session_state.processed_orders[
+                        st.session_state.processed_orders['staged'] == False
+                    ].copy()
+                    st.session_state.staging_processor.staged_orders = st.session_state.processed_orders[
+                        st.session_state.processed_orders['staged'] == True
+                    ].copy()
         
         # Get current stats
         staging_processor = st.session_state.staging_processor
@@ -1273,7 +1331,12 @@ def render_orders_tab(processed_orders, shortage_summary=None):
                 try:
                     with st.spinner("Recalculating remaining orders in processing with updated inventory (initial - staged)..."):
                         # Capture BEFORE state for comparison
-                        before_orders = staging_processor.orders_in_processing.copy()
+                        if staging_processor.orders_in_processing is not None:
+                            before_orders = staging_processor.orders_in_processing.copy()
+                        else:
+                            st.error("No orders in processing found. Please ensure files are processed correctly.")
+                            return
+                        
                         before_inventory = staging_processor.get_inventory_calculations()
                         
                         # Count before stats
@@ -1292,7 +1355,12 @@ def render_orders_tab(processed_orders, shortage_summary=None):
                             st.warning(f"⚠️ {recalc_result['error']}")
                         else:
                             # Capture AFTER state for comparison
-                            after_orders = staging_processor.orders_in_processing.copy()
+                            if staging_processor.orders_in_processing is not None:
+                                after_orders = staging_processor.orders_in_processing.copy()
+                            else:
+                                st.warning("Orders in processing became None after recalculation")
+                                return
+                            
                             after_inventory = staging_processor.get_inventory_calculations()
                             
                             # Count after stats
@@ -1561,38 +1629,91 @@ def render_inventory_tab(shortage_summary, grouped_shortage_summary, initial_inv
                 
                 # Create comparison dataframe with Before, After, and Difference columns
                 try:
-                    # Get common columns and merge the dataframes
-                    initial_cols = set(initial_inventory_base.columns)
-                    staged_cols = set(inventory_minus_staged_df.columns)
-                    common_cols = initial_cols.intersection(staged_cols)
+                    # Normalize column names and create working copies
+                    initial_df = initial_inventory_base.copy()
+                    staged_df = inventory_minus_staged_df.copy()
                     
-                    if 'Balance' in common_cols or 'AvailableQty' in common_cols:
-                        # Determine the quantity column to use
-                        qty_col = 'Balance' if 'Balance' in common_cols else 'AvailableQty'
+                    # Debug: show what columns we actually have
+                    st.write("Debug - Initial inventory columns:", list(initial_df.columns))
+                    st.write("Debug - Staged inventory columns:", list(staged_df.columns))
+                    
+                    # Find quantity column with flexible matching
+                    initial_qty_col = None
+                    staged_qty_col = None
+                    
+                    for col in initial_df.columns:
+                        if col.lower() in ['balance', 'availableqty', 'quantity', 'qty']:
+                            initial_qty_col = col
+                            break
+                    
+                    for col in staged_df.columns:
+                        if col.lower() in ['balance', 'availableqty', 'quantity', 'qty']:
+                            staged_qty_col = col
+                            break
+                    
+                    st.write(f"Debug - Found quantity columns: initial='{initial_qty_col}', staged='{staged_qty_col}'")
+                    
+                    if initial_qty_col and staged_qty_col:
+                        # Find SKU and warehouse columns with flexible matching
+                        initial_sku_col = None
+                        initial_warehouse_col = None
+                        staged_sku_col = None
+                        staged_warehouse_col = None
                         
-                        # Merge on SKU and Warehouse columns (excluding quantity columns)
-                        merge_cols = [col for col in common_cols if col not in [qty_col]]
+                        for col in initial_df.columns:
+                            if col.lower() in ['sku', 'item', 'product']:
+                                initial_sku_col = col
+                            elif col.lower() in ['warehouse', 'warehousename', 'location']:
+                                initial_warehouse_col = col
                         
-                        if merge_cols:
-                            # Merge the dataframes
-                            comparison_df = initial_inventory_base[merge_cols + [qty_col]].merge(
-                                inventory_minus_staged_df[merge_cols + [qty_col]], 
+                        for col in staged_df.columns:
+                            if col.lower() in ['sku', 'item', 'product']:
+                                staged_sku_col = col
+                            elif col.lower() in ['warehouse', 'warehousename', 'location']:
+                                staged_warehouse_col = col
+                        
+                        st.write(f"Debug - Found identifier columns: initial_sku='{initial_sku_col}', initial_warehouse='{initial_warehouse_col}', staged_sku='{staged_sku_col}', staged_warehouse='{staged_warehouse_col}'")
+                        
+                        if initial_sku_col and staged_sku_col:
+                            # Standardize column names for merging
+                            initial_df = initial_df.rename(columns={
+                                initial_sku_col: 'sku',
+                                initial_qty_col: 'quantity'
+                            })
+                            if initial_warehouse_col:
+                                initial_df = initial_df.rename(columns={initial_warehouse_col: 'warehouse'})
+                            
+                            staged_df = staged_df.rename(columns={
+                                staged_sku_col: 'sku',
+                                staged_qty_col: 'quantity'
+                            })
+                            if staged_warehouse_col:
+                                staged_df = staged_df.rename(columns={staged_warehouse_col: 'warehouse'})
+                            
+                            # Determine merge columns
+                            merge_cols = ['sku']
+                            if 'warehouse' in initial_df.columns and 'warehouse' in staged_df.columns:
+                                merge_cols.append('warehouse')
+                        
+                            # Merge the dataframes using standardized column names
+                            comparison_df = initial_df[merge_cols + ['quantity']].merge(
+                                staged_df[merge_cols + ['quantity']], 
                                 on=merge_cols, 
                                 how='outer', 
                                 suffixes=('_initial', '_after_staged')
                             )
                             
                             # Fill NaN values with 0
-                            comparison_df[f'{qty_col}_initial'] = comparison_df[f'{qty_col}_initial'].fillna(0)
-                            comparison_df[f'{qty_col}_after_staged'] = comparison_df[f'{qty_col}_after_staged'].fillna(0)
+                            comparison_df['quantity_initial'] = comparison_df['quantity_initial'].fillna(0)
+                            comparison_df['quantity_after_staged'] = comparison_df['quantity_after_staged'].fillna(0)
                             
                             # Calculate difference (Before - After = Impact of Staged Orders)
-                            comparison_df['Difference'] = comparison_df[f'{qty_col}_initial'] - comparison_df[f'{qty_col}_after_staged']
+                            comparison_df['Difference'] = comparison_df['quantity_initial'] - comparison_df['quantity_after_staged']
                             
                             # Rename columns for clarity
                             comparison_df = comparison_df.rename(columns={
-                                f'{qty_col}_initial': 'Before (Initial)',
-                                f'{qty_col}_after_staged': 'After (- Staged)',
+                                'quantity_initial': 'Before (Initial)',
+                                'quantity_after_staged': 'After (- Staged)',
                             })
                             
                             # Reorder columns to show Before, After, Difference prominently
@@ -1637,9 +1758,9 @@ def render_inventory_tab(shortage_summary, grouped_shortage_summary, initial_inv
                             st.info("🔍 **Legend**: Red background = inventory reduced by staging orders. Difference = Before - After (positive = inventory consumed by staging)")
                         
                         else:
-                            st.warning("Cannot create comparison - no common identifier columns found between initial and staged inventory")
+                            st.warning("Cannot create comparison - no SKU columns found for merging")
                     else:
-                        st.warning("Cannot create comparison - no quantity columns (Balance/AvailableQty) found")
+                        st.warning(f"Cannot create comparison - quantity columns not found. Available columns: Initial={list(initial_df.columns)}, Staged={list(staged_df.columns)}")
                         
                 except Exception as e:
                     st.error(f"Error creating inventory comparison: {str(e)}")

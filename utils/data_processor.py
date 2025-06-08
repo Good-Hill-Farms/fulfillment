@@ -945,9 +945,9 @@ class DataProcessor:
             # Find weight data
             found_match = self._find_weight_data_in_mappings(shopify_sku, fc_key, sku_weight_data, order_data)
             if not found_match:
-                logger.warning(f"No weight data found for SKU: {shopify_sku} at {fc_key}")
-                order_data["actualqty"] = ""
-                order_data["Total Pick Weight"] = ""
+                logger.error(f"No weight data found for SKU: {shopify_sku} at {fc_key} - cannot proceed without weight data")
+                # Skip this order instead of using empty values
+                continue
             else:
                 logger.debug(f"Successfully found weight data for SKU: {shopify_sku} - qty: {order_data.get('actualqty', 'N/A')}, weight: {order_data.get('Total Pick Weight', 'N/A')}")
 
@@ -1434,15 +1434,21 @@ class DataProcessor:
                     total_component_weight = unit_weight * component_qty
                     logger.debug(f"Found component {component_sku} weight: {unit_weight} per unit, total: {total_component_weight}")
                 else:
-                    # Fallback to weight from bundle definition
-                    component_weight = float(component.get("weight", 0.0))
-                    total_component_weight = component_weight * shop_quantity
+                    # Component not found in singles mappings - this is a data integrity issue
+                    component_weight = component.get("weight")
+                    if component_weight is None or component_weight == 0.0:
+                        logger.error(f"Component {component_sku} has no weight data in singles mappings or bundle definition - cannot proceed")
+                        continue  # Skip this component
+                    total_component_weight = float(component_weight) * shop_quantity
                     logger.warning(f"Component {component_sku} not found in singles mappings, using bundle weight: {component_weight}")
             else:
-                # Fallback to weight from bundle definition
-                component_weight = float(component.get("weight", 0.0))
-                total_component_weight = component_weight * shop_quantity
-                logger.warning(f"No SKU mappings available for {warehouse_key}, using bundle weight: {component_weight}")
+                # No warehouse mappings available - this is a critical data issue
+                component_weight = component.get("weight")
+                if component_weight is None or component_weight == 0.0:
+                    logger.error(f"No SKU mappings available for {warehouse_key} and no weight in bundle definition for {component_sku} - cannot proceed")
+                    continue  # Skip this component
+                total_component_weight = float(component_weight) * shop_quantity
+                logger.error(f"No SKU mappings available for {warehouse_key}, using bundle weight: {component_weight} - this indicates missing warehouse data")
 
             # Set component data
             component_order_data["sku"] = component_sku
@@ -1471,7 +1477,9 @@ class DataProcessor:
             )
 
             # Add to output
-            output_df = pd.concat([output_df, pd.DataFrame([component_order_data])], ignore_index=True)
+            component_df = pd.DataFrame([component_order_data])
+            if not component_df.empty:
+                output_df = pd.concat([output_df, component_df], ignore_index=True)
         
         return output_df
 
@@ -1507,7 +1515,9 @@ class DataProcessor:
         )
 
         # Add to output
-        output_df = pd.concat([output_df, pd.DataFrame([order_data])], ignore_index=True)
+        order_df = pd.DataFrame([order_data])
+        if not order_df.empty:
+            output_df = pd.concat([output_df, order_df], ignore_index=True)
         
         return output_df
 
@@ -2851,7 +2861,7 @@ class DataProcessor:
         # Add to staged orders
         if self.staged_orders.empty:
             self.staged_orders = orders_to_stage
-        else:
+        elif not orders_to_stage.empty:
             self.staged_orders = pd.concat([self.staged_orders, orders_to_stage], ignore_index=True)
             
         # Remove from orders in processing
@@ -2950,7 +2960,7 @@ class DataProcessor:
         # Add back to orders in processing
         if self.orders_in_processing.empty:
             self.orders_in_processing = orders_to_unstage
-        else:
+        elif not orders_to_unstage.empty:
             self.orders_in_processing = pd.concat([self.orders_in_processing, orders_to_unstage], ignore_index=True)
             
         # Remove from staged orders
@@ -2984,7 +2994,7 @@ class DataProcessor:
         # Add all staged orders back to processing
         if self.orders_in_processing.empty:
             self.orders_in_processing = orders_to_unstage
-        else:
+        elif not orders_to_unstage.empty:
             self.orders_in_processing = pd.concat([self.orders_in_processing, orders_to_unstage], ignore_index=True)
             
         # Clear staged orders

@@ -65,7 +65,7 @@ if "processed_orders" not in st.session_state:
 if "inventory_summary" not in st.session_state:
     st.session_state.inventory_summary = pd.DataFrame()
 
-# Initialize staging system and workflow
+# Initialize staging system and workflow - LIGHTWEIGHT INITIALIZATION
 if "staged_orders" not in st.session_state:
     st.session_state.staged_orders = pd.DataFrame()
 if "staging_history" not in st.session_state:
@@ -73,23 +73,9 @@ if "staging_history" not in st.session_state:
 if "workflow_initialized" not in st.session_state:
     st.session_state.workflow_initialized = False
 if "staging_processor" not in st.session_state:
-    st.session_state.staging_processor = DataProcessor()
-    logger.info("Staging processor initialized. Loading SKU mappings from Airtable...")
-    st.session_state.staging_processor.load_sku_mappings() # Load mappings from Airtable
-
-# Initialize SKU mappings separately to ensure it's always available
+    st.session_state.staging_processor = None  # Initialize lazily when needed
 if "sku_mappings" not in st.session_state:
-    if hasattr(st.session_state, 'staging_processor') and st.session_state.staging_processor.sku_mappings:
-        st.session_state.sku_mappings = st.session_state.staging_processor.sku_mappings
-    else:
-        # Initialize with default empty structure if load failed, to prevent downstream errors
-        st.session_state.sku_mappings = {"Oxnard": {"singles": {}, "bundles": {}}, "Wheeling": {"singles": {}, "bundles": {}}}
-        logger.warning("SKU mappings initialized with default empty structure.")
-    
-    if st.session_state.sku_mappings and st.session_state.sku_mappings != {"Oxnard": {"singles": {}, "bundles": {}}, "Wheeling": {"singles": {}, "bundles": {}}}:
-        logger.info(f"SKU mappings successfully loaded into session state. Oxnard singles: {len(st.session_state.sku_mappings.get('Oxnard', {}).get('singles', {}))}, Wheeling singles: {len(st.session_state.sku_mappings.get('Wheeling', {}).get('singles', {}))}")
-    else:
-        logger.warning("SKU mappings are None or empty after attempting to load from staging_processor.")
+    st.session_state.sku_mappings = None  # Load only when SKU Mapping tab is accessed
 
 if "shortage_summary" not in st.session_state:
     st.session_state.shortage_summary = pd.DataFrame()
@@ -135,16 +121,18 @@ def optimize_memory():
         st.session_state.override_log = st.session_state.override_log[-100:]
 
 def main():
-    """Main application function"""
+    """Main application function - OPTIMIZED FOR FAST LOADING"""
     
     # Optimize memory usage
     optimize_memory()
     
-    # Render header
+    # Render header immediately
     render_header()
     
-    # Initialize data processor
-    data_processor = DataProcessor()
+    # Initialize data processor once and cache it
+    if "data_processor" not in st.session_state:
+        st.session_state.data_processor = DataProcessor()
+    data_processor = st.session_state.data_processor
     
     # Sidebar for file uploads and configuration
     with st.sidebar:
@@ -162,8 +150,13 @@ def main():
                         st.session_state.orders_df = data_processor.load_orders(orders_file)
                         st.session_state.inventory_df = data_processor.load_inventory(inventory_file)
                         
-                        # Load shipping zones
-                        st.session_state.shipping_zones_df = load_shipping_zones()
+                        # Initialize staging processor only when processing files
+                        if st.session_state.staging_processor is None:
+                            st.session_state.staging_processor = DataProcessor()
+                        
+                        # Load shipping zones and cache them
+                        if "shipping_zones_df" not in st.session_state or st.session_state.shipping_zones_df is None:
+                            st.session_state.shipping_zones_df = load_shipping_zones()
                         
                         # Initialize staging workflow
                         result = st.session_state.staging_processor.initialize_workflow(
@@ -201,19 +194,15 @@ def main():
                         # Mark workflow as initialized
                         st.session_state.workflow_initialized = True
                         
-                        # Load shipping zones for compatibility
-                        st.session_state.shipping_zones_df = load_shipping_zones()
-                        
-                        # Ensure SKU mappings are sourced from the staging_processor
-                        st.session_state.sku_mappings = st.session_state.staging_processor.sku_mappings
-                        if st.session_state.sku_mappings is None or not st.session_state.sku_mappings:
-                            logger.warning("SKU mappings are None or empty in session state when attempting to use them in 'load_sample_data'. Attempting to reload from staging_processor.")
+                        # Load SKU mappings only when workflow is initialized
+                        if st.session_state.sku_mappings is None:
+                            logger.info("Loading SKU mappings after workflow initialization...")
                             st.session_state.staging_processor.load_sku_mappings()
                             st.session_state.sku_mappings = st.session_state.staging_processor.sku_mappings
                             if st.session_state.sku_mappings is None or not st.session_state.sku_mappings:
-                                logger.error("Failed to reload SKU mappings. They remain None or empty.")
-                                # Initialize with default empty structure if load failed, to prevent downstream errors
+                                logger.warning("Failed to load SKU mappings. Using default empty structure.")
                                 st.session_state.sku_mappings = {"Oxnard": {"singles": {}, "bundles": {}}, "Wheeling": {"singles": {}, "bundles": {}}}
+                        
                         st.success("✅ Files processed successfully!")
                         
                     except Exception as e:
@@ -274,39 +263,43 @@ def main():
                 st.session_state.warehouse_performance
             )
         
-        # SKU Mapping Tab
+        # SKU Mapping Tab - Load SKU mappings lazily
         with mapping_tab:
+            # Load SKU mappings only when accessing this tab
+            if st.session_state.sku_mappings is None and st.session_state.staging_processor is not None:
+                with st.spinner("Loading SKU mappings..."):
+                    st.session_state.staging_processor.load_sku_mappings()
+                    st.session_state.sku_mappings = st.session_state.staging_processor.sku_mappings
+                    if st.session_state.sku_mappings is None:
+                        st.session_state.sku_mappings = {"Oxnard": {"singles": {}, "bundles": {}}, "Wheeling": {"singles": {}, "bundles": {}}}
+            
             render_sku_mapping_editor(
                 st.session_state.sku_mappings,
                 data_processor
             )
     else:
-        # Show helpful message when no data is loaded
+        # Show minimal welcome message for faster loading
         st.info("👋 **Welcome to the AI-Powered Fulfillment Assistant!**")
-        st.markdown("""
-        ### 🚀 Getting Started
+        st.warning("⚠️ **No data loaded yet**. Please upload Orders and Inventory files using the sidebar.")
         
-        To begin using the smart fulfillment system:
-        
-        1. **📁 Upload Files**: Use the sidebar to upload your Orders and Inventory files
-        2. **⚙️ Process Data**: The system will automatically process and analyze your data
-        3. **📊 Explore Results**: Navigate through the tabs to see orders, staging, inventory, and analytics
-        
-        ### 🎯 Key Features
-        
-        - **Smart Bundle Management**: Choose bundles in orders, change components, and apply with Available for Recalculation inventory
-        - **Staging Workflow**: Stage orders to protect inventory allocations
-        - **Real-time Recalculation**: Uses Initial - Staged inventory for smart recalculation
-        - **Interactive Analytics**: Comprehensive dashboard with inventory insights
-        
-        ---
-        
-        💡 **Tip**: Upload your files using the sidebar to get started!
-        """)
-        
-        # Show upload instructions prominently
-        with st.container():
-            st.warning("⚠️ **No data loaded yet**. Please upload Orders and Inventory files using the sidebar.")
+        # Show detailed instructions only if user clicks to expand
+        if st.button("📖 Show Getting Started Guide"):
+            st.markdown("""
+            ### 🚀 Getting Started
+            
+            To begin using the smart fulfillment system:
+            
+            1. **📁 Upload Files**: Use the sidebar to upload your Orders and Inventory files
+            2. **⚙️ Process Data**: The system will automatically process and analyze your data
+            3. **📊 Explore Results**: Navigate through the tabs to see orders, staging, inventory, and analytics
+            
+            ### 🎯 Key Features
+            
+            - **Smart Bundle Management**: Choose bundles in orders, change components, and apply with Available for Recalculation inventory
+            - **Staging Workflow**: Stage orders to protect inventory allocations
+            - **Real-time Recalculation**: Uses Initial - Staged inventory for smart recalculation
+            - **Interactive Analytics**: Comprehensive dashboard with inventory insights
+            """)
             
             col1, col2 = st.columns(2)
             with col1:
