@@ -101,26 +101,33 @@ class LLMHandler:
         system_message = f"""You are an AI assistant specializing in fruit order fulfillment.
 Your task is to help assign customer fruit orders to fulfillment centers based on rules, inventory, and best practices.
 
-IMPORTANT: Base all your recommendations and decisions on the session data provided below. This data represents the current state of orders, inventory, and rules that have been uploaded during this session.
+CRITICAL REQUIREMENTS:
+- NEVER give general or theoretical answers
+- ALWAYS base responses on actual numbers, SKUs, and data from the current session
+- ALWAYS include specific data points, quantities, SKU codes, and warehouse names in your responses
+- Quote exact numbers from inventory balances, order quantities, shortage amounts
+- Reference specific SKU codes and warehouse locations
+- Use the actual data provided in the context below
 
 CONTEXT:
 {context_str}
 
 INSTRUCTIONS:
-1. Help assign orders to fulfillment centers based on zip codes, inventory, and bundle rules from the session data
-2. Explain your reasoning clearly, referencing specific data from the session
-3. If you want to add a new rule, format it as: RULE_UPDATE: {{"type": "zip|bundle|priority", "condition": "condition", "action": "action"}}
-4. Suggest improvements to the fulfillment process based on the patterns you see in the data
-5. Answer questions about inventory, orders, and fulfillment centers using only the session data
+1. Answer using ONLY the session data provided above - no general advice
+2. Include specific numbers: inventory quantities, order counts, SKU codes, warehouse names
+3. Reference exact data points: "SKU apple-10x05 has 150 units at CA-Oxnard-93030"
+4. Show calculations: "Order #12345 needs 50 units, inventory shows 200 available"
+5. Identify specific issues: "Order #67890 for SKU mango-12x08 cannot be fulfilled - only 5 units available, need 25"
+6. If you want to add a new rule, format it as: RULE_UPDATE: {{"type": "zip|bundle|priority", "condition": "condition", "action": "action"}}
 
-Remember to consider:
-- Zip code proximity to warehouses (from uploaded data)
-- Inventory availability (from uploaded inventory data)
-- Bundle requirements (from uploaded bundle configurations)
-- Priority tags (from uploaded order data)
-- Shipping requirements (e.g., Saturday shipping from order data)
+DATA-DRIVEN ANALYSIS REQUIREMENTS:
+- Always cite specific inventory levels for mentioned SKUs
+- Always reference actual order numbers and quantities when discussing orders
+- Always mention warehouse locations by name (CA-Oxnard-93030, IL-Wheeling-60090, etc.)
+- Always show the math behind recommendations
+- Never make assumptions - only work with provided data
 
-Always reference specific data points from the session when making recommendations.
+If no relevant data exists in the session, state "No data available for this query" rather than giving generic advice.
 """
 
         # Format messages for API
@@ -420,10 +427,63 @@ Always reference specific data points from the session when making recommendatio
                 if center_details:
                     formatted.append(f"{i+1}. {' | '.join(center_details)}")
 
-        # Format staged orders
+        # Format current staging state (PRIORITY DATA)
+        if context.get("staging_workflow_active"):
+            formatted.append(f"\n=== CURRENT STAGING WORKFLOW STATUS ===")
+            staged_count = context.get("currently_staged_count", 0)
+            processing_count = context.get("currently_processing_count", 0)
+            formatted.append(f"Orders Currently Staged: {staged_count}")
+            formatted.append(f"Orders in Processing: {processing_count}")
+            formatted.append(f"Total Orders: {staged_count + processing_count}")
+            
+            # Show currently staged orders
+            if context.get("currently_staged_orders") and staged_count > 0:
+                formatted.append(f"\n=== CURRENTLY STAGED ORDERS ({staged_count} total) ===")
+                for i, order in enumerate(context["currently_staged_orders"][:10]):  # Show first 10
+                    order_details = []
+                    for key in ['ordernumber', 'sku', 'Fulfillment Center', 'Transaction Quantity', 'Issues']:
+                        if key in order and order[key]:
+                            order_details.append(f"{key}: {order[key]}")
+                    if order_details:
+                        formatted.append(f"{i+1}. {' | '.join(order_details)}")
+            
+            # Show orders in processing
+            if context.get("currently_processing_orders") and processing_count > 0:
+                formatted.append(f"\n=== ORDERS IN PROCESSING ({processing_count} total - showing first 10) ===")
+                for i, order in enumerate(context["currently_processing_orders"][:10]):  # Show first 10
+                    order_details = []
+                    for key in ['ordernumber', 'sku', 'Fulfillment Center', 'Transaction Quantity', 'Issues']:
+                        if key in order and order[key]:
+                            order_details.append(f"{key}: {order[key]}")
+                    if order_details:
+                        formatted.append(f"{i+1}. {' | '.join(order_details)}")
+        
+        # Real-time staging processor data
+        if context.get("staging_processor_data"):
+            proc_data = context["staging_processor_data"]
+            formatted.append(f"\n=== STAGING PROCESSOR STATUS ===")
+            formatted.append(f"Workflow Initialized: {proc_data.get('workflow_initialized', False)}")
+            
+            if "staging_summary" in proc_data:
+                summary = proc_data["staging_summary"]
+                for key, value in summary.items():
+                    formatted.append(f"- {key}: {value}")
+            
+            formatted.append(f"Initial Inventory Items: {proc_data.get('initial_inventory_count', 0)}")
+            formatted.append(f"Inventory After Processing: {proc_data.get('inventory_minus_processing_count', 0)}")
+            formatted.append(f"Inventory After Staging: {proc_data.get('inventory_minus_staged_count', 0)}")
+        
+        # Available inventory after staging
+        if context.get("inventory_minus_staged"):
+            inv_count = context.get("inventory_minus_staged_count", 0)
+            formatted.append(f"\n=== AVAILABLE INVENTORY (After Staging - {inv_count} items) ===")
+            for i, item in enumerate(context["inventory_minus_staged"][:10]):  # Show first 10
+                formatted.append(f"{i+1}. Warehouse: {item.get('warehouse', 'N/A')} | SKU: {item.get('sku', 'N/A')} | Available: {item.get('available_balance', 'N/A')}")
+        
+        # Legacy staged orders for backward compatibility
         if context.get("staged_orders"):
             staged_count = context.get("staged_orders_count", len(context["staged_orders"]))
-            formatted.append(f"\n=== STAGED ORDERS ({staged_count} total) ===")
+            formatted.append(f"\n=== LEGACY STAGED ORDERS ({staged_count} total) ===")
             for i, order in enumerate(context["staged_orders"][:10]):  # Show first 10
                 order_details = []
                 for key in ['ordernumber', 'customerFirstName', 'Fulfillment Center', 'shopifysku2', 'staged_at']:

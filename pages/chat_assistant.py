@@ -30,14 +30,178 @@ data_processor = DataProcessor()
 llm_handler = LLMHandler()
 
 
+def smart_data_sampler(df, max_rows=50, prioritize_columns=None):
+    """Intelligently sample data for LLM context"""
+    try:
+        if df is None or df.empty:
+            return []
+        
+        # Reset index to avoid unhashable type errors
+        df = df.reset_index(drop=True)
+        
+        # If small enough, return all
+        if len(df) <= max_rows:
+            return df.to_dict('records')
+        
+        # Smart sampling strategy
+        sampled_df = df.copy()
+        
+        # Prioritize rows with issues/shortages if applicable
+        if 'Issues' in df.columns:
+            with_issues = df[df['Issues'].notna() & (df['Issues'] != '')]
+            without_issues = df[df['Issues'].isna() | (df['Issues'] == '')]
+            
+            # Take more samples from problematic data
+            issues_sample = min(len(with_issues), max_rows // 2)
+            normal_sample = max_rows - issues_sample
+            
+            concat_parts = []
+            if not with_issues.empty and issues_sample > 0:
+                concat_parts.append(with_issues.head(issues_sample))
+            if not without_issues.empty and normal_sample > 0:
+                concat_parts.append(without_issues.head(normal_sample))
+                
+            if concat_parts:
+                sampled_df = pd.concat(concat_parts, ignore_index=True)
+            else:
+                sampled_df = df.head(max_rows)
+        else:
+            # Random sampling with head/tail to get diverse data
+            head_rows = max_rows // 3
+            tail_rows = max_rows // 3
+            random_rows = max_rows - head_rows - tail_rows
+            
+            concat_parts = []
+            if head_rows > 0:
+                concat_parts.append(df.head(head_rows))
+            if tail_rows > 0:
+                concat_parts.append(df.tail(tail_rows))
+            if random_rows > 0 and len(df) > head_rows + tail_rows:
+                # Reset index for sampling to avoid unhashable type errors
+                sample_df = df.iloc[head_rows:-tail_rows].copy().reset_index(drop=True)
+                if len(sample_df) > 0:
+                    sample_size = min(random_rows, len(sample_df))
+                    concat_parts.append(sample_df.sample(n=sample_size, random_state=42))
+            
+            if concat_parts:
+                sampled_df = pd.concat(concat_parts, ignore_index=True)
+            else:
+                sampled_df = df.head(max_rows)
+        
+        return sampled_df.to_dict('records')
+    except Exception:
+        # Fallback to simple head selection if sampling fails
+        try:
+            return df.head(max_rows).to_dict('records')
+        except:
+            return []
+
+def create_data_summary(df, name):
+    """Create a statistical summary instead of full data"""
+    try:
+        if df is None or df.empty:
+            return f"{name}: No data"
+        
+        summary = [f"{name}: {len(df)} total records"]
+        
+        # Add column info
+        summary.append(f"Columns: {len(df.columns)} ({', '.join(str(col) for col in df.columns[:5])}{'...' if len(df.columns) > 5 else ''})")
+        
+        # Numeric summaries
+        try:
+            numeric_cols = df.select_dtypes(include=['number']).columns
+            if len(numeric_cols) > 0:
+                for col in numeric_cols[:3]:  # Top 3 numeric columns
+                    try:
+                        summary.append(f"{col}: min={df[col].min():.2f}, max={df[col].max():.2f}, avg={df[col].mean():.2f}")
+                    except:
+                        summary.append(f"{col}: numeric column (summary unavailable)")
+        except:
+            pass
+        
+        # Categorical summaries - handle unhashable types safely
+        try:
+            categorical_cols = df.select_dtypes(include=['object']).columns
+            for col in categorical_cols[:3]:  # Top 3 categorical columns
+                try:
+                    # Convert unhashable types to strings first
+                    safe_col = df[col].astype(str)
+                    value_counts = safe_col.value_counts()
+                    if len(value_counts) > 0:
+                        top_values = value_counts.head(3)
+                        summary.append(f"{col} top values: {dict(top_values)}")
+                except Exception:
+                    # Fallback for problematic columns
+                    unique_count = len(df[col].dropna().unique()) if hasattr(df[col], 'unique') else "unknown"
+                    summary.append(f"{col}: {unique_count} unique values")
+        except:
+            pass
+        
+        return " | ".join(summary)
+    except Exception:
+        return f"{name}: Summary unavailable (data format issue)"
+
+def analyze_query_intent(prompt):
+    """Analyze user query to determine what data they need"""
+    prompt_lower = prompt.lower()
+    
+    intent = {
+        "detail_level": "summary",  # summary, medium, detailed, full
+        "focus_areas": [],
+        "specific_skus": [],
+        "specific_orders": [],
+        "needs_calculations": False,
+        "needs_recommendations": False
+    }
+    
+    # Detect detail level requests
+    if any(keyword in prompt_lower for keyword in ['detailed', 'details', 'all data', 'complete', 'full list', 'everything']):
+        intent["detail_level"] = "detailed"
+    elif any(keyword in prompt_lower for keyword in ['show me', 'list', 'which', 'what are']):
+        intent["detail_level"] = "medium"
+    
+    # Detect focus areas
+    if any(keyword in prompt_lower for keyword in ['shortage', 'short', 'missing', 'unavailable']):
+        intent["focus_areas"].append("shortages")
+    if any(keyword in prompt_lower for keyword in ['inventory', 'stock', 'available', 'balance']):
+        intent["focus_areas"].append("inventory")
+    if any(keyword in prompt_lower for keyword in ['order', 'orders', 'processing', 'staged']):
+        intent["focus_areas"].append("orders")
+    if any(keyword in prompt_lower for keyword in ['sku', 'product', 'item']):
+        intent["focus_areas"].append("skus")
+    if any(keyword in prompt_lower for keyword in ['warehouse', 'fulfillment center', 'location']):
+        intent["focus_areas"].append("warehouses")
+    
+    # Extract specific SKUs (look for patterns like "apple-10x05", "m.bundle", etc.)
+    import re
+    sku_patterns = re.findall(r'\b[a-zA-Z][\w\-\.]*[0-9x]+[a-zA-Z0-9]*\b', prompt)
+    intent["specific_skus"] = sku_patterns
+    
+    # Extract specific order numbers
+    order_patterns = re.findall(r'\b(?:order|#)\s*(\d+)\b', prompt_lower)
+    intent["specific_orders"] = order_patterns
+    
+    # Detect calculation needs
+    if any(keyword in prompt_lower for keyword in ['calculate', 'how much', 'how many', 'total', 'sum', 'count']):
+        intent["needs_calculations"] = True
+    
+    # Detect recommendation needs
+    if any(keyword in prompt_lower for keyword in ['recommend', 'suggest', 'should', 'best', 'optimize']):
+        intent["needs_recommendations"] = True
+    
+    return intent
+
 def get_model_response(messages, model):
-    """Get response using LLMHandler"""
+    """Get response using LLMHandler with smart data handling based on query intent"""
     try:
         # Extract the prompt from the last user message
         prompt = next(msg["content"] for msg in reversed(messages) if msg["role"] == "user")
 
-        # Get context from session state
-        context = {}
+        # Analyze prompt to determine data requirements
+        query_intent = analyze_query_intent(prompt)
+        
+        # Get context from session state with smart data management based on intent
+        context = {"query_intent": query_intent}
         
         # Debug: Check what's actually in session state
         debug_info = {}
@@ -56,38 +220,130 @@ def get_model_response(messages, model):
         # Add debug info to context
         context["debug_session_state"] = debug_info
         
-        # Add ALL data - the LLM needs complete access for proper analysis
+        # SMART DATA LOADING BASED ON QUERY INTENT
+        
+        # Determine sample sizes based on query intent
+        if query_intent["detail_level"] == "detailed":
+            shortage_rows = 100
+            orders_rows = 100
+            inventory_rows = 80
+        elif query_intent["detail_level"] == "medium":
+            shortage_rows = 50
+            orders_rows = 60
+            inventory_rows = 40
+        else:  # summary
+            shortage_rows = 25
+            orders_rows = 30
+            inventory_rows = 20
+        
+        # PRIORITY 1: Shortage data (always include if relevant)
+        if "shortages" in query_intent["focus_areas"] or not query_intent["focus_areas"]:
+            if "shortage_summary" in st.session_state and not st.session_state.shortage_summary.empty:
+                df = st.session_state.shortage_summary
+                
+                # Filter for specific SKUs if mentioned
+                if query_intent["specific_skus"]:
+                    sku_filter = df[df.apply(lambda row: any(sku in str(row).lower() for sku in query_intent["specific_skus"]), axis=1)]
+                    if not sku_filter.empty:
+                        context["shortage_summary"] = sku_filter.to_dict('records')
+                        context["shortage_summary_note"] = f"Filtered for SKUs: {', '.join(query_intent['specific_skus'])}"
+                    else:
+                        context["shortage_summary"] = smart_data_sampler(df, max_rows=shortage_rows)
+                else:
+                    context["shortage_summary"] = smart_data_sampler(df, max_rows=shortage_rows)
+                
+                context["shortage_count"] = len(df)
+                context["shortage_summary_full"] = create_data_summary(df, "Shortage Summary")
+                
+            if "grouped_shortage_summary" in st.session_state and not st.session_state.grouped_shortage_summary.empty:
+                df = st.session_state.grouped_shortage_summary
+                context["grouped_shortage_summary"] = smart_data_sampler(df, max_rows=shortage_rows//2)
+                context["grouped_shortage_total_count"] = len(df)
+                context["grouped_shortage_summary_full"] = create_data_summary(df, "Grouped Shortages")
+        
+        # PRIORITY 2: Orders data (include if orders focus or no specific focus)
+        if "orders" in query_intent["focus_areas"] or not query_intent["focus_areas"]:
+            if "processed_orders" in st.session_state and st.session_state.processed_orders is not None:
+                df = st.session_state.processed_orders
+                
+                # Filter for specific orders if mentioned
+                if query_intent["specific_orders"]:
+                    order_filter = df[df['ordernumber'].astype(str).isin(query_intent["specific_orders"])]
+                    if not order_filter.empty:
+                        context["processed_orders"] = order_filter.to_dict('records')
+                        context["processed_orders_note"] = f"Filtered for orders: {', '.join(query_intent['specific_orders'])}"
+                    else:
+                        context["processed_orders"] = smart_data_sampler(df, max_rows=orders_rows)
+                # Filter for specific SKUs if mentioned
+                elif query_intent["specific_skus"]:
+                    sku_filter = df[df['sku'].str.lower().isin([sku.lower() for sku in query_intent["specific_skus"]])]
+                    if not sku_filter.empty:
+                        context["processed_orders"] = sku_filter.to_dict('records')
+                        context["processed_orders_note"] = f"Filtered for SKUs: {', '.join(query_intent['specific_skus'])}"
+                    else:
+                        context["processed_orders"] = smart_data_sampler(df, max_rows=orders_rows)
+                else:
+                    context["processed_orders"] = smart_data_sampler(df, max_rows=orders_rows)
+                
+                context["processed_orders_total_count"] = len(df)
+                context["processed_orders_full"] = create_data_summary(df, "Processed Orders")
+        
+        # PRIORITY 3: Inventory data (include if inventory focus or no specific focus)
+        if "inventory" in query_intent["focus_areas"] or not query_intent["focus_areas"]:
+            if "inventory_summary" in st.session_state and not st.session_state.inventory_summary.empty:
+                df = st.session_state.inventory_summary
+                
+                # Filter for specific SKUs if mentioned
+                if query_intent["specific_skus"]:
+                    sku_filter = df[df['Sku'].str.lower().isin([sku.lower() for sku in query_intent["specific_skus"]])]
+                    if not sku_filter.empty:
+                        context["inventory_summary"] = sku_filter.to_dict('records')
+                        context["inventory_summary_note"] = f"Filtered for SKUs: {', '.join(query_intent['specific_skus'])}"
+                    else:
+                        context["inventory_summary"] = smart_data_sampler(df, max_rows=inventory_rows)
+                else:
+                    context["inventory_summary"] = smart_data_sampler(df, max_rows=inventory_rows)
+                
+                context["inventory_summary_total_count"] = len(df)
+                context["inventory_summary_full"] = create_data_summary(df, "Inventory Summary")
+        
+        # PRIORITY 4: Raw data (only summaries to save space, no samples unless specifically requested)
         if "inventory_df" in st.session_state and st.session_state.inventory_df is not None:
             df = st.session_state.inventory_df
-            context["inventory"] = df.to_dict('records')
             context["inventory_total_count"] = len(df)
+            context["inventory_full"] = create_data_summary(df, "Raw Inventory")
+            # Only include sample for very specific queries
+            if any(keyword in prompt.lower() for keyword in ['raw inventory', 'original inventory', 'all inventory']):
+                context["inventory"] = smart_data_sampler(df, max_rows=15)  # Reduced from 30
         
         if "orders_df" in st.session_state and st.session_state.orders_df is not None:
             df = st.session_state.orders_df
-            context["orders"] = df.to_dict('records')
             context["orders_total_count"] = len(df)
+            context["orders_full"] = create_data_summary(df, "Raw Orders")
+            # Only include sample for specific queries
+            if any(keyword in prompt.lower() for keyword in ['raw orders', 'original orders', 'all orders']):
+                context["orders"] = smart_data_sampler(df, max_rows=15)  # Reduced from 30
             
-        if "inventory_summary" in st.session_state and not st.session_state.inventory_summary.empty:
-            df = st.session_state.inventory_summary
-            context["inventory_summary"] = df.to_dict('records')
-            context["inventory_summary_total_count"] = len(df)
-            
+        # STAGED ORDERS - Critical data! (Current staging state)
         if "processed_orders" in st.session_state and st.session_state.processed_orders is not None:
-            df = st.session_state.processed_orders
-            context["processed_orders"] = df.to_dict('records')
-            context["processed_orders_total_count"] = len(df)
-            
-        if "shortage_summary" in st.session_state and not st.session_state.shortage_summary.empty:
-            df = st.session_state.shortage_summary
-            context["shortage_summary"] = df.to_dict('records')
-            context["shortage_count"] = len(df)
-            
-        if "grouped_shortage_summary" in st.session_state and not st.session_state.grouped_shortage_summary.empty:
-            df = st.session_state.grouped_shortage_summary
-            context["grouped_shortage_summary"] = df.to_dict('records')
-            context["grouped_shortage_total_count"] = len(df)
-            
-        # STAGED ORDERS - Critical data!
+            # Get current staging state from processed_orders
+            if 'staged' in st.session_state.processed_orders.columns:
+                staged_df = st.session_state.processed_orders[st.session_state.processed_orders['staged'] == True]
+                processing_df = st.session_state.processed_orders[st.session_state.processed_orders['staged'] == False]
+                
+                context["currently_staged_orders"] = staged_df.to_dict('records')
+                context["currently_staged_count"] = len(staged_df)
+                context["currently_processing_orders"] = processing_df.to_dict('records') 
+                context["currently_processing_count"] = len(processing_df)
+                context["staging_workflow_active"] = True
+            else:
+                context["currently_staged_orders"] = []
+                context["currently_staged_count"] = 0 
+                context["currently_processing_orders"] = []
+                context["currently_processing_count"] = 0
+                context["staging_workflow_active"] = False
+        
+        # Legacy staged_orders for backward compatibility
         if "staged_orders" in st.session_state and not st.session_state.staged_orders.empty:
             df = st.session_state.staged_orders
             context["staged_orders"] = df.to_dict('records')
@@ -114,6 +370,39 @@ def get_model_response(messages, model):
         else:
             context["warehouse_performance"] = {}
             
+        # REAL-TIME STAGING PROCESSOR DATA
+        if "staging_processor" in st.session_state and st.session_state.staging_processor:
+            try:
+                # Get real-time inventory calculations
+                staging_processor = st.session_state.staging_processor
+                inventory_calcs = staging_processor.get_inventory_calculations()
+                
+                context["staging_processor_data"] = {
+                    "workflow_initialized": st.session_state.get("workflow_initialized", False),
+                    "staging_summary": inventory_calcs.get("staging_summary", {}),
+                    "initial_inventory_count": len(inventory_calcs.get("initial_inventory", [])),
+                    "inventory_minus_processing_count": len(inventory_calcs.get("inventory_minus_processing", {})),
+                    "inventory_minus_staged_count": len(inventory_calcs.get("inventory_minus_staged", {}))
+                }
+                
+                # Include detailed inventory states for LLM analysis
+                if "inventory_minus_staged" in inventory_calcs:
+                    # Convert to list format for LLM
+                    inv_minus_staged = []
+                    for key, balance in inventory_calcs["inventory_minus_staged"].items():
+                        if "|" in key:
+                            sku, warehouse = key.split("|", 1)
+                            inv_minus_staged.append({
+                                "sku": sku,
+                                "warehouse": warehouse,
+                                "available_balance": balance
+                            })
+                    context["inventory_minus_staged"] = inv_minus_staged
+                    context["inventory_minus_staged_count"] = len(inv_minus_staged)
+                    
+            except Exception as e:
+                context["staging_processor_error"] = str(e)
+            
         # INVENTORY COMPARISON
         if "inventory_comparison" in st.session_state and not st.session_state.inventory_comparison.empty:
             df = st.session_state.inventory_comparison
@@ -134,46 +423,49 @@ def get_model_response(messages, model):
         context["bundles"] = st.session_state.get("bundles", {})
         context["override_log"] = st.session_state.get("override_log", [])
         
-        # Add Airtable data
+        # Add Airtable data - REDUCED to save context space
         try:
             from utils.airtable_handler import AirtableHandler
             airtable_handler = AirtableHandler()
             
-            # Get ALL Airtable data - complete access needed
+            # Get reduced Airtable data samples to save context space
             try:
                 sku_mappings = airtable_handler.get_sku_mappings()
                 if sku_mappings:
-                    context["airtable_sku_mappings"] = sku_mappings  # ALL records
+                    # Only include first 50 SKU mappings to save space
+                    context["airtable_sku_mappings"] = sku_mappings[:50]
                     context["airtable_sku_count"] = len(sku_mappings)
+                    if len(sku_mappings) > 50:
+                        context["airtable_sku_note"] = f"Showing first 50 of {len(sku_mappings)} total SKU mappings"
             except Exception as e:
                 context["airtable_sku_mappings"] = []
                 context["airtable_error_sku"] = str(e)
             
-            # Get fulfillment zones from Airtable
+            # Get fulfillment zones from Airtable - full data (usually small)
             try:
                 fulfillment_zones = airtable_handler.get_fulfillment_zones()
                 if fulfillment_zones:
-                    context["airtable_fulfillment_zones"] = fulfillment_zones  # ALL records
+                    context["airtable_fulfillment_zones"] = fulfillment_zones
                     context["airtable_zones_count"] = len(fulfillment_zones)
             except Exception as e:
                 context["airtable_fulfillment_zones"] = []
                 context["airtable_error_zones"] = str(e)
             
-            # Get delivery services from Airtable
+            # Get delivery services from Airtable - full data (usually small)
             try:
                 delivery_services = airtable_handler.get_delivery_services()
                 if delivery_services:
-                    context["airtable_delivery_services"] = delivery_services  # ALL records
+                    context["airtable_delivery_services"] = delivery_services
                     context["airtable_services_count"] = len(delivery_services)
             except Exception as e:
                 context["airtable_delivery_services"] = []
                 context["airtable_error_services"] = str(e)
                 
-            # Get fulfillment centers from Airtable
+            # Get fulfillment centers from Airtable - full data (usually small)
             try:
                 fulfillment_centers = airtable_handler.get_fulfillment_centers()
                 if fulfillment_centers:
-                    context["airtable_fulfillment_centers"] = fulfillment_centers  # ALL records
+                    context["airtable_fulfillment_centers"] = fulfillment_centers
                     context["airtable_centers_count"] = len(fulfillment_centers)
             except Exception as e:
                 context["airtable_fulfillment_centers"] = []
@@ -188,7 +480,11 @@ def get_model_response(messages, model):
         # Get response
         return llm_handler.get_response(prompt, context, messages)
     except Exception as e:
-        st.error(f"Error: {str(e)}")
+        st.error(f"Error in get_model_response: {str(e)}")
+        st.error(f"Error type: {type(e).__name__}")
+        # Additional debug info
+        import traceback
+        st.error(f"Traceback: {traceback.format_exc()}")
         return None
 
 
@@ -250,7 +546,14 @@ def main():
 
         # Show data status
         st.header("📊 Data Status")
+        # Check multiple inventory sources
+        has_inventory = False
         if "inventory_summary" in st.session_state and not st.session_state.inventory_summary.empty:
+            has_inventory = True
+        elif "inventory_df" in st.session_state and st.session_state.inventory_df is not None and not st.session_state.inventory_df.empty:
+            has_inventory = True
+        
+        if has_inventory:
             st.success("✅ Inventory data loaded")
         else:
             st.warning("⚠️ No inventory data")
@@ -342,13 +645,13 @@ def main():
             inv = st.session_state.inventory_df
             system_msg += f"\nRaw Inventory Data:\n"
             system_msg += f"- {len(inv)} inventory records\n"
-            system_msg += f"- Columns: {', '.join(inv.columns)}\n"
+            system_msg += f"- Columns: {', '.join(str(col) for col in inv.columns)}\n"
 
         if "orders_df" in st.session_state and st.session_state.orders_df is not None:
             orders = st.session_state.orders_df
             system_msg += f"\nRaw Order Data:\n"
             system_msg += f"- {len(orders)} order records\n"
-            system_msg += f"- Columns: {', '.join(orders.columns)}\n"
+            system_msg += f"- Columns: {', '.join(str(col) for col in orders.columns)}\n"
 
         if (
             "shipping_zones_df" in st.session_state
@@ -357,7 +660,7 @@ def main():
             zones = st.session_state.shipping_zones_df
             system_msg += f"\nShipping Zones:\n"
             system_msg += f"- {len(zones)} ZIP code mappings\n"
-            system_msg += f"- Columns: {', '.join(zones.columns)}\n"
+            system_msg += f"- Columns: {', '.join(str(col) for col in zones.columns)}\n"
 
         if "sku_mappings" in st.session_state and st.session_state.sku_mappings is not None:
             system_msg += f"\nSKU Mappings:\n"
@@ -399,13 +702,13 @@ def main():
             inv = st.session_state.inventory_df
             system_msg += f"\nRaw Inventory Data:\n"
             system_msg += f"- {len(inv)} inventory records\n"
-            system_msg += f"- Columns: {', '.join(inv.columns)}\n"
+            system_msg += f"- Columns: {', '.join(str(col) for col in inv.columns)}\n"
 
         if "orders_df" in st.session_state and st.session_state.orders_df is not None:
             orders = st.session_state.orders_df
             system_msg += f"\nRaw Order Data:\n"
             system_msg += f"- {len(orders)} order records\n"
-            system_msg += f"- Columns: {', '.join(orders.columns)}\n"
+            system_msg += f"- Columns: {', '.join(str(col) for col in orders.columns)}\n"
 
         # Processed Data
         if "inventory_summary" in st.session_state and not st.session_state.inventory_summary.empty:
