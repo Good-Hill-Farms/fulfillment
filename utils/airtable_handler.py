@@ -900,8 +900,8 @@ class AirtableHandler:
                         # Handle simple SKUs - include ALL available fields
                         result[current_center]["singles"][order_sku] = {
                             "picklist_sku": mapping.get("picklist_sku", ""),
-                            "actualqty": float(mapping.get("actual_qty", 1)),
-                            "total_pick_weight": float(mapping.get("total_pick_weight", 0)) if mapping.get("total_pick_weight") else None,
+                            "actualqty": float(mapping.get("actualqty", mapping.get("actual_qty", 1))),
+                            "total_pick_weight": float(mapping.get("total_pick_weight", 0)) if mapping.get("total_pick_weight") else 0.0,
                             "pick_type": mapping.get("pick_type", ""),
                             "is_bundle": False,
                             # Include additional fields that might be present
