@@ -783,11 +783,12 @@ class DataProcessor:
     def process_orders(
         self,
         orders_df,
-        inventory_df,
+        inventory_df=None,
         shipping_zones_df=None,
         sku_mappings=None,
         sku_weight_data=None,
         affected_skus=None,
+        inventory_base="initial",
     ):
         """Process orders and apply SKU mappings with proper inventory allocation.
 
@@ -859,9 +860,20 @@ class DataProcessor:
         self._recalculation_log = []
         self._recalculated_skus = set()
 
-        # Initialize inventory state
-        if inventory_df is not None and not inventory_df.empty:
-            self._initialize_inventory_state(inventory_df, running_balances, initial_inventory_state, affected_skus)
+        # Select inventory base if not provided
+        current_inventory_df = inventory_df # Preserve original parameter if passed
+        if current_inventory_df is None:
+            current_inventory_df = self._get_inventory_base(inventory_base)
+            logger.info(f"Using '{inventory_base}' as inventory base for processing, obtained from _get_inventory_base.")
+        else:
+            logger.info("Using provided 'inventory_df' directly for processing.")
+
+        # Initialize inventory state using the determined inventory DataFrame
+        if current_inventory_df is not None and not current_inventory_df.empty:
+            self._initialize_inventory_state(current_inventory_df, running_balances, initial_inventory_state, affected_skus)
+        else:
+            logger.warning("Inventory DataFrame (current_inventory_df) is empty or None after selection/provision. "
+                           "Processing may not use inventory or might lead to errors if inventory is expected.")
 
         # Load SKU weight data if not provided
         if sku_weight_data is None:
@@ -1154,6 +1166,67 @@ class DataProcessor:
             shop_quantity (int): The shop quantity to set
         """
         order_data["quantity"] = shop_quantity
+
+    def _get_inventory_base(self, inventory_base_option: str) -> pd.DataFrame:
+        """
+        Selects the appropriate inventory base for processing or recalculation.
+
+        Args:
+            inventory_base_option (str): Specifies which inventory base to use.
+                Options: "initial", "inventory_minus_staged".
+
+        Returns:
+            pd.DataFrame: The selected inventory DataFrame with Sku, WarehouseName, Balance.
+                          Returns an empty DataFrame with correct columns if issues occur.
+        """
+        logger.info(f"Attempting to get inventory base: {inventory_base_option}")
+        empty_inventory_df = pd.DataFrame(columns=['Sku', 'WarehouseName', 'Balance'])
+
+        if inventory_base_option == "initial":
+            if isinstance(self.initial_inventory, pd.DataFrame) and not self.initial_inventory.empty:
+                logger.info("Using initial inventory as base.")
+                return self.initial_inventory.copy()
+            else:
+                logger.warning("Initial inventory (self.initial_inventory) is not a valid DataFrame or is empty. "
+                               "Returning empty DataFrame for 'initial' base.")
+                return empty_inventory_df
+
+        elif inventory_base_option == "inventory_minus_staged":
+            logger.info("Calculating inventory minus staged orders as base.")
+            try:
+                # calculate_inventory_minus_staged returns a dict: {sku|warehouse: balance}
+                inv_minus_staged_dict = self.calculate_inventory_minus_staged()
+                if not isinstance(inv_minus_staged_dict, dict):
+                    logger.error(f"calculate_inventory_minus_staged did not return a dict, got {type(inv_minus_staged_dict)}. "
+                                 "Returning empty DataFrame.")
+                    return empty_inventory_df
+
+                records = []
+                for key, balance in inv_minus_staged_dict.items():
+                    parts = key.split('|')
+                    if len(parts) == 2:
+                        sku, warehouse = parts
+                        records.append({'Sku': sku, 'WarehouseName': warehouse, 'Balance': balance})
+                    else:
+                        logger.warning(f"Skipping malformed key in inv_minus_staged_dict: {key}")
+                
+                if not records:
+                    logger.info("No records to form inventory_minus_staged DataFrame. Might be no staged orders or no inventory. Returning empty DataFrame.")
+                    return empty_inventory_df
+                
+                return pd.DataFrame(records)
+            except Exception as e:
+                logger.error(f"Error calculating or converting inventory_minus_staged: {e}. Returning empty DataFrame.")
+                return empty_inventory_df
+        
+        else:
+            logger.warning(f"Unknown inventory_base_option: '{inventory_base_option}'. Defaulting to initial inventory.")
+            if isinstance(self.initial_inventory, pd.DataFrame) and not self.initial_inventory.empty:
+                return self.initial_inventory.copy()
+            else:
+                logger.warning("Initial inventory (self.initial_inventory) is not a valid DataFrame or is empty for default. "
+                               "Returning empty DataFrame.")
+                return empty_inventory_df
 
     def _initialize_inventory_state(self, inventory_df, running_balances, initial_inventory_state, affected_skus=None):
         """Initialize inventory state from inventory DataFrame with proper warehouse separation."""
@@ -2814,6 +2887,91 @@ class DataProcessor:
                     
         return available_inventory
     
+    def unstage_selected_orders(self, order_indices, staged_orders_df=None):
+        """
+        Move selected staged orders back to processing.
+        
+        Args:
+            order_indices (list): List of order indices to move back to processing
+            staged_orders_df (DataFrame, optional): Staged orders dataframe. Uses self.staged_orders if not provided
+            
+        Returns:
+            dict: Summary of unstaging operation
+        """
+        if staged_orders_df is None:
+            staged_orders_df = self.staged_orders
+            
+        if staged_orders_df.empty:
+            return {"error": "No staged orders available to move back"}
+            
+        # Validate indices
+        valid_indices = [idx for idx in order_indices if idx < len(staged_orders_df)]
+        invalid_indices = [idx for idx in order_indices if idx >= len(staged_orders_df)]
+        
+        if invalid_indices:
+            logger.warning(f"Invalid staged order indices: {invalid_indices}")
+            
+        if not valid_indices:
+            return {"error": "No valid order indices provided"}
+            
+        # Select orders to move back
+        orders_to_unstage = staged_orders_df.iloc[valid_indices].copy()
+        
+        # Remove staging timestamp if it exists
+        if 'staged_at' in orders_to_unstage.columns:
+            orders_to_unstage = orders_to_unstage.drop(columns=['staged_at'])
+        
+        # Add back to orders in processing
+        if self.orders_in_processing.empty:
+            self.orders_in_processing = orders_to_unstage
+        else:
+            self.orders_in_processing = pd.concat([self.orders_in_processing, orders_to_unstage], ignore_index=True)
+            
+        # Remove from staged orders
+        self.staged_orders = staged_orders_df.drop(staged_orders_df.index[valid_indices]).reset_index(drop=True)
+        
+        logger.info(f"Moved {len(valid_indices)} order items back to processing")
+        
+        return {
+            "unstaged_count": len(valid_indices),
+            "remaining_staged": len(self.staged_orders),
+            "total_in_processing": len(self.orders_in_processing)
+        }
+    
+    def unstage_all_orders(self):
+        """
+        Move all staged orders back to processing.
+        
+        Returns:
+            dict: Summary of unstaging operation
+        """
+        if self.staged_orders.empty:
+            return {"error": "No staged orders to move back"}
+            
+        staged_count = len(self.staged_orders)
+        
+        # Remove staging timestamp if it exists
+        orders_to_unstage = self.staged_orders.copy()
+        if 'staged_at' in orders_to_unstage.columns:
+            orders_to_unstage = orders_to_unstage.drop(columns=['staged_at'])
+        
+        # Add all staged orders back to processing
+        if self.orders_in_processing.empty:
+            self.orders_in_processing = orders_to_unstage
+        else:
+            self.orders_in_processing = pd.concat([self.orders_in_processing, orders_to_unstage], ignore_index=True)
+            
+        # Clear staged orders
+        self.staged_orders = pd.DataFrame()
+        
+        logger.info(f"Moved all {staged_count} staged order items back to processing")
+        
+        return {
+            "unstaged_count": staged_count,
+            "remaining_staged": 0,
+            "total_in_processing": len(self.orders_in_processing)
+        }
+    
     def recalculate_orders_with_updated_inventory(self, sku_mappings_updates=None):
         """
         Recalculate orders in processing using updated SKU mappings and inventory minus staged orders.
@@ -2831,35 +2989,16 @@ class DataProcessor:
         if sku_mappings_updates:
             self.update_sku_mappings(sku_mappings_updates)
             
-        # Calculate available inventory (initial - staged)
-        available_inventory = self.calculate_inventory_minus_staged()
-        
-        # Create adjusted inventory DataFrame for processing
-        adjusted_inventory_rows = []
-        for composite_key, balance in available_inventory.items():
-            if '|' in composite_key:
-                sku, warehouse = composite_key.split('|', 1)
-                adjusted_inventory_rows.append({
-                    'Sku': sku,
-                    'WarehouseName': warehouse,
-                    'Balance': max(0, balance)  # Ensure non-negative
-                })
-                
-        adjusted_inventory_df = pd.DataFrame(adjusted_inventory_rows)
-        
-        # Reprocess orders with adjusted inventory
-        logger.info("Recalculating orders with updated inventory (initial - staged)")
-        
-        # Convert orders in processing back to input format for reprocessing
+        # Convert orders in processing back to input format
         orders_input = self._convert_processed_orders_to_input_format(self.orders_in_processing)
         
-        # Process with updated mappings and adjusted inventory
+        # Reprocess orders with inventory minus staged and updated mappings
+        logger.info(f"Recalculating {len(orders_input)} orders using 'inventory_minus_staged' base.")
         recalculated_data = self.process_orders(
             orders_df=orders_input,
-            inventory_df=adjusted_inventory_df,
-            sku_mappings=self.sku_mappings
+            inventory_base="inventory_minus_staged", # Let process_orders handle fetching this inventory
+            sku_mappings=self.sku_mappings # Use updated mappings
         )
-        
         # Update orders in processing
         self.orders_in_processing = recalculated_data['orders']
         

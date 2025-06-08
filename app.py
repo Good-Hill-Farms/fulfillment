@@ -1,5 +1,6 @@
 import os
 import json
+import logging
 from datetime import datetime
 
 import pandas as pd
@@ -25,6 +26,7 @@ from utils.rule_manager import RuleManager
 
 # Load environment variables
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 # Set page configuration
 st.set_page_config(
@@ -71,6 +73,23 @@ if "workflow_initialized" not in st.session_state:
     st.session_state.workflow_initialized = False
 if "staging_processor" not in st.session_state:
     st.session_state.staging_processor = DataProcessor()
+    logger.info("Staging processor initialized. Loading SKU mappings from Airtable...")
+    st.session_state.staging_processor.load_sku_mappings() # Load mappings from Airtable
+
+# Initialize SKU mappings separately to ensure it's always available
+if "sku_mappings" not in st.session_state:
+    if hasattr(st.session_state, 'staging_processor') and st.session_state.staging_processor.sku_mappings:
+        st.session_state.sku_mappings = st.session_state.staging_processor.sku_mappings
+    else:
+        # Initialize with default empty structure if load failed, to prevent downstream errors
+        st.session_state.sku_mappings = {"Oxnard": {"singles": {}, "bundles": {}}, "Wheeling": {"singles": {}, "bundles": {}}}
+        logger.warning("SKU mappings initialized with default empty structure.")
+    
+    if st.session_state.sku_mappings and st.session_state.sku_mappings != {"Oxnard": {"singles": {}, "bundles": {}}, "Wheeling": {"singles": {}, "bundles": {}}}:
+        logger.info(f"SKU mappings successfully loaded into session state. Oxnard singles: {len(st.session_state.sku_mappings.get('Oxnard', {}).get('singles', {}))}, Wheeling singles: {len(st.session_state.sku_mappings.get('Wheeling', {}).get('singles', {}))}")
+    else:
+        logger.warning("SKU mappings are None or empty after attempting to load from staging_processor.")
+
 if "shortage_summary" not in st.session_state:
     st.session_state.shortage_summary = pd.DataFrame()
 if "grouped_shortage_summary" not in st.session_state:
@@ -91,14 +110,7 @@ if "bundles" not in st.session_state:
     st.session_state.bundles = {}
 if "override_log" not in st.session_state:
     st.session_state.override_log = []
-if "sku_mappings" not in st.session_state:
-    # Try to load SKU mappings from JSON file at startup
-    try:
-        import json
-        with open('/Users/olenaliubynetska/fulfillment-mixy-matchi/airtable_sku_mappings.json', 'r') as f:
-            st.session_state.sku_mappings = json.load(f)
-    except Exception:
-        st.session_state.sku_mappings = None
+# SKU mappings are now initialized above with staging_processor
 
 
 def main():
@@ -167,17 +179,17 @@ def main():
                         # Load shipping zones for compatibility
                         st.session_state.shipping_zones_df = load_shipping_zones()
                         
-                        # Load SKU mappings directly from JSON file
-                        try:
-                            import json
-                            with open('/Users/olenaliubynetska/fulfillment-mixy-matchi/airtable_sku_mappings.json', 'r') as f:
-                                st.session_state.sku_mappings = json.load(f)
-                        except Exception as e:
-                            st.warning(f"Could not load SKU mappings from JSON: {e}")
+                        # Ensure SKU mappings are sourced from the staging_processor
+                        st.session_state.sku_mappings = st.session_state.staging_processor.sku_mappings
+                        if st.session_state.sku_mappings is None or not st.session_state.sku_mappings:
+                            logger.warning("SKU mappings are None or empty in session state when attempting to use them in 'load_sample_data'. Attempting to reload from staging_processor.")
+                            st.session_state.staging_processor.load_sku_mappings()
                             st.session_state.sku_mappings = st.session_state.staging_processor.sku_mappings
-                        
+                            if st.session_state.sku_mappings is None or not st.session_state.sku_mappings:
+                                logger.error("Failed to reload SKU mappings. They remain None or empty.")
+                                # Initialize with default empty structure if load failed, to prevent downstream errors
+                                st.session_state.sku_mappings = {"Oxnard": {"singles": {}, "bundles": {}}, "Wheeling": {"singles": {}, "bundles": {}}}
                         st.success("✅ Files processed successfully!")
-                        st.rerun()
                         
                     except Exception as e:
                         st.error(f"Error processing files: {str(e)}")
@@ -204,28 +216,20 @@ def main():
             )
         
         # Ensure staged column exists when processing files
-        if 'processed_orders' in st.session_state and not st.session_state.processed_orders.empty:
+        if 'processed_orders' in st.session_state and st.session_state.processed_orders is not None and not st.session_state.processed_orders.empty:
             if 'staged' not in st.session_state.processed_orders.columns:
                 st.session_state.processed_orders['staged'] = False
                 # Initial sync of staged_orders based on the staged flag
                 st.session_state.staged_orders = st.session_state.processed_orders[st.session_state.processed_orders['staged'] == True].copy()
         
-        # Ensure staged_orders is up-to-date before rendering tab
-        if 'processed_orders' in st.session_state and 'staged' in st.session_state.processed_orders.columns:
-            # Always sync staged_orders from processed_orders before showing the tab
-            st.session_state.staged_orders = st.session_state.processed_orders[st.session_state.processed_orders['staged'] == True].copy()
-            
-            # Increment the key_prefix if it exists to ensure UI refresh
-            if 'key_prefix' in st.session_state:
-                st.session_state.key_prefix += 1
+        # Initialize staged column if not present
+        if 'processed_orders' in st.session_state and st.session_state.processed_orders is not None and not st.session_state.processed_orders.empty:
+            if 'staged' not in st.session_state.processed_orders.columns:
+                st.session_state.processed_orders['staged'] = False
         
         # Staging Tab
         with staging_tab:
-            render_staging_tab(
-                st.session_state.staged_orders if 'staged_orders' in st.session_state 
-                else pd.DataFrame(),
-                st.session_state.staging_processor if 'workflow_initialized' in st.session_state and st.session_state.workflow_initialized else None
-            )
+            render_staging_tab()
         
         # Inventory Tab
         with inventory_tab:
