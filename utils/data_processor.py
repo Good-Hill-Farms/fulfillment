@@ -942,31 +942,36 @@ class DataProcessor:
             # Create base order data
             order_data = self._create_base_order_data(row, output_columns, shopify_sku, fulfillment_center)
 
-            # Find weight data
-            found_match = self._find_weight_data_in_mappings(shopify_sku, fc_key, sku_weight_data, order_data)
-            if not found_match:
-                logger.error(f"No weight data found for SKU: {shopify_sku} at {fc_key} - cannot proceed without weight data")
-                # Skip this order instead of using empty values
-                continue
-            else:
-                logger.debug(f"Successfully found weight data for SKU: {shopify_sku} - qty: {order_data.get('actualqty', 'N/A')}, weight: {order_data.get('Total Pick Weight', 'N/A')}")
-
-            # Get shop quantity and set order quantity
+            # Get shop quantity first
             shop_quantity = int(row.get("shopquantity", 1)) if pd.notna(row.get("shopquantity")) else 1
             order_data["shopquantity"] = shop_quantity
-            self._set_order_quantity(order_data, shop_quantity)
 
-            # Check if this is a bundle and process accordingly
+            # Check if this is a bundle first, before requiring weight data
             is_bundle = (bundle_info_dict and fc_key in bundle_info_dict and shopify_sku in bundle_info_dict[fc_key])
             
             if is_bundle:
+                # For bundles, we don't need individual weight data - process directly
+                logger.debug(f"Processing bundle SKU: {shopify_sku}")
                 bundle_components = bundle_info_dict[fc_key][shopify_sku]
                 output_df = self._process_bundle_order(
                     order_data, bundle_components, shop_quantity, inventory_df,
                     running_balances, all_shortages, shortage_tracker, output_df,
                     sku_mappings, fc_key, row
                 )
+                continue  # Skip individual item processing for bundles
             else:
+                # For individual items, find weight data
+                found_match = self._find_weight_data_in_mappings(shopify_sku, fc_key, sku_weight_data, order_data)
+                if not found_match:
+                    logger.error(f"No weight data found for SKU: {shopify_sku} at {fc_key} - cannot proceed without weight data")
+                    # Skip this order instead of using empty values
+                    continue
+                else:
+                    logger.debug(f"Successfully found weight data for SKU: {shopify_sku} - qty: {order_data.get('actualqty', 'N/A')}, weight: {order_data.get('Total Pick Weight', 'N/A')}")
+
+                # Set order quantity for individual items
+                self._set_order_quantity(order_data, shop_quantity)
+                # Process individual item
                 output_df = self._process_single_sku_order(
                     order_data, shopify_sku, shop_quantity, inventory_df,
                     running_balances, all_shortages, shortage_tracker, output_df,
