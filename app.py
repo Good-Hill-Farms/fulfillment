@@ -2,6 +2,7 @@ import os
 import json
 import logging
 from datetime import datetime
+import hashlib
 
 import pandas as pd
 import streamlit as st
@@ -112,9 +113,33 @@ if "override_log" not in st.session_state:
     st.session_state.override_log = []
 # SKU mappings are now initialized above with staging_processor
 
+def optimize_memory():
+    """Optimize memory usage and clear unnecessary data"""
+    
+    # Clear large temporary DataFrames that aren't needed in session state
+    temp_keys = [
+        'temp_orders', 'temp_inventory', 'temp_processing', 
+        'large_dataframes', 'cached_calculations'
+    ]
+    
+    for key in temp_keys:
+        if key in st.session_state:
+            del st.session_state[key]
+    
+    # Limit staging history to last 50 entries
+    if "staging_history" in st.session_state and len(st.session_state.staging_history) > 50:
+        st.session_state.staging_history = st.session_state.staging_history[-50:]
+    
+    # Limit override log to last 100 entries
+    if "override_log" in st.session_state and len(st.session_state.override_log) > 100:
+        st.session_state.override_log = st.session_state.override_log[-100:]
 
 def main():
     """Main application function"""
+    
+    # Optimize memory usage
+    optimize_memory()
+    
     # Render header
     render_header()
     
@@ -197,7 +222,7 @@ def main():
     # Always show workflow status
     render_workflow_status()
     
-    # Main content area - only show if data is loaded
+    # Main content area
     if st.session_state.orders_df is not None and st.session_state.inventory_df is not None:
         # Create tabs for different sections
         orders_tab, staging_tab, inventory_tab, dashboard_tab, mapping_tab = st.tabs([
@@ -255,6 +280,46 @@ def main():
                 st.session_state.sku_mappings,
                 data_processor
             )
+    else:
+        # Show helpful message when no data is loaded
+        st.info("👋 **Welcome to the AI-Powered Fulfillment Assistant!**")
+        st.markdown("""
+        ### 🚀 Getting Started
+        
+        To begin using the smart fulfillment system:
+        
+        1. **📁 Upload Files**: Use the sidebar to upload your Orders and Inventory files
+        2. **⚙️ Process Data**: The system will automatically process and analyze your data
+        3. **📊 Explore Results**: Navigate through the tabs to see orders, staging, inventory, and analytics
+        
+        ### 🎯 Key Features
+        
+        - **Smart Bundle Management**: Choose bundles in orders, change components, and apply with Available for Recalculation inventory
+        - **Staging Workflow**: Stage orders to protect inventory allocations
+        - **Real-time Recalculation**: Uses Initial - Staged inventory for smart recalculation
+        - **Interactive Analytics**: Comprehensive dashboard with inventory insights
+        
+        ---
+        
+        💡 **Tip**: Upload your files using the sidebar to get started!
+        """)
+        
+        # Show upload instructions prominently
+        with st.container():
+            st.warning("⚠️ **No data loaded yet**. Please upload Orders and Inventory files using the sidebar.")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("**📜 Orders File Requirements:**")
+                st.caption("• CSV format with order details")
+                st.caption("• Must include order numbers and SKUs")
+                st.caption("• Quantity and customer information")
+                
+            with col2:
+                st.markdown("**📦 Inventory File Requirements:**")
+                st.caption("• CSV format with inventory balances")
+                st.caption("• Must include SKU and quantity columns")
+                st.caption("• Warehouse information preferred")
 
 if __name__ == "__main__":
     main()

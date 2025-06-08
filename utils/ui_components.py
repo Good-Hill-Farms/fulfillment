@@ -31,16 +31,24 @@ def render_workflow_status():
     
     # Get statistics
     if has_staging and workflow_initialized:
-        staging_processor = st.session_state.staging_processor
-        inventory_calcs = staging_processor.get_inventory_calculations()
-        summary = inventory_calcs['staging_summary']
-        
-        orders_in_processing = summary['total_orders_in_processing']
-        orders_staged = summary['total_orders_staged']
-        total_orders_processed = orders_in_processing + orders_staged
-        
-        inv_minus_processing = len(inventory_calcs.get('inventory_minus_processing', {}))
-        inv_minus_staged = len(inventory_calcs.get('inventory_minus_staged', {}))
+        try:
+            staging_processor = st.session_state.staging_processor
+            inventory_calcs = staging_processor.get_inventory_calculations()
+            summary = inventory_calcs.get('staging_summary', {})
+            
+            orders_in_processing = summary.get('orders_in_processing', 0)
+            orders_staged = summary.get('staged_orders', 0)
+            total_orders_processed = orders_in_processing + orders_staged
+            
+            inv_minus_processing = len(inventory_calcs.get('inventory_minus_processing', {}))
+            inv_minus_staged = len(inventory_calcs.get('inventory_minus_staged', {}))
+        except Exception as e:
+            logger.warning(f"Error getting inventory calculations: {e}")
+            orders_in_processing = 0
+            orders_staged = 0
+            total_orders_processed = 0
+            inv_minus_processing = 0
+            inv_minus_staged = 0
     else:
         orders_in_processing = 0
         orders_staged = 0
@@ -971,8 +979,13 @@ def render_orders_tab(processed_orders, shortage_summary=None):
         )
         
         # Show selected rows info and staging option
-        if grid_response['grid_response']['selected_rows']:
-            selected_rows = grid_response['grid_response']['selected_rows']
+        selected_rows_data = grid_response['grid_response']['selected_rows']
+        if selected_rows_data is not None and len(selected_rows_data) > 0:
+            # Convert DataFrame to list of dictionaries if needed
+            if isinstance(selected_rows_data, pd.DataFrame):
+                selected_rows = selected_rows_data.to_dict('records')
+            else:
+                selected_rows = selected_rows_data
             st.session_state.selected_orders = selected_rows
             
             # Display info about selection
@@ -984,6 +997,7 @@ def render_orders_tab(processed_orders, shortage_summary=None):
             selected_total_qty = sum([float(row.get('Transaction Quantity', 0)) for row in selected_rows])
             selected_with_issues = len([row for row in selected_rows if row.get('Issues', '') != ''])
             selected_orders_with_issues = len(set([row.get('ordernumber', '') for row in selected_rows if row.get('Issues', '') != '']))
+            selected_warehouses = len(set([row.get('Fulfillment Center', '') for row in selected_rows]))
             
             # Show detailed selection stats
             cols = st.columns(5)
@@ -994,45 +1008,135 @@ def render_orders_tab(processed_orders, shortage_summary=None):
             with cols[2]:
                 st.metric("📊 Total Quantity", f"{selected_total_qty:.0f}")
             with cols[3]:
-                warehouses = len(set([row.get('Fulfillment Center', '') for row in selected_rows]))
-                st.metric("🏭 Warehouses", warehouses)
+                st.metric("🏭 Warehouses", selected_warehouses)
             with cols[4]:
                 st.metric("⚠️ Items with Issues", selected_with_issues, delta=f"{selected_orders_with_issues} orders")
                 
             # Display additional statistics that the user requested
             st.info(f"📊 Summary: {selected_line_items} line items | {selected_unique_orders} unique orders | {selected_with_issues} items with issues | {selected_orders_with_issues} unique orders with issues")
             
-            # Bundle adjustment section
+            # Smart Bundle Management section
             bundle_skus = [row.get('sku', '') for row in selected_rows if row.get('sku', '').startswith('f.')]
             if bundle_skus:
-                with st.expander("🔧 Adjust Bundle Components", expanded=False):
+                with st.expander("🔧 Smart Bundle Management", expanded=False):
                     st.markdown("**Bundle SKUs in Selection:**")
                     unique_bundles = list(set(bundle_skus))
                     for bundle_sku in unique_bundles:
                         st.code(bundle_sku)
                     
-                    st.markdown("**Quick Bundle Adjustments:**")
-                    col1, col2 = st.columns(2)
+                    # Show Available for Recalculation inventory status
+                    if ('staging_processor' in st.session_state and 
+                        st.session_state.staging_processor and 
+                        st.session_state.workflow_initialized):
+                        
+                        try:
+                            # Get detailed bundle availability analysis
+                            with st.spinner("Analyzing bundle availability..."):
+                                bundle_analysis = st.session_state.staging_processor.get_bundle_availability_analysis(unique_bundles)
+                            
+                            if "error" not in bundle_analysis:
+                                st.markdown("**📊 Smart Bundle Analysis (Available for Recalculation):**")
+                                
+                                # Show summary metrics
+                                summary = bundle_analysis["summary"]
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    st.metric("✅ Available Bundles", summary["available_bundles"])
+                                with col2:
+                                    st.metric("⚠️ Constrained Bundles", summary["constrained_bundles"])
+                                with col3:
+                                    st.metric("📦 Total Bundles", summary["total_bundles"])
+                                
+                                # Show detailed analysis for each bundle
+                                for bundle_sku, analysis in bundle_analysis["bundles"].items():
+                                    status_icon = "✅" if analysis["status"] == "available" else "⚠️" if analysis["status"] == "constrained" else "❌"
+                                    
+                                    with st.expander(f"{status_icon} {bundle_sku} - Max possible: {analysis['max_possible_bundles']}", expanded=False):
+                                        if analysis["status"] == "constrained" and analysis["constraints"]:
+                                            st.error("**Constraints:**")
+                                            for constraint in analysis["constraints"]:
+                                                st.caption(f"• {constraint}")
+                                        
+                                        # Show component details
+                                        if analysis["components"]:
+                                            st.markdown("**Component Details:**")
+                                            for comp in analysis["components"]:
+                                                status_emoji = "🟢" if comp["status"] == "available" else "🔴"
+                                                st.caption(f"{status_emoji} {comp['sku']} @ {comp['warehouse']}: {comp['available_qty']:.0f} available (need {comp['required_qty']:.0f})")
+                            else:
+                                st.warning(f"Bundle analysis error: {bundle_analysis['error']}")
+                                
+                        except ZeroDivisionError as zde:
+                            st.warning(f"Division by zero in bundle analysis: {zde}")
+                        except Exception as e:
+                            st.warning(f"Could not load bundle analysis: {e}")
+                    
+                    st.markdown("**Bundle Management Actions:**")
+                    col1, col2, col3 = st.columns(3)
                     
                     with col1:
                         if st.button("📝 Edit Bundle Mappings"):
-                            st.info("Navigate to the ⚙️ SKU Mapping tab to edit bundle components, then return here to recalculate.")
+                            st.info("Navigate to the ⚙️ SKU Mapping tab to edit bundle components, then return here to apply changes.")
                     
                     with col2:
-                        if st.button("🔄 Recalculate with Current Mappings"):
-                            st.caption("Recalculation uses inventory remaining after staged orders are accounted for.")
+                        if st.button("🎯 Stage & Edit Bundles"):
+                            st.caption("Stage selected orders first, then edit bundles safely")
                             if ('staging_processor' in st.session_state and 
                                 st.session_state.staging_processor and 
                                 st.session_state.workflow_initialized):
                                 try:
-                                    with st.spinner("Recalculating orders with current bundle mappings..."):
+                                    # Stage selected orders first
+                                    order_indices = []
+                                    for selected_row in selected_rows:
+                                        for idx, order_row in st.session_state.staging_processor.orders_in_processing.iterrows():
+                                            if (selected_row.get('ordernumber', '') == order_row.get('ordernumber', '') and
+                                                selected_row.get('sku', '') == order_row.get('sku', '')):
+                                                order_indices.append(idx)
+                                                break
+                                    
+                                    if order_indices:
+                                        staging_result = st.session_state.staging_processor.stage_selected_orders(order_indices)
+                                        if 'error' not in staging_result:
+                                            st.session_state.processed_orders = st.session_state.staging_processor.orders_in_processing.copy()
+                                            st.success("✅ Orders staged! Now edit bundle components in SKU Mapping tab.")
+                                            st.rerun()
+                                        else:
+                                            st.error(f"Staging error: {staging_result['error']}")
+                                    else:
+                                        st.warning("No matching orders found for staging")
+                                except Exception as e:
+                                    st.error(f"Error staging orders: {e}")
+                            else:
+                                st.error("Staging processor not available")
+                    
+                    with col3:
+                        if st.button("🔄 Smart Recalculate"):
+                            st.caption("Uses Available for Recalculation (Initial - Staged) inventory")
+                            if ('staging_processor' in st.session_state and 
+                                st.session_state.staging_processor and 
+                                st.session_state.workflow_initialized):
+                                try:
+                                    with st.spinner("Smart recalculating with Available for Recalculation inventory..."):
+                                        # Get before state
+                                        before_orders = len(st.session_state.staging_processor.orders_in_processing)
+                                        before_staged = len(st.session_state.staging_processor.staged_orders)
+                                        
                                         recalc_result = st.session_state.staging_processor.recalculate_orders_with_updated_inventory()
                                         
                                         if 'error' in recalc_result:
                                             st.warning(f"Recalculation: {recalc_result['error']}")
                                         else:
+                                            # Update session state
                                             st.session_state.processed_orders = st.session_state.staging_processor.orders_in_processing.copy()
-                                            st.success("✅ Orders recalculated with current bundle mappings!")
+                                            
+                                            # Get after state
+                                            after_orders = len(st.session_state.staging_processor.orders_in_processing)
+                                            after_staged = len(st.session_state.staging_processor.staged_orders)
+                                            
+                                            # Show results
+                                            st.success("✅ Smart recalculation completed!")
+                                            st.info(f"📊 Orders in processing: {before_orders} → {after_orders} | Staged orders: {before_staged} → {after_staged}")
+                                            st.caption("Recalculation used Available for Recalculation (Initial - Staged) inventory base")
                                             st.rerun()
                                 except Exception as e:
                                     st.error(f"Error recalculating: {e}")
@@ -1150,9 +1254,9 @@ def render_orders_tab(processed_orders, shortage_summary=None):
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            st.metric("📦 Orders in Processing", summary['total_orders_in_processing'])
+            st.metric("📦 Orders in Processing", summary['orders_in_processing'])
         with col2:
-            st.metric("🏷️ Orders Staged", summary['total_orders_staged'])
+            st.metric("🏷️ Orders Staged", summary['staged_orders'])
         with col3:
             available_inventory_items = len(inventory_calcs.get('inventory_minus_staged', {}))
             st.metric("📊 Available Inventory Items", available_inventory_items)
@@ -1375,20 +1479,20 @@ def render_orders_tab(processed_orders, shortage_summary=None):
                 st.info("👉 Navigate to the ⚙️ SKU Mapping tab to edit bundle components, then return here to recalculate.")
             
             # Always indicate that recalculation can be done
-            if summary['total_orders_staged'] > 0:
-                st.success(f"✅ Ready to recalculate {summary['total_orders_in_processing']} orders in processing (inventory allocation accounts for {summary['total_orders_staged']} staged orders)")
+            if summary['staged_orders'] > 0:
+                st.success(f"✅ Ready to recalculate {summary['orders_in_processing']} orders in processing (inventory allocation accounts for {summary['staged_orders']} staged orders)")
             else:
-                st.success(f"✅ Ready to recalculate {summary['total_orders_in_processing']} orders in processing anytime")
+                st.success(f"✅ Ready to recalculate {summary['orders_in_processing']} orders in processing anytime")
         
         # Workflow guidance
-        if summary['total_orders_staged'] > 0 and summary['total_orders_in_processing'] > 0:
+        if summary['staged_orders'] > 0 and summary['orders_in_processing'] > 0:
             st.info("""
             🔄 Current Workflow State: 
             - ✅ You have {staged} staged orders (their inventory is protected)
             - ✅ You have {processing} orders left in processing (ready for recalculation with updated inventory)
             - 🔄 Next: Edit bundle rules in SKU Mapping tab, then click 'Recalculate Remaining Processing Orders'
-            """.format(staged=summary['total_orders_staged'], processing=summary['total_orders_in_processing']))
-        elif summary['total_orders_in_processing'] > 0 and summary['total_orders_staged'] == 0:
+            """.format(staged=summary['staged_orders'], processing=summary['orders_in_processing']))
+        elif summary['orders_in_processing'] > 0 and summary['staged_orders'] == 0:
             st.info("🏷️ Next Step: Stage some orders first to begin the iterative workflow with bundle adjustments.")
     else:
         st.warning("⚠️ Recalculation not available. Please upload and process files first.")
@@ -1444,11 +1548,112 @@ def render_inventory_tab(shortage_summary, grouped_shortage_summary, initial_inv
             st.info("No initial inventory data available")
     
     with inventory_minus_staged_tab:
-        st.markdown("**Inventory Available for Order Recalculation**")
+        st.markdown("**Inventory Available for Order Recalculation (Before ↔ After)**")
         st.caption("This view shows Initial Inventory minus any orders already in the 'Staged for Fulfillment' tab. This is the inventory base used when 'Recalculate with Current Mappings' is clicked on the Orders tab.")
+        
         if 'staging_processor' in st.session_state and st.session_state.staging_processor:
+            # Get both initial inventory and inventory minus staged
+            initial_inventory_base = st.session_state.staging_processor._get_inventory_base("initial")
             inventory_minus_staged_df = st.session_state.staging_processor._get_inventory_base("inventory_minus_staged")
-            if inventory_minus_staged_df is not None and not inventory_minus_staged_df.empty:
+            
+            if (initial_inventory_base is not None and not initial_inventory_base.empty and 
+                inventory_minus_staged_df is not None and not inventory_minus_staged_df.empty):
+                
+                # Create comparison dataframe with Before, After, and Difference columns
+                try:
+                    # Get common columns and merge the dataframes
+                    initial_cols = set(initial_inventory_base.columns)
+                    staged_cols = set(inventory_minus_staged_df.columns)
+                    common_cols = initial_cols.intersection(staged_cols)
+                    
+                    if 'Balance' in common_cols or 'AvailableQty' in common_cols:
+                        # Determine the quantity column to use
+                        qty_col = 'Balance' if 'Balance' in common_cols else 'AvailableQty'
+                        
+                        # Merge on SKU and Warehouse columns (excluding quantity columns)
+                        merge_cols = [col for col in common_cols if col not in [qty_col]]
+                        
+                        if merge_cols:
+                            # Merge the dataframes
+                            comparison_df = initial_inventory_base[merge_cols + [qty_col]].merge(
+                                inventory_minus_staged_df[merge_cols + [qty_col]], 
+                                on=merge_cols, 
+                                how='outer', 
+                                suffixes=('_initial', '_after_staged')
+                            )
+                            
+                            # Fill NaN values with 0
+                            comparison_df[f'{qty_col}_initial'] = comparison_df[f'{qty_col}_initial'].fillna(0)
+                            comparison_df[f'{qty_col}_after_staged'] = comparison_df[f'{qty_col}_after_staged'].fillna(0)
+                            
+                            # Calculate difference (Before - After = Impact of Staged Orders)
+                            comparison_df['Difference'] = comparison_df[f'{qty_col}_initial'] - comparison_df[f'{qty_col}_after_staged']
+                            
+                            # Rename columns for clarity
+                            comparison_df = comparison_df.rename(columns={
+                                f'{qty_col}_initial': 'Before (Initial)',
+                                f'{qty_col}_after_staged': 'After (- Staged)',
+                            })
+                            
+                            # Reorder columns to show Before, After, Difference prominently
+                            display_cols = merge_cols + ['Before (Initial)', 'After (- Staged)', 'Difference']
+                            comparison_df = comparison_df[display_cols]
+                            
+                            # Add styling for the difference column
+                            def highlight_differences(val):
+                                if val > 0:
+                                    return 'background-color: #ffebee'  # Light red for reductions
+                                elif val < 0:
+                                    return 'background-color: #e8f5e8'  # Light green for increases (shouldn't happen with staging)
+                                else:
+                                    return ''
+                            
+                            # Apply styling
+                            styled_df = comparison_df.style.applymap(highlight_differences, subset=['Difference'])
+                            
+                            # Show summary metrics
+                            col1, col2, col3, col4 = st.columns(4)
+                            with col1:
+                                total_items = len(comparison_df)
+                                st.metric("📦 Total SKU-Warehouse Items", f"{total_items:,}")
+                            with col2:
+                                items_impacted = len(comparison_df[comparison_df['Difference'] != 0])
+                                st.metric("📉 Items Impacted by Staging", f"{items_impacted:,}")
+                            with col3:
+                                total_reduction = comparison_df['Difference'].sum()
+                                st.metric("📊 Total Qty Reduction", f"{total_reduction:,.0f}")
+                            with col4:
+                                avg_reduction = comparison_df[comparison_df['Difference'] > 0]['Difference'].mean() if items_impacted > 0 else 0
+                                st.metric("📈 Avg Reduction per Item", f"{avg_reduction:.1f}")
+                            
+                            st.dataframe(
+                                styled_df,
+                                height=600,
+                                use_container_width=True,
+                                hide_index=True
+                            )
+                            
+                            # Add explanation
+                            st.info("🔍 **Legend**: Red background = inventory reduced by staging orders. Difference = Before - After (positive = inventory consumed by staging)")
+                        
+                        else:
+                            st.warning("Cannot create comparison - no common identifier columns found between initial and staged inventory")
+                    else:
+                        st.warning("Cannot create comparison - no quantity columns (Balance/AvailableQty) found")
+                        
+                except Exception as e:
+                    st.error(f"Error creating inventory comparison: {str(e)}")
+                    # Fallback to showing just the inventory minus staged
+                    st.dataframe(
+                        inventory_minus_staged_df,
+                        height=600,
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                    
+            elif inventory_minus_staged_df is not None and not inventory_minus_staged_df.empty:
+                # Show just the available inventory if initial is not available
+                st.info("💡 Showing Available for Recalculation inventory (comparison requires initial inventory)")
                 st.dataframe(
                     inventory_minus_staged_df,
                     height=600,
