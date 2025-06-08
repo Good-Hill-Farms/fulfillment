@@ -196,64 +196,57 @@ class DataProcessor:
 
     def load_sku_mappings(self):
         """
-        Load SKU mappings from Airtable for Oxnard and Wheeling fulfillment centers.
+        Load SKU mappings from Airtable for all fulfillment centers.
 
-        Handles both individual SKUs (using picklist_sku) and bundles (using component_sku).
-        For bundles, all components and their quantities are stored in a structured format.
+        Handles both single SKUs and bundles using the new format:
+        - Top level keys are warehouse names ("Oxnard", "Wheeling")
+        - Each warehouse has "singles" and "bundles" keys
+        - Singles contains SKU mappings with detailed attributes
+        - Bundles contains component lists with details for each component
 
         Returns:
-            dict: Dictionary containing:
-                - SKU mappings by fulfillment center
-                - Bundle information by fulfillment center
+            dict: Dictionary with warehouse names as keys, each containing "singles" and "bundles" data
         """
         try:
-            # Initialize empty mappings and bundle information dictionaries as fallback
-            mappings = {"Oxnard": {}, "Wheeling": {}}
-            bundle_info = {"Oxnard": {}, "Wheeling": {}}
+            # Initialize empty default structure as fallback
+            default_data = {"Oxnard": {"singles": {}, "bundles": {}}, "Wheeling": {"singles": {}, "bundles": {}}}
             
             # Check if Airtable is enabled and schema manager exists
             if not self.use_airtable or not self.schema_manager:
                 logger.warning("Airtable integration is disabled or schema manager not initialized.")
-                result = {"mappings": mappings, "bundle_info": bundle_info}
-                self.sku_mappings = result  # Store the mappings in the instance
-                return result
-        
-            # Load SKU mappings from Airtable
-            # Initialize merged results
-            result = {"mappings": {"Oxnard": {}, "Wheeling": {}}, "bundle_info": {"Oxnard": {}, "Wheeling": {}}}
+                self.sku_mappings = default_data
+                return default_data
             
-            # Load mappings for each center
-            for center in ["Oxnard", "Wheeling"]:
-                try:
-                    center_result = self._airtable_handler.load_sku_mappings_from_airtable(center)
-                    if center_result:
-                        # If the center has mappings, update our result
-                        if "mappings" in center_result and center in center_result["mappings"]:
-                            result["mappings"][center] = center_result["mappings"][center]
-                        if "bundle_info" in center_result and center in center_result["bundle_info"]:
-                            result["bundle_info"][center] = center_result["bundle_info"][center]
-                    logger.info(f"Loaded {len(result['mappings'][center])} mappings for {center}")
-                except Exception as e:
-                    logger.warning(f"Error loading mappings for {center}: {e}")
-        
-            # Use the merged results
-            airtable_result = result
-            
-            if airtable_result and any(len(airtable_result["mappings"][center]) > 0 for center in airtable_result["mappings"]):
+            try:
+                # Use the AirtableHandler method that returns data in the new format
+                # with warehouses as top-level keys, each containing "singles" and "bundles"
+                airtable_data = self._airtable_handler.load_sku_mappings_from_airtable()
+                
+                # Log information about the loaded data
+                for warehouse, warehouse_data in airtable_data.items():
+                    single_count = len(warehouse_data.get("singles", {}))
+                    bundle_count = len(warehouse_data.get("bundles", {}))
+                    logger.info(f"Loaded {single_count} single SKUs and {bundle_count} bundles for {warehouse}")
+                
+                if not airtable_data:
+                    logger.warning("No SKU mappings found in Airtable")
+                    self.sku_mappings = default_data
+                    return default_data
+                
                 logger.info("Successfully loaded SKU mappings from Airtable")
-                self.sku_mappings = airtable_result  # Store the mappings in the instance
-                return airtable_result
-            else:
-                logger.warning("No SKU mappings found in Airtable")
-                result = {"mappings": mappings, "bundle_info": bundle_info}
-                self.sku_mappings = result  # Store the mappings in the instance
-                return result
+                self.sku_mappings = airtable_data
+                return airtable_data
+                
+            except Exception as e:
+                logger.error(f"Error loading SKU mappings from Airtable: {e}")
+                self.sku_mappings = default_data
+                return default_data
             
         except Exception as e:
-            logger.error(f"Error loading SKU mappings from Airtable: {str(e)}")
-            result = {"mappings": mappings, "bundle_info": bundle_info}
-            self.sku_mappings = result  # Store the mappings in the instance
-            return result
+            logger.error(f"Unexpected error in load_sku_mappings: {e}")
+            default_data = {"Oxnard": {"singles": {}, "bundles": {}}, "Wheeling": {"singles": {}, "bundles": {}}}
+            self.sku_mappings = default_data
+            return default_data
     
     def load_inventory(self, file):
         """
@@ -494,8 +487,8 @@ class DataProcessor:
         missing_sku_weight = 0.0
 
         # Check if the missing SKU is in all_skus
-        if "all_skus" in sku_mappings[fc_key] and missing_sku in sku_mappings[fc_key]["all_skus"]:
-            missing_sku_details = sku_mappings[fc_key]["all_skus"][missing_sku]
+        if "singles" in sku_mappings[fc_key] and missing_sku in sku_mappings[fc_key]["singles"]:
+            missing_sku_details = sku_mappings[fc_key]["singles"][missing_sku]
             missing_sku_weight = float(missing_sku_details.get("Total_Pick_Weight", 0.0))
             missing_sku_type = missing_sku_details.get("Pick_Type", "")
 
@@ -510,7 +503,7 @@ class DataProcessor:
                         break
 
         # Find potential substitutions
-        for sku, details in sku_mappings[fc_key].get("all_skus", {}).items():
+        for sku, details in sku_mappings[fc_key].get("singles", {}).items():
             # Skip the missing SKU itself
             if sku == missing_sku:
                 continue
@@ -762,9 +755,9 @@ class DataProcessor:
         if fc_key not in sku_mappings:
             return related_skus
             
-        # Check direct mappings
-        if "all_skus" in sku_mappings[fc_key]:
-            for shopify_sku, data in sku_mappings[fc_key]["all_skus"].items():
+        # Check direct mappings in singles
+        if "singles" in sku_mappings[fc_key]:
+            for shopify_sku, data in sku_mappings[fc_key]["singles"].items():
                 if data.get("picklist_sku") == inventory_sku:
                     related_skus.append({"shopify_sku": shopify_sku, "type": "direct"})
                     
@@ -776,7 +769,7 @@ class DataProcessor:
                         related_skus.append({
                             "shopify_sku": bundle_sku,
                             "type": "bundle",
-                            "quantity_in_bundle": component.get("quantity", 1)
+                            "quantity_in_bundle": component.get("actualqty", 1)  # Use actualqty instead of quantity
                         })
                         
         return related_skus
@@ -792,34 +785,62 @@ class DataProcessor:
     ):
         """Process orders and apply SKU mappings with proper inventory allocation.
 
-        Args:
-            orders_df (DataFrame): Orders dataframe
-            inventory_df (DataFrame): Inventory dataframe
-            shipping_zones_df (DataFrame, optional): Shipping zones dataframe. Defaults to None.
-            sku_mappings (dict, optional): SKU mappings dictionary. Defaults to None.
-            sku_weight_data (dict, optional): SKU weight data dictionary. Defaults to None.
-            affected_skus (set, optional): Set of SKUs that were affected by changes. If provided, only these SKUs
-                                           will be recalculated for inventory updates. Defaults to None.
+    Args:
+        orders_df (DataFrame): Orders dataframe
+        inventory_df (DataFrame): Inventory dataframe
+        shipping_zones_df (DataFrame, optional): Shipping zones dataframe. Defaults to None.
+        sku_mappings (dict, optional): SKU mappings dictionary. Defaults to None.
+        sku_weight_data (dict, optional): SKU weight data dictionary. Defaults to None.
+        affected_skus (set, optional): Set of SKUs that were affected by changes. If provided, only these SKUs
+                                       will be recalculated for inventory updates. Defaults to None.
 
-        Returns:
-            tuple: (DataFrame: Processed orders dataframe, list: Inventory issues)
-        """
-        # Extract the mappings and bundle info from the new structure if needed
-        mappings_dict = None
-        bundle_info_dict = None
-
-        if isinstance(sku_mappings, dict) and "mappings" in sku_mappings:
-            # New format with separate mappings and bundle_info
-            mappings_dict = sku_mappings["mappings"]
-            if "bundle_info" in sku_mappings:
-                bundle_info_dict = sku_mappings["bundle_info"]
-            logger.info(
-                f"Using new format SKU mappings with {sum(len(mappings_dict[k]) for k in mappings_dict)} total mappings"
-            )
-        else:
-            # Old format (direct dictionary)
-            mappings_dict = sku_mappings
-            logger.info("Using old format SKU mappings")
+    Returns:
+        dict: Dictionary containing processed orders, inventory summaries, and comparison data
+    """
+        # Extract the singles (mappings) and bundles info from the new structure
+        # The new format has warehouse keys with "singles" and "bundles" subkeys
+        # We'll convert this to the format expected by the processing logic
+        mappings_dict = {}
+        bundle_info_dict = {}
+        
+        # Use instance SKU mappings if parameter is None
+        if sku_mappings is None:
+            sku_mappings = self.sku_mappings
+        
+        if isinstance(sku_mappings, dict):
+            # New warehouse-based format with singles and bundles
+            for warehouse, data in sku_mappings.items():
+                # Initialize warehouse entries if not present
+                if warehouse not in mappings_dict:
+                    mappings_dict[warehouse] = {}
+                if warehouse not in bundle_info_dict:
+                    bundle_info_dict[warehouse] = {}
+                
+                # Process singles (SKU mappings)
+                if "singles" in data:
+                    for sku, sku_data in data["singles"].items():
+                        if "picklist_sku" in sku_data:
+                            # Map order SKU to picklist SKU
+                            mappings_dict[warehouse][sku] = sku_data["picklist_sku"]
+                
+                # Process bundles
+                if "bundles" in data:
+                    for bundle_sku, components in data["bundles"].items():
+                        # Convert component format if needed
+                        formatted_components = [
+                            {
+                                "sku": comp.get("component_sku", ""),
+                                "qty": float(comp.get("actualqty", 1)),
+                                "weight": float(comp.get("weight", 0)) if comp.get("weight") else 0,
+                                "type": comp.get("pick_type", "")
+                            } for comp in components
+                        ]
+                        bundle_info_dict[warehouse][bundle_sku] = formatted_components
+            
+            logger.info(f"Using new warehouse-based SKU mappings format with singles and bundles")
+            total_singles = sum(len(mappings_dict.get(warehouse, {})) for warehouse in mappings_dict)
+            total_bundles = sum(len(bundle_info_dict.get(warehouse, {})) for warehouse in bundle_info_dict)
+            logger.info(f"Loaded {total_singles} singles and {total_bundles} bundles across all warehouses")
 
         # Initialize tracking variables
         running_balances = {}
@@ -937,9 +958,6 @@ class DataProcessor:
         # Generate shortage summaries
         shortage_summary, grouped_shortage_summary = self.generate_shortage_summary(all_shortages) if all_shortages else (pd.DataFrame(), pd.DataFrame())
         
-        # Generate inventory summary
-        inventory_summary = self.generate_inventory_summary(running_balances, inventory_df, sku_mappings)
-        
         # Generate inventory comparison between initial and current inventory
         inventory_comparison = self.generate_inventory_comparison(initial_inventory_state, running_balances, inventory_df, sku_mappings)
         
@@ -949,7 +967,6 @@ class DataProcessor:
         # Return dictionary with all needed data to match what app.py expects
         return {
             "orders": output_df,
-            "inventory_summary": inventory_summary,
             "shortage_summary": shortage_summary,
             "grouped_shortage_summary": grouped_shortage_summary,
             "initial_inventory": initial_inventory_df,
@@ -1200,9 +1217,9 @@ class DataProcessor:
                     loaded_mappings = json.load(f)
                 
                 for warehouse in ["Wheeling", "Oxnard"]:
-                    if warehouse in loaded_mappings and "all_skus" in loaded_mappings[warehouse]:
+                    if warehouse in loaded_mappings and "singles" in loaded_mappings[warehouse]:
                         warehouse_data = {}
-                        for sku, data in loaded_mappings[warehouse]["all_skus"].items():
+                        for sku, data in loaded_mappings[warehouse]["singles"].items():
                             warehouse_data[sku] = {
                                 "actualqty": data.get("actualqty", ""),
                                 "Total Pick Weight": data.get("Total_Pick_Weight", ""),
@@ -1523,43 +1540,42 @@ class DataProcessor:
         # Create reverse mapping from inventory SKU to Shopify SKU
         shopify_sku_map = {}
         if sku_mappings and isinstance(sku_mappings, dict):
-            # Handle both old and new format of sku_mappings
-            mappings_dict = sku_mappings.get("mappings", sku_mappings)
-            
-            # Flatten all mappings from different fulfillment centers
-            for fc, fc_data in mappings_dict.items():
-                if isinstance(fc_data, dict) and "all_skus" in fc_data:
-                    # New format: fc -> {all_skus: {shopify_sku: {picklist_sku: inventory_sku}}}
-                    all_skus = fc_data["all_skus"]
-                    for shopify_sku, sku_data in all_skus.items():
+            # Use new format with warehouse keys and singles/bundles subkeys
+            for warehouse, warehouse_data in sku_mappings.items():
+                if isinstance(warehouse_data, dict) and "singles" in warehouse_data:
+                    # Handle singles mappings
+                    singles = warehouse_data["singles"]
+                    for shopify_sku, sku_data in singles.items():
                         if isinstance(sku_data, dict) and "picklist_sku" in sku_data:
                             inventory_sku = sku_data["picklist_sku"]
-                            shopify_sku_map[inventory_sku] = shopify_sku
-                elif isinstance(fc_data, dict):
-                    # Legacy format: fc -> {shopify_sku: inventory_sku}
-                    for shopify_sku, inventory_sku in fc_data.items():
-                        # Only use inventory_sku as a key if it's hashable (string, int, etc.)
-                        if isinstance(inventory_sku, (str, int, float, bool, tuple)):
-                            shopify_sku_map[inventory_sku] = shopify_sku
-                        elif isinstance(inventory_sku, dict) and "picklist_sku" in inventory_sku:
-                            # Handle case where inventory_sku is a dict with picklist_sku
-                            picklist_sku = inventory_sku["picklist_sku"]
-                            shopify_sku_map[picklist_sku] = shopify_sku
-                        else:
-                            logger.warning(f"Skipping unhashable inventory SKU mapping: {type(inventory_sku)} for Shopify SKU: {shopify_sku}")
+                            if inventory_sku and isinstance(inventory_sku, (str, int, float, bool, tuple)):
+                                shopify_sku_map[inventory_sku] = shopify_sku
+                            else:
+                                logger.warning(f"Skipping invalid picklist_sku: {inventory_sku} for Shopify SKU: {shopify_sku}")
+                # Handle bundles for component mapping if needed
+                if isinstance(warehouse_data, dict) and "bundles" in warehouse_data:
+                    for bundle_sku, components in warehouse_data["bundles"].items():
+                        for component in components:
+                            if isinstance(component, dict) and "component_sku" in component:
+                                component_sku = component["component_sku"]
+                                if component_sku and isinstance(component_sku, (str, int, float, bool, tuple)):
+                                    # For bundle components, map to the bundle SKU as well
+                                    shopify_sku_map.setdefault(component_sku, bundle_sku)
             
         
         # Get all bundle component SKUs if available
         bundle_components = set()
-        if sku_mappings and isinstance(sku_mappings, dict) and "bundle_info" in sku_mappings:
-            bundle_info = sku_mappings["bundle_info"]
-            for fc, bundles in bundle_info.items():
-                for _, components in bundles.items():
-                    for component in components:
-                        if "sku" in component:
-                            bundle_components.add(component["sku"])
-                        elif "component_sku" in component:
-                            bundle_components.add(component["component_sku"])
+        if sku_mappings and isinstance(sku_mappings, dict):
+            # Use new format with warehouse keys and bundles subkeys
+            for warehouse, warehouse_data in sku_mappings.items():
+                if isinstance(warehouse_data, dict) and "bundles" in warehouse_data:
+                    bundles = warehouse_data["bundles"]
+                    for _, components in bundles.items():
+                        for component in components:
+                            if "sku" in component:
+                                bundle_components.add(component["sku"])
+                            elif "component_sku" in component:
+                                bundle_components.add(component["component_sku"])
         
         # Process each normalized key
         for composite_key in all_keys:
@@ -1971,6 +1987,12 @@ class DataProcessor:
         # Normalize input
         shopify_sku = str(shopify_sku).strip()
         
+        # Special case: SKUs that don't start with "f." or "m." are likely already inventory SKUs from bundle components
+        # This fixes the "No mapping found" errors for bundle component SKUs
+        if not shopify_sku.startswith("f.") and not shopify_sku.startswith("m."):
+            # Check if this SKU appears in inventory directly
+            return shopify_sku
+        
         # If fulfillment center isn't specified, default to both centers
         fc_keys = []
         if fulfillment_center:
@@ -1988,32 +2010,46 @@ class DataProcessor:
             logger.warning("No SKU mappings available for mapping Shopify SKU to inventory SKU")
             return shopify_sku
             
-        # Check each fulfillment center for mappings
-        # First, check if mappings has a "mappings" structure (new Airtable format)
-        if "mappings" in mappings:
-            # New Airtable format: mappings["mappings"]["Oxnard"][shopify_sku] = inventory_sku
-            for fc_key in fc_keys:
-                center_name = "Oxnard" if fc_key.lower() in ["oxnard", "moorpark"] else "Wheeling"
-                if center_name in mappings["mappings"]:
-                    center_mappings = mappings["mappings"][center_name]
-                    if shopify_sku in center_mappings:
-                        inventory_sku = center_mappings[shopify_sku]
-                        if inventory_sku:
-                            logger.info(f"Mapped Shopify SKU '{shopify_sku}' to inventory SKU '{inventory_sku}' for {center_name}")
-                            return inventory_sku
-        else:
-            # Legacy format: try the old structure
-            for fc_key in fc_keys:
-                if fc_key in mappings and "mappings" in mappings[fc_key]:
-                    # Look for direct mapping
-                    for mapping in mappings[fc_key]["mappings"]:
-                        if mapping.get("shopify_sku", "").lower() == shopify_sku.lower():
-                            inventory_sku = mapping.get("inventory_sku", "")
-                            if inventory_sku:
-                                logger.info(f"Mapped Shopify SKU '{shopify_sku}' to inventory SKU '{inventory_sku}' for {fc_key}")
-                                return inventory_sku
+        # Handle m.* (bundle SKUs) directly - they represent bundles in the inventory
+        # They don't have mappings in the mappings section
+        if shopify_sku.startswith("m."):
+            # Special case for bundle SKUs - they need to be used directly
+            return shopify_sku
         
-        # If no mapping found, return original SKU
+        # Check each fulfillment center for mappings
+        # New Airtable format: mappings["Oxnard"]["singles"][shopify_sku] = {"picklist_sku": inventory_sku, ...}
+        for fc_key in fc_keys:
+            center_name = "Oxnard" if fc_key.lower() in ["oxnard", "moorpark"] else "Wheeling"
+            
+            # First check in singles dictionary
+            if center_name in mappings and "singles" in mappings[center_name]:
+                center_singles = mappings[center_name]["singles"]
+                if shopify_sku in center_singles:
+                    inventory_sku = center_singles[shopify_sku].get("picklist_sku")
+                    if inventory_sku:
+                        return inventory_sku
+            
+            # For f.* SKUs, also check if they're actually bundles
+            if shopify_sku.startswith("f.") and center_name in mappings and "bundles" in mappings[center_name]:
+                center_bundles = mappings[center_name]["bundles"]
+                if shopify_sku in center_bundles:
+                    # This is a bundle SKU (f.* that should be processed as bundle)
+                    # Return the original SKU to indicate it's a bundle
+                    return shopify_sku
+                            
+        # If no mapping found for Shopify SKU, check if it might be a bundle component SKU 
+        # In the bundles section (component SKUs are already inventory SKUs)
+        for fc_key in fc_keys:
+            center_name = "Oxnard" if fc_key.lower() in ["oxnard", "moorpark"] else "Wheeling"
+            if center_name in mappings and "bundles" in mappings[center_name]:
+                # Check all bundles
+                for bundle_sku, components in mappings[center_name]["bundles"].items():
+                    for component in components:
+                        # If the component SKU matches our SKU, it's already an inventory SKU
+                        if component.get("component_sku") == shopify_sku:
+                            return shopify_sku
+            
+        # If still no mapping found, return original SKU
         logger.info(f"No mapping found for Shopify SKU '{shopify_sku}', using the original SKU")
         return shopify_sku
 
@@ -2021,8 +2057,7 @@ class DataProcessor:
         self,
         sku,
         inventory_df,
-        sku_mapping=None,
-        bundle_info=None,
+        sku_mappings=None,
         fc_key=None,
         running_balances=None,
     ):
@@ -2033,17 +2068,17 @@ class DataProcessor:
         Args:
             sku: SKU from order (already mapped from Shopify to warehouse SKU if mapping exists)
             inventory_df: Inventory dataframe
-            sku_mapping: Optional dictionary mapping order SKUs to inventory SKUs
-            bundle_info: Optional dictionary containing bundle component information
+            sku_mappings: Optional dictionary containing warehouse-keyed SKU mappings with singles and bundles
             fc_key: Fulfillment center key (Wheeling or Oxnard)
+            running_balances: Optional dictionary of current inventory balances
         """
         # Initialize issue tracking
         issue = None
         # Check if inventory_df is valid
         if inventory_df is None or inventory_df.empty:
             logger.warning("Warning: Empty inventory DataFrame")
-            return "", 0, issue
-
+            return "", 0, "Empty inventory DataFrame"
+        
         # Ensure sku is a string and strip whitespace
         sku = str(sku).strip() if sku is not None else ""
 
@@ -2654,9 +2689,122 @@ if __name__ == "__main__":
     inventory_df = data_processor.load_inventory("docs/inventory.csv")
     sku_mappings = data_processor.load_sku_mappings()
     
-    # save to csv
+    # Temporary override of SKU mappings for bundles
+    # This allows custom bundle component mappings that override Airtable data
+    json.dump(sku_mappings, open("sku_mappings.json", "w"), indent=4)
+
+    # Get m.exoticfruit-3lb-bab sku_before using the new format
+    sku_before = sku_mappings.get("Wheeling", {}).get("bundles", {}).get("m.exoticfruit-3lb-bab")
+    # logger.info(f"m.exoticfruit-3lb-bab sku_before: {sku_before}")
+    
+    # Example of modifying bundle components for a specific SKU
+    # Use the actual format from sku_mappings.json
+    bundle_overrides = {
+        "Wheeling": {
+            "m.exoticfruit-3lb-bab": [
+                {
+                    "component_sku": "lychee-BG0102",
+                    "actualqty": 1.0,
+                    "Total_Pick_Weight": 0.0,
+                    "Pick_Type": ""
+                },
+                {
+                    "component_sku": "mango_cherry-09x08",
+                    "actualqty": 1.0,
+                    "Total_Pick_Weight": 0.0,
+                    "Pick_Type": ""
+                },
+                {
+                    "component_sku": "blood_orange-01x04",
+                    "actualqty": 1.0,
+                    "Total_Pick_Weight": 0.0,
+                    "Pick_Type": ""
+                },
+                {
+                    "component_sku": "avocado_gem-25x40",
+                    "actualqty": 1.0,
+                    "Total_Pick_Weight": 0.0,
+                    "Pick_Type": ""
+                },
+                {
+                    "component_sku": "mandarin_satsuma-01x04",
+                    "actualqty": 3.0,
+                    "Total_Pick_Weight": 0.0,
+                    "Pick_Type": ""
+                }
+            ],
+        }
+    }
+    
+    # Apply the overrides to the bundles using the new format
+    for fc_key, bundles in bundle_overrides.items():
+        if fc_key in sku_mappings:
+            if "bundles" not in sku_mappings[fc_key]:
+                sku_mappings[fc_key]["bundles"] = {}
+                
+            for bundle_sku, components in bundles.items():
+                logger.info(f"Overriding bundle mapping for {bundle_sku} in {fc_key}")
+                sku_mappings[fc_key]["bundles"][bundle_sku] = components
+    
+    # Process orders with initial inventory
+    logger.info("Processing orders with initial inventory...")
     processed_data = data_processor.process_orders(orders_df, inventory_df, sku_mappings)
+    
+    # Save all processed data to CSV
     for data_key in processed_data:
         processed_data[data_key].to_csv(f"{data_key}_{timestamp}.csv", index=False)
-            
-    print(f"All data files saved with timestamp {timestamp}")
+        logger.info(f"Saved {data_key} data to {data_key}_{timestamp}.csv")
+    
+    # Get initial orders data
+    orders = processed_data["orders"]
+    
+    # Set aside a portion of orders as already staged
+    # For demonstration purposes, let's take the first 30% of orders as staged
+    staged_order_count = int(len(orders) * 0.3)
+    if staged_order_count > 0:
+        staged_orders = orders.iloc[:staged_order_count].copy()
+        remaining_orders = orders.iloc[staged_order_count:].copy()
+        logger.info(f"Set aside {len(staged_orders)} orders as staged orders")
+    else:
+        staged_orders = pd.DataFrame(columns=orders.columns)
+        remaining_orders = orders.copy()
+    
+    # Process remaining orders with inventory that accounts for staged orders
+    logger.info("Reprocessing remaining orders with adjusted inventory (after staged orders)...")
+    reprocessed_data = data_processor.process_orders(
+        remaining_orders, 
+        inventory_df,
+        sku_mappings=sku_mappings
+    )
+    
+    # Save reprocessed data to CSV with a different suffix
+    for data_key in reprocessed_data:
+        reprocessed_data[data_key].to_csv(f"{data_key}_reprocessed_{timestamp}.csv", index=False)
+        logger.info(f"Saved reprocessed {data_key} data to {data_key}_reprocessed_{timestamp}.csv")
+    
+    # Compare inventory before and after staged orders
+    initial_inventory = processed_data["initial_inventory"]
+    adjusted_inventory = reprocessed_data["initial_inventory"]  # This accounts for staged orders
+    
+    # Create a comparison DataFrame
+    logger.info("Generating inventory comparison between initial and post-staged inventory...")
+    inventory_comparison = pd.merge(
+        initial_inventory,
+        adjusted_inventory,
+        on=["sku", "warehouse"],
+        how="outer", 
+        suffixes=('_initial', '_adjusted')
+    ).fillna(0)
+    
+    # Calculate the difference
+    inventory_comparison["difference"] = inventory_comparison["balance_adjusted"] - inventory_comparison["balance_initial"]
+    
+    # Save the comparison
+    inventory_comparison.to_csv(f"inventory_comparison_{timestamp}.csv", index=False)
+    logger.info(f"Saved inventory comparison to inventory_comparison_{timestamp}.csv")
+    
+    # Print summary statistics
+    logger.info(f"Total orders: {len(orders_df)}")
+    logger.info(f"Staged orders: {len(staged_orders)}")
+    logger.info(f"Remaining orders: {len(remaining_orders)}")
+    logger.info(f"SKUs with inventory changes: {len(inventory_comparison[inventory_comparison['difference'] != 0])}")

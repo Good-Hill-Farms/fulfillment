@@ -826,94 +826,107 @@ class AirtableHandler:
         else:
             raise Exception(f"Failed to delete fulfillment rule: {response.text}")
     
-    def load_sku_mappings_from_airtable(self, center):
+    def load_sku_mappings_from_airtable(self, center=None):
         """
-        Load SKU mappings from Airtable for the specified fulfillment center.
+        Load all SKU mappings from Airtable with a simplified output structure.
         
         Args:
-            center (str): The fulfillment center to load mappings for ("Oxnard" or "Wheeling")
+            center (str, optional): If provided, filter by fulfillment center ("Oxnard" or "Wheeling")
+                                   If None, load data for all centers
             
         Returns:
-            dict: Dictionary containing mappings and bundle_info for the specified center
+            dict: Dictionary with warehouse names as top-level keys, each containing 'all_skus' and 'bundles'
         """
-        logger.info(f"Loading SKU mappings for {center} from Airtable...")
+        logger.info("Loading all SKU mappings from Airtable...")
         
-        # Initialize result structure
-        result = {
-            "mappings": {center: {}},       # Simple shopify_sku -> inventory_sku mapping
-            "bundle_info": {center: {}},   # Bundle component information
-            "details": {center: {}}       # All details for each SKU
-        }
+        # Initialize output structure
+        result = {}
         
         try:
-            # Get SKU mappings from Airtable for this warehouse
-            sku_mappings = self.get_sku_mappings(center)
+            # Get all centers or use the specified one
+            centers = [center] if center else ["Oxnard", "Wheeling"]
             
-            for mapping in sku_mappings:
-                # Skip if no order_sku
-                if 'order_sku' not in mapping or not mapping['order_sku']:
-                    continue
+            # Process each center
+            for current_center in centers:
+                logger.info(f"Processing {current_center} SKU mappings...")
+                
+                # Initialize warehouse data structure
+                if current_center not in result:
+                    result[current_center] = {
+                        "singles": {},    # Simple SKUs
+                        "bundles": {}      # Bundles with components
+                    }
+                
+                # Get SKU mappings from Airtable for this warehouse
+                sku_mappings = self.get_sku_mappings(current_center)
+                
+                for mapping in sku_mappings:
+                    # Skip if no order_sku
+                    if 'order_sku' not in mapping or not mapping['order_sku']:
+                        continue
+                        
+                    order_sku = mapping['order_sku']
                     
-                order_sku = mapping['order_sku']
+                    # Check if this is a bundle
+                    is_bundle = mapping.get('is_bundle') or ('bundle_components' in mapping and mapping['bundle_components'])
+                    
+                    if is_bundle and 'bundle_components' in mapping and mapping['bundle_components']:
+                        # Handle bundles with components
+                        try:
+                            # Parse the bundle components from JSON string
+                            import json
+                            bundle_components_str = mapping['bundle_components']
+                            bundle_components = json.loads(bundle_components_str)
+                            
+                            # Store in bundles section with proper component format
+                            components_list = []
+                            for comp in bundle_components:
+                                # Extract all available fields, with fallbacks for different naming conventions
+                                component_data = {
+                                    "component_sku": comp.get("component_sku", comp.get("sku", "")),
+                                    "actualqty": float(comp.get("actualqty", comp.get("qty", 1))),
+                                    "weight": float(comp.get("weight", 0)) if comp.get("weight") else None,
+                                    "pick_type": comp.get("pick_type", comp.get("type", "")),
+                                    "pick_type_inventory": comp.get("pick_type_inventory", "")
+                                }
+                                components_list.append(component_data)
+                                
+                            result[current_center]["bundles"][order_sku] = components_list
+                            
+                        except (json.JSONDecodeError, TypeError) as e:
+                            logger.warning(f"Error parsing bundle components for {order_sku}: {e}")
+                            
+                    elif 'picklist_sku' in mapping and mapping['picklist_sku']:
+                        # Handle simple SKUs - include ALL available fields
+                        result[current_center]["singles"][order_sku] = {
+                            "picklist_sku": mapping.get("picklist_sku", ""),
+                            "actualqty": float(mapping.get("actual_qty", 1)),
+                            "total_pick_weight": float(mapping.get("total_pick_weight", 0)) if mapping.get("total_pick_weight") else None,
+                            "pick_type": mapping.get("pick_type", ""),
+                            "is_bundle": False,
+                            # Include additional fields that might be present
+                            "notes": mapping.get("notes", ""),
+                            "airtable_id": mapping.get("id", ""),
+                            "warehouse": current_center
+                        }
                 
-                # Store all fields in the details dictionary
-                result["details"][center][order_sku] = {
-                    # Common fields - add defaults for any missing fields to prevent errors
-                    "picklist_sku": mapping.get('picklist_sku', ''),
-                    "actual_qty": mapping.get('actual_qty', 0),
-                    "total_pick_weight": mapping.get('total_pick_weight', 0),
-                    "pick_type": mapping.get('pick_type', ''),
-                    # Include any other fields that might be useful
-                    "airtable_id": mapping.get('airtable_id', ''),
-                    "created_time": mapping.get('created_time', ''),
-                    # Store the entire mapping record for maximum flexibility
-                    "raw_data": mapping
-                }
+                logger.info(f"Loaded {len(result[current_center]['singles'])} simple SKUs and {len(result[current_center]['bundles'])} bundles for {current_center}")
                 
-                # Handle individual SKUs - use dictionary access instead of attribute access
-                if 'picklist_sku' in mapping and mapping['picklist_sku']:
-                    # Basic SKU mapping (shopify -> inventory)
-                    result["mappings"][center][order_sku] = mapping['picklist_sku']
-                
-                # Handle bundles if they have components
-                if 'bundle_components' in mapping and mapping['bundle_components']:
-                    bundle_components_str = mapping['bundle_components']
-                    # Convert the JSON string to Python objects
-                    import json
-                    try:
-                        # Try to parse the JSON string
-                        bundle_components = json.loads(bundle_components_str)
-                        
-                        # Store bundle components with all available information
-                        result["bundle_info"][center][order_sku] = [
-                            {
-                                "sku": comp.get("sku", ""),
-                                "qty": comp.get("qty", 0),
-                                "weight": comp.get("weight", 0.0), 
-                                "type": comp.get("type", "")
-                            }
-                            for comp in bundle_components
-                        ]
-                        
-                        # If this is a bundle but has no regular picklist_sku mapping, 
-                        # map to first component for backward compatibility
-                        if bundle_components and ('picklist_sku' not in mapping or not mapping['picklist_sku']):
-                            if bundle_components[0].get("sku"):
-                                result["mappings"][center][order_sku] = bundle_components[0].get("sku")
-                                logger.debug(f"Mapped bundle {order_sku} to component {bundle_components[0].get('sku')}")
-                    except json.JSONDecodeError as e:
-                        logger.warning(f"Error parsing bundle_components JSON for {order_sku}: {e}")
-            
-            logger.info(f"Loaded {len(result['mappings'][center])} SKU mappings and {len(result['details'][center])} detail records for {center}")
-            
         except Exception as e:
-            logger.warning(f"Error loading SKU mappings for {center} from Airtable: {e}")
+            logger.error(f"Error loading SKU mappings: {e}")
         
         return result
 
     
 
 if __name__ == "__main__":
+    import json
     handler = AirtableHandler()
-    res = handler.load_sku_mappings_from_airtable("Wheeling")
-    print(res)
+    
+    # Load all SKU mappings from all warehouses
+    res = handler.load_sku_mappings_from_airtable()
+    
+    # Save the cleaned-up format to a JSON file
+    with open("airtable_sku_mappings.json", "w") as f:
+        json.dump(res, f, indent=4)
+        
