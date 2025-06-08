@@ -878,6 +878,7 @@ class DataProcessor:
         # Load SKU weight data if not provided
         if sku_weight_data is None:
             sku_weight_data = self._load_sku_weight_data(sku_mappings)
+            logger.info(f"Loaded SKU weight data for warehouses: {list(sku_weight_data.keys()) if sku_weight_data else 'None'}")
 
         # Define output columns
         output_columns = [
@@ -944,8 +945,11 @@ class DataProcessor:
             # Find weight data
             found_match = self._find_weight_data_in_mappings(shopify_sku, fc_key, sku_weight_data, order_data)
             if not found_match:
+                logger.warning(f"No weight data found for SKU: {shopify_sku} at {fc_key}")
                 order_data["actualqty"] = ""
                 order_data["Total Pick Weight"] = ""
+            else:
+                logger.debug(f"Successfully found weight data for SKU: {shopify_sku} - qty: {order_data.get('actualqty', 'N/A')}, weight: {order_data.get('Total Pick Weight', 'N/A')}")
 
             # Get shop quantity and set order quantity
             shop_quantity = int(row.get("shopquantity", 1)) if pd.notna(row.get("shopquantity")) else 1
@@ -1291,33 +1295,32 @@ class DataProcessor:
         logger.info(f"Used latest entry for each unique SKU+warehouse combination, updating duplicates with latest values")
 
     def _load_sku_weight_data(self, sku_mappings):
-        """Load SKU weight data from mapping files"""
+        """Load SKU weight data from Airtable SKU mappings (already loaded)"""
         sku_weight_data = {}
         try:
-            import os
-            sku_mappings_path = os.path.join("constants", "data", "sku_mappings.json")
-            if os.path.exists(sku_mappings_path):
-                with open(sku_mappings_path, "r") as f:
-                    loaded_mappings = json.load(f)
-                
+            # Use the already loaded sku_mappings from Airtable
+            if sku_mappings and isinstance(sku_mappings, dict):
                 for warehouse in ["Wheeling", "Oxnard"]:
-                    if warehouse in loaded_mappings and "singles" in loaded_mappings[warehouse]:
+                    if warehouse in sku_mappings and "singles" in sku_mappings[warehouse]:
                         warehouse_data = {}
-                        for sku, data in loaded_mappings[warehouse]["singles"].items():
+                        for sku, data in sku_mappings[warehouse]["singles"].items():
                             warehouse_data[sku] = {
                                 "actualqty": data.get("actualqty", ""),
-                                "Total Pick Weight": data.get("Total_Pick_Weight", ""),
+                                "Total Pick Weight": data.get("total_pick_weight", ""),
+                                "total_pick_weight": data.get("total_pick_weight", ""),
                             }
-                            # Handle SKU variations
+                            # Handle SKU variations for compatibility
                             if sku.startswith("f."):
                                 warehouse_data[sku[2:]] = warehouse_data[sku]
                             elif not sku.startswith("f."):
                                 warehouse_data[f"f.{sku}"] = warehouse_data[sku]
                         
                         sku_weight_data[warehouse] = warehouse_data
-                        logger.info(f"Loaded weight data for {len(warehouse_data)} SKUs from {warehouse} mapping file")
+                        logger.info(f"Loaded weight data for {len(warehouse_data)} SKUs from {warehouse} Airtable mappings")
+            else:
+                logger.warning("No SKU mappings provided or mappings are not in expected format")
         except Exception as e:
-            logger.error(f"Error loading SKU weight data: {str(e)}")
+            logger.error(f"Error processing SKU weight data from Airtable mappings: {str(e)}")
         
         return sku_weight_data
 
@@ -1413,10 +1416,33 @@ class DataProcessor:
             component_order_data = order_data.copy()
             component_sku = component["sku"]
             base_component_qty = float(component.get("qty", 1.0))
-            component_weight = float(component.get("weight", 0.0))
             
             component_qty = base_component_qty * shop_quantity
-            total_component_weight = component_weight * shop_quantity
+            
+            # Look up the actual total_pick_weight for this component SKU
+            total_component_weight = 0.0
+            warehouse_key = self.normalize_warehouse_name(fc_key)
+            
+            # Try to find the component in SKU mappings to get its total_pick_weight
+            if sku_mappings and warehouse_key in sku_mappings:
+                warehouse_mappings = sku_mappings[warehouse_key]
+                
+                # Check in singles first
+                if "singles" in warehouse_mappings and component_sku in warehouse_mappings["singles"]:
+                    sku_data = warehouse_mappings["singles"][component_sku]
+                    unit_weight = float(sku_data.get("total_pick_weight", 0.0))
+                    total_component_weight = unit_weight * component_qty
+                    logger.debug(f"Found component {component_sku} weight: {unit_weight} per unit, total: {total_component_weight}")
+                else:
+                    # Fallback to weight from bundle definition
+                    component_weight = float(component.get("weight", 0.0))
+                    total_component_weight = component_weight * shop_quantity
+                    logger.warning(f"Component {component_sku} not found in singles mappings, using bundle weight: {component_weight}")
+            else:
+                # Fallback to weight from bundle definition
+                component_weight = float(component.get("weight", 0.0))
+                total_component_weight = component_weight * shop_quantity
+                logger.warning(f"No SKU mappings available for {warehouse_key}, using bundle weight: {component_weight}")
 
             # Set component data
             component_order_data["sku"] = component_sku
@@ -3043,19 +3069,105 @@ class DataProcessor:
         # Calculate inventory minus staged orders
         inventory_minus_staged = self.calculate_inventory_minus_staged()
         
+        # Calculate staging summary
+        staging_summary = {
+            "orders_in_processing": len(self.orders_in_processing),
+            "staged_orders": len(self.staged_orders),
+            "total_orders": len(self.orders_in_processing) + len(self.staged_orders)
+        }
+        
         return {
             "initial_inventory": self.initial_inventory,
             "inventory_minus_processing": inventory_minus_processing,
             "inventory_minus_staged": inventory_minus_staged,
-            "orders_in_processing": self.orders_in_processing,
-            "staged_orders": self.staged_orders,
-            "staging_summary": {
-                "total_orders_staged": len(self.staged_orders),
-                "total_orders_in_processing": len(self.orders_in_processing),
-                "unique_skus_staged": self.staged_orders['sku'].nunique() if not self.staged_orders.empty else 0,
-                "unique_skus_in_processing": self.orders_in_processing['sku'].nunique() if not self.orders_in_processing.empty else 0
+            "staging_summary": staging_summary
+        }
+    
+    def get_bundle_availability_analysis(self, bundle_skus):
+        """
+        Analyze bundle component availability using Available for Recalculation inventory.
+        
+        Args:
+            bundle_skus (list): List of bundle SKUs to analyze
+            
+        Returns:
+            dict: Analysis of bundle availability and component constraints
+        """
+        if not bundle_skus or not self.sku_mappings:
+            return {"error": "No bundle SKUs provided or no SKU mappings available"}
+            
+        # Get available inventory (Initial - Staged)
+        available_inventory = self.calculate_inventory_minus_staged()
+        
+        analysis = {
+            "bundles": {},
+            "summary": {
+                "total_bundles": len(bundle_skus),
+                "available_bundles": 0,
+                "constrained_bundles": 0,
+                "critical_components": []
             }
         }
+        
+        for bundle_sku in bundle_skus:
+            bundle_analysis = {
+                "components": [],
+                "constraints": [],
+                "max_possible_bundles": float('inf'),
+                "status": "available"
+            }
+            
+            # Get bundle components from all warehouses
+            bundle_found = False
+            for warehouse, mappings in self.sku_mappings.items():
+                if bundle_sku in mappings:
+                    bundle_found = True
+                    components = mappings[bundle_sku]
+                    
+                    for component in components:
+                        comp_sku = component.get('component_sku', '')
+                        comp_qty = float(component.get('actualqty', 1))
+                        
+                        # Check availability in this warehouse
+                        key = f"{comp_sku}|{warehouse}"
+                        available_qty = available_inventory.get(key, 0)
+                        
+                        # Calculate max bundles possible with this component
+                        max_bundles_this_comp = int(available_qty / comp_qty) if comp_qty > 0 else 0
+                        
+                        component_info = {
+                            "sku": comp_sku,
+                            "warehouse": warehouse,
+                            "required_qty": comp_qty,
+                            "available_qty": available_qty,
+                            "max_bundles": max_bundles_this_comp,
+                            "status": "available" if available_qty >= comp_qty else "constrained"
+                        }
+                        
+                        bundle_analysis["components"].append(component_info)
+                        
+                        # Update max possible bundles (limited by most constrained component)
+                        if max_bundles_this_comp < bundle_analysis["max_possible_bundles"]:
+                            bundle_analysis["max_possible_bundles"] = max_bundles_this_comp
+                            
+                        # Track constraints
+                        if available_qty < comp_qty:
+                            bundle_analysis["constraints"].append(f"{comp_sku} @ {warehouse}: need {comp_qty}, have {available_qty}")
+                            bundle_analysis["status"] = "constrained"
+            
+            if not bundle_found:
+                bundle_analysis["status"] = "no_mapping"
+                bundle_analysis["error"] = f"No mapping found for bundle {bundle_sku}"
+            
+            # Update summary
+            if bundle_analysis["status"] == "available":
+                analysis["summary"]["available_bundles"] += 1
+            elif bundle_analysis["status"] == "constrained":
+                analysis["summary"]["constrained_bundles"] += 1
+                
+            analysis["bundles"][bundle_sku] = bundle_analysis
+        
+        return analysis
     
     def _calculate_inventory_minus_orders(self, orders_df):
         """
