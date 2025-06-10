@@ -960,18 +960,8 @@ class DataProcessor:
                 )
                 continue  # Skip individual item processing for bundles
             else:
-                # For individual items, find weight data
-                found_match = self._find_weight_data_in_mappings(shopify_sku, fc_key, sku_weight_data, order_data)
-                if not found_match:
-                    logger.error(f"No weight data found for SKU: {shopify_sku} at {fc_key} - cannot proceed without weight data")
-                    # Skip this order instead of using empty values
-                    continue
-                else:
-                    logger.debug(f"Successfully found weight data for SKU: {shopify_sku} - qty: {order_data.get('actualqty', 'N/A')}, weight: {order_data.get('Total Pick Weight', 'N/A')}")
-
-                # Set order quantity for individual items
-                self._set_order_quantity(order_data, shop_quantity)
-                # Process individual item
+                # For individual items, process directly without old weight data lookup
+                logger.debug(f"Processing single SKU: {shopify_sku}")
                 output_df = self._process_single_sku_order(
                     order_data, shopify_sku, shop_quantity, inventory_df,
                     running_balances, all_shortages, shortage_tracker, output_df,
@@ -1468,6 +1458,9 @@ class DataProcessor:
                 sku_mappings=sku_mappings
             )
             
+            # Update the sku field to use the mapped inventory SKU
+            component_order_data["sku"] = component_inventory_sku
+
             # Use the inventory balance directly - no more actualqty overrides from mapping
 
             # Get current balance and process allocation
@@ -1503,10 +1496,42 @@ class DataProcessor:
             sku_mappings=sku_mappings
         )
 
-        order_data["sku"] = inventory_sku
+        # Calculate proper actualqty and Total Pick Weight based on shop quantity and mapping
+        warehouse_key = self.normalize_warehouse_name(fc_key)
+        
+        if sku_mappings and warehouse_key in sku_mappings and "singles" in sku_mappings[warehouse_key]:
+            singles_mapping = sku_mappings[warehouse_key]["singles"]
+            if shopify_sku in singles_mapping:
+                mapping_data = singles_mapping[shopify_sku]
+                base_actualqty = float(mapping_data.get("actualqty", 1.0))
+                base_weight = float(mapping_data.get("total_pick_weight", 0.0))
+                
+                # Calculate actual quantities based on shop quantity
+                calculated_actualqty = base_actualqty * shop_quantity
+                calculated_weight = base_weight * shop_quantity
+                
+                # Set the calculated values
+                order_data["actualqty"] = calculated_actualqty
+                order_data["Total Pick Weight"] = calculated_weight
+                order_data["sku"] = inventory_sku
+                order_data["quantity"] = calculated_actualqty  # quantity should match actualqty
+                
+                logger.debug(f"Single SKU {shopify_sku}: base_qty={base_actualqty}, shop_qty={shop_quantity}, calculated_qty={calculated_actualqty}, calculated_weight={calculated_weight}")
+            else:
+                logger.warning(f"Single SKU {shopify_sku} not found in mappings for {warehouse_key}")
+                order_data["sku"] = inventory_sku
+                order_data["actualqty"] = shop_quantity
+                order_data["Total Pick Weight"] = 0.0
+                order_data["quantity"] = shop_quantity
+        else:
+            logger.warning(f"No SKU mappings available for {warehouse_key} or singles mapping missing")
+            order_data["sku"] = inventory_sku
+            order_data["actualqty"] = shop_quantity
+            order_data["Total Pick Weight"] = 0.0
+            order_data["quantity"] = shop_quantity
 
-        # Use shop_quantity directly as requested quantity - no actualqty override
-        requested_quantity = shop_quantity
+        # Use calculated actualqty for inventory allocation instead of shop_quantity
+        requested_quantity = float(order_data.get("actualqty", shop_quantity))
 
         # Get current balance and process allocation
         current_balance = self._get_current_balance(
@@ -3287,58 +3312,6 @@ if __name__ == "__main__":
     # This allows custom bundle component mappings that override Airtable data
     json.dump(sku_mappings, open("sku_mappings.json", "w"), indent=4)
 
-    # Get m.exoticfruit-3lb-bab sku_before using the new format
-    sku_before = sku_mappings.get("Wheeling", {}).get("bundles", {}).get("m.exoticfruit-3lb-bab")
-    # logger.info(f"m.exoticfruit-3lb-bab sku_before: {sku_before}")
-    
-    # Example of modifying bundle components for a specific SKU
-    # Use the actual format from sku_mappings.json
-    bundle_overrides = {
-        "Wheeling": {
-            "m.exoticfruit-3lb-bab": [
-                {
-                    "component_sku": "lychee-BG0102",
-                    "actualqty": 1.0,
-                    "Total_Pick_Weight": 0.0,
-                    "Pick_Type": ""
-                },
-                {
-                    "component_sku": "mango_cherry-09x08",
-                    "actualqty": 1.0,
-                    "Total_Pick_Weight": 0.0,
-                    "Pick_Type": ""
-                },
-                {
-                    "component_sku": "blood_orange-01x04",
-                    "actualqty": 1.0,
-                    "Total_Pick_Weight": 0.0,
-                    "Pick_Type": ""
-                },
-                {
-                    "component_sku": "avocado_gem-25x40",
-                    "actualqty": 1.0,
-                    "Total_Pick_Weight": 0.0,
-                    "Pick_Type": ""
-                },
-                {
-                    "component_sku": "mandarin_satsuma-01x04",
-                    "actualqty": 3.0,
-                    "Total_Pick_Weight": 0.0,
-                    "Pick_Type": ""
-                }
-            ],
-        }
-    }
-    
-    # Apply the overrides to the bundles using the new format
-    for fc_key, bundles in bundle_overrides.items():
-        if fc_key in sku_mappings:
-            if "bundles" not in sku_mappings[fc_key]:
-                sku_mappings[fc_key]["bundles"] = {}
-                
-            for bundle_sku, components in bundles.items():
-                logger.info(f"Overriding bundle mapping for {bundle_sku} in {fc_key}")
-                sku_mappings[fc_key]["bundles"][bundle_sku] = components
     
     # Process orders with initial inventory
     logger.info("Processing orders with initial inventory...")
@@ -3348,57 +3321,3 @@ if __name__ == "__main__":
     for data_key in processed_data:
         processed_data[data_key].to_csv(f"{data_key}_{timestamp}.csv", index=False)
         logger.info(f"Saved {data_key} data to {data_key}_{timestamp}.csv")
-    
-    # Get initial orders data
-    orders = processed_data["orders"]
-    
-    # Set aside a portion of orders as already staged
-    # For demonstration purposes, let's take the first 30% of orders as staged
-    staged_order_count = int(len(orders) * 0.3)
-    if staged_order_count > 0:
-        staged_orders = orders.iloc[:staged_order_count].copy()
-        remaining_orders = orders.iloc[staged_order_count:].copy()
-        logger.info(f"Set aside {len(staged_orders)} orders as staged orders")
-    else:
-        staged_orders = pd.DataFrame(columns=orders.columns)
-        remaining_orders = orders.copy()
-    
-    # Process remaining orders with inventory that accounts for staged orders
-    logger.info("Reprocessing remaining orders with adjusted inventory (after staged orders)...")
-    reprocessed_data = data_processor.process_orders(
-        remaining_orders, 
-        inventory_df,
-        sku_mappings=sku_mappings
-    )
-    
-    # Save reprocessed data to CSV with a different suffix
-    for data_key in reprocessed_data:
-        reprocessed_data[data_key].to_csv(f"{data_key}_reprocessed_{timestamp}.csv", index=False)
-        logger.info(f"Saved reprocessed {data_key} data to {data_key}_reprocessed_{timestamp}.csv")
-    
-    # Compare inventory before and after staged orders
-    initial_inventory = processed_data["initial_inventory"]
-    adjusted_inventory = reprocessed_data["initial_inventory"]  # This accounts for staged orders
-    
-    # Create a comparison DataFrame
-    logger.info("Generating inventory comparison between initial and post-staged inventory...")
-    inventory_comparison = pd.merge(
-        initial_inventory,
-        adjusted_inventory,
-        on=["sku", "warehouse"],
-        how="outer", 
-        suffixes=('_initial', '_adjusted')
-    ).fillna(0)
-    
-    # Calculate the difference
-    inventory_comparison["difference"] = inventory_comparison["balance_adjusted"] - inventory_comparison["balance_initial"]
-    
-    # Save the comparison
-    inventory_comparison.to_csv(f"inventory_comparison_{timestamp}.csv", index=False)
-    logger.info(f"Saved inventory comparison to inventory_comparison_{timestamp}.csv")
-    
-    # Print summary statistics
-    logger.info(f"Total orders: {len(orders_df)}")
-    logger.info(f"Staged orders: {len(staged_orders)}")
-    logger.info(f"Remaining orders: {len(remaining_orders)}")
-    logger.info(f"SKUs with inventory changes: {len(inventory_comparison[inventory_comparison['difference'] != 0])}")
