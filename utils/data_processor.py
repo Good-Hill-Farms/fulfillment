@@ -9,10 +9,10 @@ import streamlit as st
 # Add project root to path to allow importing constants
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from constants.shipping_zones import load_shipping_zones
 from constants.schemas import SchemaManager
 from utils.data_parser import DataParser
 from utils.airtable_handler import AirtableHandler
+from utils.google_sheets import load_sku_mappings_from_sheets
 
 logger = logging.getLogger(__name__)
 
@@ -226,22 +226,22 @@ class DataProcessor:
             try:
                 # Use the AirtableHandler method that returns data in the new format
                 # with warehouses as top-level keys, each containing "singles" and "bundles"
-                airtable_data = self._airtable_handler.load_sku_mappings_from_airtable()
+                google_sheets_data = load_sku_mappings_from_sheets()
                 
                 # Log information about the loaded data
-                for warehouse, warehouse_data in airtable_data.items():
+                for warehouse, warehouse_data in google_sheets_data.items():
                     single_count = len(warehouse_data.get("singles", {}))
                     bundle_count = len(warehouse_data.get("bundles", {}))
                     logger.info(f"Loaded {single_count} single SKUs and {bundle_count} bundles for {warehouse}")
                 
-                if not airtable_data:
+                if not google_sheets_data:
                     logger.warning("No SKU mappings found in Airtable")
                     self.sku_mappings = default_data
                     return default_data
                 
                 logger.info("Successfully loaded SKU mappings from Airtable")
-                self.sku_mappings = airtable_data
-                return airtable_data
+                self.sku_mappings = google_sheets_data
+                return google_sheets_data
                 
             except Exception as e:
                 logger.error(f"Error loading SKU mappings from Airtable: {e}")
@@ -249,11 +249,9 @@ class DataProcessor:
                 return default_data
             
         except Exception as e:
-            logger.error(f"Unexpected error in load_sku_mappings: {e}")
-            default_data = {"Oxnard": {"singles": {}, "bundles": {}}, "Wheeling": {"singles": {}, "bundles": {}}}
-            self.sku_mappings = default_data
+            logger.error(f"Error loading SKU mappings from Google Sheets: {e}")
             return default_data
-    
+
     def load_inventory(self, file):
         """
         Load and preprocess inventory CSV file
@@ -951,6 +949,8 @@ class DataProcessor:
             
             if is_bundle:
                 # For bundles, we don't need individual weight data - process directly
+
+                
                 logger.debug(f"Processing bundle SKU: {shopify_sku}")
                 bundle_components = bundle_info_dict[fc_key][shopify_sku]
                 output_df = self._process_bundle_order(
@@ -2120,7 +2120,7 @@ class DataProcessor:
 
     def map_shopify_to_inventory_sku(self, shopify_sku, fulfillment_center=None, sku_mappings=None) -> str:
         """
-        Maps a Shopify SKU to the corresponding inventory SKU using the Airtable mappings.
+        Maps a Shopify SKU to the corresponding inventory SKU using the Google Sheets mappings.
         This function focuses solely on the SKU mapping logic, following the single responsibility principle.
         
         Args:
@@ -3295,6 +3295,7 @@ class DataProcessor:
 
 
 if __name__ == "__main__":
+
     import sys
     logging.basicConfig(level=logging.INFO)
     data_processor = DataProcessor()

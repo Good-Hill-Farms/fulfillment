@@ -1,26 +1,51 @@
 options:
   logging: CLOUD_LOGGING_ONLY
   machineType: 'E2_HIGHCPU_8'
-  diskSizeGb: '100'
+  diskSizeGb: 100
+  dynamic_substitutions: true
 
 steps:
-  # Build the Streamlit application container image
+  # Pull the previous image for layer caching
   - name: 'gcr.io/cloud-builders/docker'
-    args: [
-      'build',
-      '-t', 'gcr.io/$PROJECT_ID/fulfillment-mixy-matchi:$COMMIT_SHA',
-      '-t', 'gcr.io/$PROJECT_ID/fulfillment-mixy-matchi:latest',
-      '.'
-    ]
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        docker pull gcr.io/$PROJECT_ID/fulfillment-mixy-matchi:latest || exit 0
+    id: 'pull-cache'
 
-  # Push the container image to Container Registry
+  # Build with cache
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/fulfillment-mixy-matchi:$COMMIT_SHA']
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/fulfillment-mixy-matchi:latest']
+    args:
+      - 'build'
+      - '--cache-from'
+      - 'gcr.io/$PROJECT_ID/fulfillment-mixy-matchi:latest'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/fulfillment-mixy-matchi:$COMMIT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/fulfillment-mixy-matchi:latest'
+      - '--build-arg'
+      - 'BUILDKIT_INLINE_CACHE=1'
+      - '.'
+    id: 'build'
 
+  # Push both tags
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/fulfillment-mixy-matchi:$COMMIT_SHA'
+    id: 'push-sha'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/fulfillment-mixy-matchi:latest'
+    id: 'push-latest'
+
+timeout: '3600s'
 images:
   - 'gcr.io/$PROJECT_ID/fulfillment-mixy-matchi:$COMMIT_SHA'
   - 'gcr.io/$PROJECT_ID/fulfillment-mixy-matchi:latest'
 
-timeout: '3600s'
+substitutions:
+  _REGION: us-east1
