@@ -11,7 +11,213 @@ def now():
     return datetime.now(ZoneInfo("UTC"))
 
 
-# --- Batch Upload Tracker ---
+# --- Data Models Based on Actual Usage in data_processor.py ---
+
+class OrderItem(BaseModel):
+    """Represents a single order line item as processed by the system"""
+    order_id: str = Field(alias="order id")
+    external_order_id: str = Field(alias="externalorderid", default="")
+    order_number: str = Field(alias="ordernumber", default="")
+    customer_first_name: str = Field(alias="CustomerFirstName", default="")
+    customer_last_name: str = Field(alias="customerLastname", default="")
+    customer_email: str = Field(alias="customeremail", default="")
+    ship_to_name: str = Field(alias="shiptoname", default="")
+    ship_to_zip: str = Field(alias="shiptopostalcode", default="")
+    shopify_sku: str = Field(alias="shopifysku2", default="")
+    shop_sku: str = Field(alias="shopsku", default="")
+    shop_quantity: float = Field(alias="shopquantity", default=1)
+    warehouse_sku: str = Field(alias="sku", default="")
+    actual_qty: float = Field(alias="actualqty", default=1)
+    total_pick_weight: float = Field(alias="Total Pick Weight", default=0)
+    quantity: float = Field(default=1)
+    starting_balance: float = Field(alias="Starting Balance", default=0)
+    transaction_quantity: float = Field(alias="Transaction Quantity", default=0)
+    ending_balance: float = Field(alias="Ending Balance", default=0)
+    fulfillment_center: str = Field(alias="Fulfillment Center", default="")
+    issues: str = Field(alias="Issues", default="")
+    tags: str = Field(alias="Tags", default="")
+    
+    class Config:
+        allow_population_by_field_name = True
+
+
+class InventoryItem(BaseModel):
+    """Represents an inventory item as used in the system"""
+    warehouse_name: str = Field(alias="WarehouseName")
+    item_id: Optional[str] = Field(alias="ItemId", default="")
+    sku: str = Field(alias="Sku")
+    name: str = Field(alias="Name", default="")
+    type: str = Field(alias="Type", default="")
+    available_qty: float = Field(alias="AvailableQty", default=0)
+    balance: float = Field(alias="Balance", default=0)
+    
+    class Config:
+        allow_population_by_field_name = True
+
+
+class BundleComponent(BaseModel):
+    """Represents a component within a bundle as actually used by google_sheets.py and data_processor.py"""
+    component_sku: str  # The inventory SKU from 'picklist sku' column
+    actualqty: float    # Quantity per bundle from 'Mix Quantity' column
+    weight: Optional[float] = 0.0  # From 'Pick Weight LB' column
+    pick_type: Optional[str] = ""  # From 'Pick Type' column
+    pick_type_inventory: Optional[str] = ""  # From 'Product Type' column
+    
+    # Legacy field names that might still be used in some parts of the code
+    qty: Optional[float] = None  # Alternative name for actualqty
+    
+    def __init__(self, **data):
+        # Handle legacy field name mapping
+        if 'qty' in data and 'actualqty' not in data:
+            data['actualqty'] = data['qty']
+        elif 'actualqty' in data and 'qty' not in data:
+            data['qty'] = data['actualqty']
+        super().__init__(**data)
+
+
+class SKUSingle(BaseModel):
+    """Represents a single SKU mapping as actually used by google_sheets.py"""
+    picklist_sku: str  # Maps to warehouse inventory SKU
+    actualqty: float    # Quantity multiplier
+    total_pick_weight: float  # From 'Total Pick Weight' column
+    pick_type: Optional[str] = ""  # From 'Pick Type' column  
+    pick_type_inventory: Optional[str] = ""  # From 'Product Type' column
+
+
+class SKUMappings(BaseModel):
+    """Complete SKU mappings structure as used in data_processor.py"""
+    oxnard_singles: Dict[str, SKUSingle] = Field(default_factory=dict, alias="Oxnard.singles")
+    oxnard_bundles: Dict[str, List[BundleComponent]] = Field(default_factory=dict, alias="Oxnard.bundles")
+    wheeling_singles: Dict[str, SKUSingle] = Field(default_factory=dict, alias="Wheeling.singles")
+    wheeling_bundles: Dict[str, List[BundleComponent]] = Field(default_factory=dict, alias="Wheeling.bundles")
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'SKUMappings':
+        """Create from the actual JSON structure used in the system"""
+        oxnard = data.get("Oxnard", {})
+        wheeling = data.get("Wheeling", {})
+        
+        return cls(
+            oxnard_singles={k: SKUSingle(**v) for k, v in oxnard.get("singles", {}).items()},
+            oxnard_bundles={k: [BundleComponent(**comp) for comp in v] for k, v in oxnard.get("bundles", {}).items()},
+            wheeling_singles={k: SKUSingle(**v) for k, v in wheeling.get("singles", {}).items()},
+            wheeling_bundles={k: [BundleComponent(**comp) for comp in v] for k, v in wheeling.get("bundles", {}).items()}
+        )
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to the JSON structure expected by the system"""
+        return {
+            "Oxnard": {
+                "singles": {k: v.dict() for k, v in self.oxnard_singles.items()},
+                "bundles": {k: [comp.dict() for comp in v] for k, v in self.oxnard_bundles.items()}
+            },
+            "Wheeling": {
+                "singles": {k: v.dict() for k, v in self.wheeling_singles.items()},
+                "bundles": {k: [comp.dict() for comp in v] for k, v in self.wheeling_bundles.items()}
+            }
+        }
+
+
+class ShortageItem(BaseModel):
+    """Represents a shortage item as generated by the system"""
+    component_sku: str
+    shopify_sku: str
+    order_id: str
+    current_balance: float
+    needed_qty: float
+    shortage_qty: float
+    fulfillment_center: str
+
+
+class ShippingZone(BaseModel):
+    """Represents shipping zone mapping as used in the system"""
+    zip_prefix: str
+    zone: int
+    warehouse: Literal["Oxnard", "Wheeling"]
+
+
+class ShippingZones(BaseModel):
+    """Complete shipping zones structure"""
+    oxnard_zones: Dict[str, int] = Field(default_factory=dict)
+    wheeling_zones: Dict[str, int] = Field(default_factory=dict)
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'ShippingZones':
+        """Create from the actual JSON structure used in the system"""
+        return cls(
+            oxnard_zones=data.get("Oxnard", {}),
+            wheeling_zones=data.get("Wheeling", {})
+        )
+
+
+class DeliveryService(BaseModel):
+    """Represents delivery service mapping"""
+    destination_zip_short: str
+    origin: str
+    carrier_name: str
+    service_name: str
+    days: int
+
+
+class ProcessingStats(BaseModel):
+    """Statistics generated by the processing system"""
+    total_orders: int = 0
+    total_line_items: int = 0
+    unique_skus: int = 0
+    fulfillment_center_distribution: Dict[str, int] = Field(default_factory=dict)
+    primary_fulfillment_center: str = ""
+    items_with_issues: int = 0
+    issue_rate: float = 0.0
+    total_quantity_processed: float = 0.0
+    avg_quantity_per_item: float = 0.0
+    max_quantity_item: float = 0.0
+    total_shortages: int = 0
+    unique_shortage_skus: int = 0
+    total_shortage_quantity: float = 0.0
+    shortages_by_fulfillment_center: Dict[str, int] = Field(default_factory=dict)
+    total_inventory_items: int = 0
+    total_inventory_balance: float = 0.0
+    zero_balance_items: int = 0
+    low_balance_items: int = 0
+    processing_timestamp: str = ""
+
+
+class WarehousePerformance(BaseModel):
+    """Warehouse performance metrics"""
+    total_orders: int = 0
+    total_line_items: int = 0
+    unique_skus: int = 0
+    items_with_issues: int = 0
+    issue_rate: float = 0.0
+    total_quantity: float = 0.0
+    avg_quantity_per_item: float = 0.0
+    bundle_items: int = 0
+    bundle_rate: float = 0.0
+    inventory_balance: float = 0.0
+    inventory_sku_count: int = 0
+
+
+class StagingOrder(BaseModel):
+    """Represents an order in staging"""
+    order_item: OrderItem
+    staged_at: datetime = Field(default_factory=now)
+
+
+class InventoryComparison(BaseModel):
+    """Represents inventory comparison data"""
+    sku: str = Field(alias="SKU")
+    warehouse: str = Field(alias="Warehouse")
+    initial_balance: float = Field(alias="Initial Balance")
+    current_balance: float = Field(alias="Current Balance")
+    difference: float = Field(alias="Difference")
+    is_used_in_bundle: bool = Field(alias="Is Used In Bundle")
+    
+    class Config:
+        allow_population_by_field_name = True
+
+
+# --- Legacy Models for Airtable Integration ---
+
 class DataBatch(BaseModel):
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
     batch_type: Literal["order", "inventory"]
@@ -21,7 +227,6 @@ class DataBatch(BaseModel):
     created_at: datetime = Field(default_factory=now)
 
 
-# --- Core Entities ---
 class OrderLine(BaseModel):
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
     order_id: str
@@ -35,22 +240,6 @@ class OrderLine(BaseModel):
     updated_at: Optional[datetime] = None
 
 
-class InventoryItem(BaseModel):
-    id: uuid.UUID = Field(default_factory=uuid.uuid4)
-    sku: str
-    warehouse_name: Literal["Oxnard", "Wheeling"]
-    available_qty: float
-    batch_id: uuid.UUID
-    created_at: datetime = Field(default_factory=now)
-    updated_at: Optional[datetime] = None
-
-
-# --- SKU Mapping and Bundles ---
-class BundleComponent(BaseModel):
-    sku: str
-    qty: float
-
-
 class SKUMapping(BaseModel):
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
     order_sku: str
@@ -58,10 +247,8 @@ class SKUMapping(BaseModel):
     actual_qty: float
     total_pick_weight: Optional[float]
     pick_type: str
-    # In Airtable, bundle_components is stored as a JSON string
-    # When reading from Airtable, we need to parse this string back to a list
     bundle_components: Optional[str] = None  # JSON string of bundle components
-    fulfillment_center: Optional[List[str]] = None  # Link to fulfillment center using array format for Airtable
+    fulfillment_center: Optional[List[str]] = None
     created_at: datetime = Field(default_factory=now)
     updated_at: Optional[datetime] = None
     
@@ -83,17 +270,12 @@ class SKUMapping(BaseModel):
             self.bundle_components = None
             return
         
-        components_data = [{
-            "sku": comp.sku,
-            "qty": comp.qty
-        } for comp in components]
-        
+        components_data = [comp.dict() for comp in components]
         self.bundle_components = json.dumps(components_data)
     
     @classmethod
     def from_airtable(cls, record: Dict[str, Any]) -> 'SKUMapping':
         """Create a SKUMapping instance from an Airtable record"""
-        # Map Airtable field names to model field names if needed
         mapping_data = {
             "id": uuid.UUID(record.get("id", str(uuid.uuid4()))),
             "order_sku": record.get("order_sku", ""),
@@ -122,16 +304,16 @@ class SKUMapping(BaseModel):
         }
 
 
-# --- Shipping Zones ---
 class ZoneMapping(BaseModel):
     zip_prefix: str
     zone: int
 
+
 class FulfillmentZone(BaseModel):
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
     zip_prefix: str
-    zone: str  # String type to match Airtable requirements
-    fulfillment_center: List[str]  # Link to FulfillmentCenter using array format for Airtable
+    zone: str
+    fulfillment_center: List[str]
     created_at: datetime = Field(default_factory=now)
     updated_at: Optional[datetime] = None
     
@@ -160,48 +342,10 @@ class FulfillmentCenter(BaseModel):
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
     name: Literal["Oxnard", "Wheeling"]
     zip_code: str
-    # Zones are now stored in a separate table (FulfillmentZone)
     created_at: datetime = Field(default_factory=now)
     updated_at: Optional[datetime] = None
 
 
-# --- Delivery Services ---
-class DeliveryService(BaseModel):
-    id: uuid.UUID = Field(default_factory=uuid.uuid4)
-    destination_zip_short: str
-    origin: str
-    carrier_name: str
-    service_name: str
-    days: int
-    created_at: datetime = Field(default_factory=now)
-    updated_at: Optional[datetime] = None
-    
-    @classmethod
-    def from_airtable(cls, record: Dict[str, Any]) -> 'DeliveryService':
-        """Create a DeliveryService instance from an Airtable record"""
-        return cls(
-            id=uuid.UUID(record.get("id", str(uuid.uuid4()))),
-            destination_zip_short=record.get("destination_zip_short", ""),
-            origin=record.get("origin", ""),
-            carrier_name=record.get("carrier_name", ""),
-            service_name=record.get("service_name", ""),
-            days=int(record.get("days", 0)),
-            created_at=record.get("created_at", now()),
-            updated_at=record.get("updated_at")
-        )
-    
-    def to_airtable(self) -> Dict[str, Any]:
-        """Convert the DeliveryService instance to an Airtable record format"""
-        return {
-            "destination_zip_short": self.destination_zip_short,
-            "origin": self.origin,
-            "carrier_name": self.carrier_name,
-            "service_name": self.service_name,
-            "days": self.days
-        }
-
-
-# --- Fulfillment Output ---
 class FulfillmentPlanLine(BaseModel):
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
     order_id: str
@@ -226,6 +370,7 @@ class ShortageLog(BaseModel):
     created_at: datetime = Field(default_factory=now)
     updated_at: Optional[datetime] = None
 
+
 class PriorityTag(BaseModel):
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
     name: str
@@ -233,7 +378,6 @@ class PriorityTag(BaseModel):
     updated_at: Optional[datetime] = None
 
 
-# --- Business Rules (Editable) ---
 class FulfillmentRule(BaseModel):
     """Editable business rules for fulfillment logic"""
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
@@ -360,7 +504,7 @@ class SchemaManager:
         
         try:
             records = self.airtable.get_delivery_services(zip_prefix)
-            services = [DeliveryService.from_airtable(record) for record in records]
+            services = [DeliveryService(**record) for record in records]
             
             if use_cache:
                 self._cache[cache_key] = services
@@ -378,15 +522,6 @@ class SchemaManager:
             return self._cache[cache_key]
         
         try:
-            # Note: This assumes we have a FulfillmentRule table in Airtable
-            # We'll need to add this to the AirtableHandler
-            filter_formula = ""
-            if rule_type:
-                filter_formula += f"{{rule_type}} = '{rule_type}'"
-            if active_only:
-                active_filter = "{is_active} = TRUE()"
-                filter_formula = f"AND({filter_formula}, {active_filter})" if filter_formula else active_filter
-            
             # For now, return empty list since we need to implement this in AirtableHandler
             rules = []
             self._cache[cache_key] = rules
