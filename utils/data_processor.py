@@ -1713,7 +1713,6 @@ class DataProcessor:
                                     # For bundle components, map to the bundle SKU as well
                                     shopify_sku_map.setdefault(component_sku, bundle_sku)
             
-        
         # Get all bundle component SKUs if available
         bundle_components = set()
         if sku_mappings and isinstance(sku_mappings, dict):
@@ -1782,12 +1781,9 @@ class DataProcessor:
             # Calculate difference
             difference = current_balance - initial_balance
             
-            # Only include items with actual changes or significant balances
-            # This makes the comparison report more useful by filtering out unchanged items
             if abs(difference) > 0.001 or initial_balance > 0 or current_balance > 0:
                 comparison_data.append({
                     "SKU": sku,
-                    "Shopify SKU": shopify_sku,
                     "Warehouse": warehouse_display,
                     "Initial Balance": initial_balance,
                     "Current Balance": current_balance,
