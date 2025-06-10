@@ -1601,15 +1601,16 @@ class DataProcessor:
                 shortage_tracker.add(shortage_key)
 
             order_data["Issues"] = f"Issue: Insufficient inventory | Item: {inventory_sku} | Shopify SKU: {shopify_sku} | Current: {current_balance} | Needed: {requested_qty} | Short by: {shortage} units"
-            transaction_quantity = min(current_balance, requested_qty)
-        else:
-            transaction_quantity = requested_qty
+
+        # Always fulfill the full requested quantity, even if it means going into negative inventory
+        transaction_quantity = requested_qty
 
         order_data["Transaction Quantity"] = transaction_quantity
-        ending_balance = max(0, current_balance - transaction_quantity)
+        # Allow negative balances to track exactly how much inventory is being oversold
+        ending_balance = current_balance - transaction_quantity
         order_data["Ending Balance"] = ending_balance
         
-        # Update running balance
+        # Update running balance (can be negative)
         running_balances[composite_key] = ending_balance
 
     def generate_inventory_comparison(self, initial_inventory_state, current_balances, inventory_df, sku_mappings=None) -> pd.DataFrame:
