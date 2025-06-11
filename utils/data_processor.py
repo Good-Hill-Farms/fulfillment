@@ -1001,7 +1001,11 @@ class DataProcessor:
         
         # Store results in instance variables for staging workflow
         self.orders_in_processing = output_df.copy()
-        self.initial_inventory = initial_inventory_df.copy()
+        
+        # Only set initial_inventory if it doesn't exist yet (preserve original during recalculation)
+        if not hasattr(self, 'initial_inventory') or self.initial_inventory is None:
+            self.initial_inventory = initial_inventory_df.copy()
+        
         self.current_inventory_state = running_balances.copy()
         
         # Return dictionary with all needed data to match what app.py expects
@@ -1455,7 +1459,6 @@ class DataProcessor:
                         logger.error(f"Component {component_sku} has no weight data in singles mappings or bundle definition - cannot proceed")
                         continue  # Skip this component
                     total_component_weight = float(component_weight) * shop_quantity
-                    logger.warning(f"Component {component_sku} not found in singles mappings, using bundle weight: {component_weight}")
             else:
                 # No warehouse mappings available - this is a critical data issue
                 component_weight = component.get("weight")
@@ -3087,13 +3090,14 @@ class DataProcessor:
             "total_in_processing": len(self.orders_in_processing)
         }
     
-    def recalculate_orders_with_updated_inventory(self, sku_mappings_updates=None):
+    def recalculate_orders_with_updated_inventory(self, sku_mappings_updates=None, reload_sku_mappings=False):
         """
         Recalculate orders in processing using updated SKU mappings and inventory minus staged orders.
         Enhanced version with better state management and error handling.
         
         Args:
             sku_mappings_updates (dict, optional): Updated SKU mappings to apply
+            reload_sku_mappings (bool): Whether to reload SKU mappings from Google Sheets (default: False)
             
         Returns:
             dict: Recalculated orders and inventory data with detailed results
@@ -3200,13 +3204,14 @@ class DataProcessor:
             logger.error(f"Error traceback: {traceback.format_exc()}")
             return {"error": f"Failed to convert orders to input format: {str(e)}"}
         
-        # Reprocess orders with inventory minus staged and updated mappings
-        logger.info(f"Recalculating {len(orders_input)} orders using 'inventory_minus_staged' base")
+        # Reprocess orders using initial inventory minus staged orders as base
+        logger.info(f"Recalculating {len(orders_input)} orders using 'initial inventory minus staged orders' as base")
         try:
-            # Calculate inventory minus staged orders
+            # Use initial inventory minus staged orders as the base for recalculation
+            # This gives processing orders a fresh allocation against available inventory
             inventory_minus_staged = self.calculate_inventory_minus_staged()
             
-            # Convert inventory_minus_staged to DataFrame if it's a dict
+            # Convert to DataFrame if it's a dict
             if isinstance(inventory_minus_staged, dict):
                 records = []
                 for key, balance in inventory_minus_staged.items():
@@ -3221,12 +3226,12 @@ class DataProcessor:
             else:
                 inventory_base = inventory_minus_staged
                 
-            logger.info(f"Calculated inventory minus staged: {len(inventory_base)} items")
+            logger.info(f"Using inventory minus staged as base: {len(inventory_base)} items, total balance: {inventory_base['Balance'].sum()}")
             
-            # Process orders with the updated inventory base
+            # Process orders with the current remaining inventory
             recalculated_data = self.process_orders(
                 orders_df=orders_input,
-                inventory_df=inventory_base,  # Use inventory minus staged
+                inventory_df=inventory_base,  # Use current remaining inventory
                 sku_mappings=self.sku_mappings  # Use updated mappings
             )
             
@@ -3372,6 +3377,7 @@ class DataProcessor:
     def _convert_processed_orders_to_input_format(self, processed_orders_df):
         """
         Convert processed orders back to input format for recalculation.
+        Groups by ordernumber and shopify SKU to recreate original Shopify orders.
         
         Args:
             processed_orders_df (DataFrame): Processed orders to convert
@@ -3389,15 +3395,39 @@ class DataProcessor:
             processed_order_numbers = set(processed_orders_df['ordernumber'].unique())
             logger.info(f"Found {len(processed_order_numbers)} unique order numbers to process")
             
-            # Convert each order
-            for _, row in processed_orders_df.iterrows():
+            # Group by ordernumber and shopify SKU to recreate original orders
+            grouping_columns = ['ordernumber']
+            
+            # Try to find the shopify SKU column
+            shopify_sku_col = None
+            for col in ['shopifysku2', 'shopifysku', 'Shopify SKU']:
+                if col in processed_orders_df.columns:
+                    shopify_sku_col = col
+                    grouping_columns.append(col)
+                    break
+            
+            if shopify_sku_col:
+                logger.info(f"Grouping by ordernumber and {shopify_sku_col}")
+                grouped = processed_orders_df.groupby(grouping_columns)
+            else:
+                logger.warning("No Shopify SKU column found, grouping by ordernumber only")
+                grouped = processed_orders_df.groupby(['ordernumber'])
+            
+            # Convert each unique order+SKU combination
+            for group_key, group_df in grouped:
                 try:
+                    # Get representative row (first row of the group)
+                    row = group_df.iloc[0]
+                    
                     # Get the original Shopify SKU
                     shopify_sku = row.get('shopifysku2', '')  # Try shopifysku2 first
                     if not shopify_sku:
                         shopify_sku = row.get('shopifysku', '')  # Then try shopifysku
                     if not shopify_sku:
                         shopify_sku = row.get('Shopify SKU', '')  # Then try Shopify SKU
+                    
+                    # Sum up the shop quantity for this order+SKU combination
+                    total_shop_quantity = group_df['shopquantity'].sum() if 'shopquantity' in group_df.columns else 1
                     
                     # Create base order data
                     order_data = {
@@ -3419,7 +3449,7 @@ class DataProcessor:
                         "preferredcarrierserviceid": row.get('preferredcarrierserviceid', ''),
                         "totalorderamount": row.get('totalorderamount', ''),
                         "shopsku": shopify_sku,  # Use the original Shopify SKU
-                        "shopquantity": row.get('shopquantity', row.get('Transaction Quantity', 1)),  # Try shopquantity first, then Transaction Quantity
+                        "shopquantity": total_shop_quantity,  # Use total quantity for this SKU
                         "externalid": row.get('ordernumber', ''),
                         "Tags": row.get('Tags', ''),
                         "MAX PKG NUM": row.get('MAX PKG NUM', ''),
@@ -3433,7 +3463,7 @@ class DataProcessor:
                     
                     input_orders.append(order_data)
                 except Exception as e:
-                    logger.error(f"Error converting order {row.get('ordernumber', 'unknown')}: {str(e)}")
+                    logger.error(f"Error converting order group {group_key}: {str(e)}")
                     continue
             
             # Convert to DataFrame
@@ -3447,12 +3477,10 @@ class DataProcessor:
                 if missing_orders:
                     logger.warning(f"Missing orders: {missing_orders}")
             
-            # Log SKU mapping statistics
-            original_skus = set(processed_orders_df['sku'].unique())
-            converted_skus = set(result_df['shopsku'].unique())
-            logger.info(f"SKU mapping: original={len(original_skus)}, converted={len(converted_skus)}")
+            # Log conversion statistics
+            logger.info(f"Grouped {len(processed_orders_df)} processed rows into {len(result_df)} unique Shopify orders")
+            logger.info(f"Conversion ratio: {len(processed_orders_df)} → {len(result_df)} (reduced by {len(processed_orders_df) - len(result_df)})")
             
-            logger.info(f"Successfully converted {len(processed_orders_df)} processed orders to {len(result_df)} input orders")
             return result_df
             
         except Exception as e:

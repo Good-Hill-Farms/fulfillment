@@ -738,10 +738,13 @@ def render_orders_tab(processed_orders, shortage_summary=None):
             except Exception as e:
                 logger.warning(f"Could not calculate inventory minus staged: {e}")
         
-        # Ensure shortage_count matches issues count for consistency
-        if shortage_summary is not None and not shortage_summary.empty:
+        # Use the most up-to-date shortage_summary (prefer session state over parameter)
+        if 'shortage_summary' in st.session_state and st.session_state.shortage_summary is not None:
+            # Always use session state if it exists (even if empty - means no shortages after recalculation)
+            shortage_summary = st.session_state.shortage_summary
+            shortage_count = len(shortage_summary) if not shortage_summary.empty else 0
+        elif shortage_summary is not None and not shortage_summary.empty:
             shortage_count = len(shortage_summary)
-            
             # Update session state with shortage_summary for use in other components
             st.session_state.shortage_summary = shortage_summary
         else:
@@ -911,16 +914,14 @@ def render_orders_tab(processed_orders, shortage_summary=None):
             selected_warehouses = len(set([row.get('Fulfillment Center', '') for row in selected_rows]))
             
             # Show detailed selection stats
-            cols = st.columns(5)
+            cols = st.columns(4)
             with cols[0]:
                 st.metric("📦 Selected Items", selected_line_items)
             with cols[1]:
                 st.metric("📋 Unique Orders", selected_unique_orders)
             with cols[2]:
-                st.metric("📊 Total Quantity", f"{selected_total_qty:.0f}")
-            with cols[3]:
                 st.metric("🏭 Warehouses", selected_warehouses)
-            with cols[4]:
+            with cols[3]:
                 st.metric("⚠️ Items with Issues", selected_with_issues, delta=f"{selected_orders_with_issues} orders")
                 
             # Display additional statistics that the user requested
@@ -1057,10 +1058,31 @@ def render_orders_tab(processed_orders, shortage_summary=None):
                                         recalc_result = st.session_state.staging_processor.recalculate_orders_with_updated_inventory()
                                         
                                         if 'error' in recalc_result:
-                                            st.warning(f"Recalculation: {recalc_result['error']}")
+                                            st.error(f"Recalculation failed: {recalc_result['error']}")
                                         else:
-                                            # Update session state with recalculated orders
+                                            # Clear existing shortage data before updating to prevent accumulation
+                                            st.session_state.shortage_summary = pd.DataFrame()
+                                            st.session_state.grouped_shortage_summary = pd.DataFrame()
+                                            
+                                            # Update ALL session state data from recalculation results
                                             st.session_state.processed_orders = st.session_state.staging_processor.orders_in_processing.copy()
+                                            
+                                            # Update shortages and inventory data
+                                            if 'shortage_summary' in recalc_result:
+                                                st.session_state.shortage_summary = recalc_result['shortage_summary']
+                                                shortage_count = len(recalc_result['shortage_summary']) if not recalc_result['shortage_summary'].empty else 0
+                                                st.info(f"📊 Recalculation complete: {shortage_count} shortages found")
+                                            if 'grouped_shortage_summary' in recalc_result:
+                                                st.session_state.grouped_shortage_summary = recalc_result['grouped_shortage_summary']
+                                            if 'inventory_comparison' in recalc_result:
+                                                st.session_state.inventory_comparison = recalc_result['inventory_comparison']
+                                            if 'initial_inventory' in recalc_result:
+                                                st.session_state.initial_inventory = recalc_result['initial_inventory']
+                                            
+                                            # Force complete UI refresh
+                                            if 'key_prefix' not in st.session_state:
+                                                st.session_state.key_prefix = 0
+                                            st.session_state.key_prefix += 1
                                             
                                             # Get after state
                                             after_orders = len(st.session_state.staging_processor.orders_in_processing)
@@ -1298,8 +1320,18 @@ def render_orders_tab(processed_orders, shortage_summary=None):
                         if 'error' in recalc_result:
                             st.error(f"Recalculation failed: {recalc_result['error']}")
                         else:
-                            # Update session state
+                            # Update ALL session state data from recalculation results
                             st.session_state.processed_orders = st.session_state.staging_processor.orders_in_processing.copy()
+                            
+                            # Update shortages and inventory data
+                            if 'shortage_summary' in recalc_result:
+                                st.session_state.shortage_summary = recalc_result['shortage_summary']
+                            if 'grouped_shortage_summary' in recalc_result:
+                                st.session_state.grouped_shortage_summary = recalc_result['grouped_shortage_summary']
+                            if 'inventory_comparison' in recalc_result:
+                                st.session_state.inventory_comparison = recalc_result['inventory_comparison']
+                            if 'initial_inventory' in recalc_result:
+                                st.session_state.initial_inventory = recalc_result['initial_inventory']
                             
                             # Add the staged flag back and combine with staged orders
                             if 'staged' not in st.session_state.processed_orders.columns:
@@ -1318,6 +1350,7 @@ def render_orders_tab(processed_orders, shortage_summary=None):
                                 st.session_state.processed_orders = combined.reset_index(drop=True)
                             
                             st.success("✅ Quick recalculation completed!")
+                            st.info("📊 Updated: Orders, Shortages, and Projected Inventory")
                             st.rerun()
                 except Exception as e:
                     st.error(f"Error during quick recalculation: {e}")
@@ -1367,6 +1400,11 @@ def render_inventory_tab(shortage_summary, grouped_shortage_summary, initial_inv
     
     with initial_inventory_tab:
         st.markdown("**Uploaded Initial Inventory State**")
+        
+        # Use the most up-to-date initial_inventory (prefer session state over parameter)
+        if 'initial_inventory' in st.session_state and st.session_state.initial_inventory is not None:
+            initial_inventory = st.session_state.initial_inventory
+        
         if initial_inventory is not None and not initial_inventory.empty:
             st.dataframe(
                 initial_inventory,
@@ -1530,25 +1568,39 @@ def render_inventory_tab(shortage_summary, grouped_shortage_summary, initial_inv
                                     if 'error' in recalc_result:
                                         st.error(f"Recalculation failed: {recalc_result['error']}")
                                     else:
-                                        # Update session state
+                                        # Clear existing shortage data before updating to prevent accumulation
+                                        st.session_state.shortage_summary = pd.DataFrame()
+                                        st.session_state.grouped_shortage_summary = pd.DataFrame()
+                                        
+                                        # Update ALL session state data from recalculation results
                                         st.session_state.processed_orders = st.session_state.staging_processor.orders_in_processing.copy()
+                                        
+                                        # Update shortages and inventory data
+                                        if 'shortage_summary' in recalc_result:
+                                            st.session_state.shortage_summary = recalc_result['shortage_summary']
+                                        if 'grouped_shortage_summary' in recalc_result:
+                                            st.session_state.grouped_shortage_summary = recalc_result['grouped_shortage_summary']
+                                        if 'inventory_comparison' in recalc_result:
+                                            st.session_state.inventory_comparison = recalc_result['inventory_comparison']
+                                        if 'initial_inventory' in recalc_result:
+                                            st.session_state.initial_inventory = recalc_result['initial_inventory']
                                         
                                         # Add the staged flag back
                                         if 'staged' not in st.session_state.processed_orders.columns:
                                             st.session_state.processed_orders['staged'] = False
                                         
-                                        # Update staged orders view  
-                                        staged_df = st.session_state.staging_processor.staged_orders.copy()
-                                        if not staged_df.empty:
+                                        # Update staged orders view with proper deduplication
+                                        if hasattr(st.session_state.staging_processor, 'staged_orders') and not st.session_state.staging_processor.staged_orders.empty:
+                                            staged_df = st.session_state.staging_processor.staged_orders.copy()
                                             staged_df['staged'] = True
-                                            # Combine processing and staged orders
-                                            st.session_state.processed_orders = pd.concat([
-                                                st.session_state.processed_orders, 
-                                                staged_df
-                                            ], ignore_index=True)
+                                            # Combine and remove duplicates properly
+                                            combined = pd.concat([st.session_state.processed_orders, staged_df], ignore_index=True)
+                                            combined = combined.sort_values('staged', ascending=False)
+                                            combined = combined.drop_duplicates(subset=['ordernumber', 'sku'], keep='first')
+                                            st.session_state.processed_orders = combined.reset_index(drop=True)
                                         
                                         st.success("✅ Recalculation completed successfully!")
-                                        st.info("Navigate to the Orders tab to see the updated results.")
+                                        st.info("📊 Updated: Orders, Shortages, and Projected Inventory. Navigate to other tabs to see updated results.")
                                         st.rerun()
                                         
                             except Exception as e:
@@ -1679,6 +1731,12 @@ def render_inventory_tab(shortage_summary, grouped_shortage_summary, initial_inv
     with inventory_after_processing_tab:
         st.markdown("**Projected Inventory After Full Current Processing Run**")
         
+        # Use the most up-to-date inventory_comparison (prefer session state over parameter)
+        if 'inventory_comparison' in st.session_state and st.session_state.inventory_comparison is not None:
+            # Always use session state if it exists (even if empty - means updated after recalculation)
+            inventory_comparison = st.session_state.inventory_comparison
+            st.info(f"📊 Using updated inventory comparison with {len(inventory_comparison)} items")
+        
         # Use inventory_comparison if available (shows inventory minus orders)
         if inventory_comparison is not None and not inventory_comparison.empty:
             # Highlight rows where inventory levels are low or negative
@@ -1718,6 +1776,11 @@ def render_inventory_tab(shortage_summary, grouped_shortage_summary, initial_inv
             st.info("No inventory data available")
     
     with shortages_tab:
+        # Use the most up-to-date grouped_shortage_summary (prefer session state over parameter)
+        if 'grouped_shortage_summary' in st.session_state and st.session_state.grouped_shortage_summary is not None:
+            # Always use session state if it exists (even if empty - means updated after recalculation)
+            grouped_shortage_summary = st.session_state.grouped_shortage_summary
+        
         if grouped_shortage_summary is not None and not grouped_shortage_summary.empty:
             # Show grouped shortages first using standard dataframe for cleaner display
             st.markdown("**Shortages by SKU**")
@@ -1730,13 +1793,22 @@ def render_inventory_tab(shortage_summary, grouped_shortage_summary, initial_inv
             
             # Add expander for individual shortage details
             with st.expander("View All Individual Shortage Line Items", expanded=False):
+                # Use session state shortage_summary if available
+                if 'shortage_summary' in st.session_state and st.session_state.shortage_summary is not None:
+                    shortage_summary = st.session_state.shortage_summary
+                
                 if shortage_summary is not None and not shortage_summary.empty:
                     create_aggrid_table(shortage_summary, height=400, selection_mode='multiple', key="shortage_table")
                 else:
                     st.info("No individual shortage details available")
         elif shortage_summary is not None and not shortage_summary.empty:
             # If no grouped data, show individual shortages directly
-            create_aggrid_table(shortage_summary, height=500, selection_mode='multiple', key="shortage_table")
+            # Use session state shortage_summary if available
+            if 'shortage_summary' in st.session_state and st.session_state.shortage_summary is not None:
+                shortage_summary = st.session_state.shortage_summary
+            
+            if shortage_summary is not None and not shortage_summary.empty:
+                create_aggrid_table(shortage_summary, height=500, selection_mode='multiple', key="shortage_table")
         else:
             st.info("No shortages detected")
     
