@@ -3100,6 +3100,15 @@ class DataProcessor:
         """
         logger.info("Starting recalculation process...")
         
+        # First, reload SKU mappings from Google Sheets to get the latest data
+        try:
+            logger.info("Reloading SKU mappings from Google Sheets before recalculation...")
+            self.sku_mappings = self.load_sku_mappings()
+            logger.info("Successfully reloaded SKU mappings from Google Sheets")
+        except Exception as e:
+            logger.error(f"Failed to reload SKU mappings: {e}")
+            # Continue with existing mappings
+        
         # Check if we have orders to recalculate
         if not hasattr(self, 'orders_in_processing'):
             logger.error("orders_in_processing attribute not found")
@@ -3194,17 +3203,31 @@ class DataProcessor:
         # Reprocess orders with inventory minus staged and updated mappings
         logger.info(f"Recalculating {len(orders_input)} orders using 'inventory_minus_staged' base")
         try:
-            # Get inventory base before processing
-            inventory_base = self._get_inventory_base("inventory_minus_staged")
-            logger.info(f"Got inventory base: type={type(inventory_base)}, "
-                       f"is_none={inventory_base is None}, "
-                       f"columns={getattr(inventory_base, 'columns', None)}, "
-                       f"rows={len(inventory_base) if isinstance(inventory_base, pd.DataFrame) else 'N/A'}")
+            # Calculate inventory minus staged orders
+            inventory_minus_staged = self.calculate_inventory_minus_staged()
             
+            # Convert inventory_minus_staged to DataFrame if it's a dict
+            if isinstance(inventory_minus_staged, dict):
+                records = []
+                for key, balance in inventory_minus_staged.items():
+                    if '|' in key:
+                        sku, warehouse = key.split('|')
+                        records.append({
+                            'Sku': sku,
+                            'WarehouseName': warehouse,
+                            'Balance': balance
+                        })
+                inventory_base = pd.DataFrame(records)
+            else:
+                inventory_base = inventory_minus_staged
+                
+            logger.info(f"Calculated inventory minus staged: {len(inventory_base)} items")
+            
+            # Process orders with the updated inventory base
             recalculated_data = self.process_orders(
                 orders_df=orders_input,
-                inventory_base="inventory_minus_staged", # Use available inventory
-                sku_mappings=self.sku_mappings # Use updated mappings
+                inventory_df=inventory_base,  # Use inventory minus staged
+                sku_mappings=self.sku_mappings  # Use updated mappings
             )
             
             logger.info(f"process_orders returned: type={type(recalculated_data)}, "
@@ -3242,6 +3265,15 @@ class DataProcessor:
                     self.orders_in_processing['staged'] = False
                     
                 logger.info(f"Updated orders_in_processing: {len(self.orders_in_processing)} rows")
+                
+                # Verify we didn't lose any orders
+                original_order_numbers = set(orders_input['ordernumber'].unique())
+                recalculated_order_numbers = set(self.orders_in_processing['ordernumber'].unique())
+                if len(recalculated_order_numbers) != len(original_order_numbers):
+                    logger.warning(f"Order count mismatch after recalculation: original={len(original_order_numbers)}, recalculated={len(recalculated_order_numbers)}")
+                    missing_orders = original_order_numbers - recalculated_order_numbers
+                    if missing_orders:
+                        logger.warning(f"Missing orders after recalculation: {missing_orders}")
             else:
                 logger.error("Recalculated orders data is None or missing")
                 return {"error": "Recalculated orders data is None or missing"}
@@ -3259,13 +3291,13 @@ class DataProcessor:
                 "before": before_state,
                 "after": after_state,
                 "changes": {
-                    "orders_recalculated": before_state["orders_in_processing"],
+                    "orders_recalculated": len(orders_input),  # Use actual number of orders processed
                     "new_shortages": len(recalculated_data.get('shortage_summary', [])),
                     "inventory_base_used": "inventory_minus_staged"
                 }
             }
             
-            logger.info(f"Recalculation completed successfully: {before_state['orders_in_processing']} orders recalculated")
+            logger.info(f"Recalculation completed successfully: {len(orders_input)} orders recalculated")
             return recalculated_data
             
         except Exception as e:
@@ -3339,73 +3371,87 @@ class DataProcessor:
     
     def _convert_processed_orders_to_input_format(self, processed_orders_df):
         """
-        Convert processed orders back to input format for reprocessing.
-        Enhanced with better error handling and None checks.
+        Convert processed orders back to input format for recalculation.
         
         Args:
-            processed_orders_df (DataFrame): Processed orders dataframe
+            processed_orders_df (DataFrame): Processed orders to convert
             
         Returns:
-            DataFrame: Orders in input format, or None if conversion fails
+            DataFrame: Orders in input format
         """
-        if processed_orders_df is None:
-            logger.error("Cannot convert None processed_orders_df to input format")
-            return None
-            
-        if processed_orders_df.empty:
-            logger.warning("Cannot convert empty processed_orders_df to input format")
-            return pd.DataFrame()
-        
         try:
-            # Group by order to reconstruct original order structure
+            logger.info(f"Converting {len(processed_orders_df)} processed orders to input format")
+            
+            # Initialize list to store converted orders
             input_orders = []
             
-            # Ensure required columns exist
-            required_cols = [
-                'order id', 'externalorderid', 'ordernumber', 'CustomerFirstName', 
-                'customerLastname', 'customeremail', 'customerphone', 'shiptoname', 
-                'shiptostreet1', 'shiptostreet2', 'shiptocity', 'shiptostate', 
-                'shiptopostalcode', 'note', 'placeddate', 'preferredcarrierserviceid', 
-                'totalorderamount', 'shopifysku2', 'shopquantity', 'externalid', 
-                'Tags', 'MAX PKG NUM', 'Fulfillment Center'
-            ]
-            missing_cols = [col for col in required_cols if col not in processed_orders_df.columns]
-            if missing_cols:
-                logger.error(f"Missing required columns for conversion: {missing_cols}")
-                return None
+            # Track unique order numbers to ensure we don't lose any
+            processed_order_numbers = set(processed_orders_df['ordernumber'].unique())
+            logger.info(f"Found {len(processed_order_numbers)} unique order numbers to process")
             
-            for order_id, order_group in processed_orders_df.groupby('order id'):
-                # Take the first row as the base order info
-                base_order = order_group.iloc[0].copy()
-                
-                # Use the original Shopify SKU and quantity
-                input_orders.append({
-                    'order id': base_order.get('order id', ''),
-                    'externalorderid': base_order.get('externalorderid', ''),
-                    'ordernumber': base_order.get('ordernumber', ''),
-                    'CustomerFirstName': base_order.get('CustomerFirstName', ''),
-                    'customerLastname': base_order.get('customerLastname', ''),
-                    'customeremail': base_order.get('customeremail', ''),
-                    'customerphone': base_order.get('customerphone', ''),
-                    'shiptoname': base_order.get('shiptoname', ''),
-                    'shiptostreet1': base_order.get('shiptostreet1', ''),
-                    'shiptostreet2': base_order.get('shiptostreet2', ''),
-                    'shiptocity': base_order.get('shiptocity', ''),
-                    'shiptostate': base_order.get('shiptostate', ''),
-                    'shiptopostalcode': base_order.get('shiptopostalcode', ''),
-                    'note': base_order.get('note', ''),
-                    'placeddate': base_order.get('placeddate', ''),
-                    'preferredcarrierserviceid': base_order.get('preferredcarrierserviceid', ''),
-                    'totalorderamount': base_order.get('totalorderamount', ''),
-                    'shopsku': base_order.get('shopifysku2', ''),  # Use original Shopify SKU
-                    'shopquantity': base_order.get('shopquantity', 1),
-                    'externalid': base_order.get('externalid', ''),
-                    'Tags': base_order.get('Tags', ''),
-                    'MAX PKG NUM': base_order.get('MAX PKG NUM', ''),
-                    'Fulfillment Center': base_order.get('Fulfillment Center', '')
-                })
+            # Convert each order
+            for _, row in processed_orders_df.iterrows():
+                try:
+                    # Get the original Shopify SKU
+                    shopify_sku = row.get('shopifysku2', '')  # Try shopifysku2 first
+                    if not shopify_sku:
+                        shopify_sku = row.get('shopifysku', '')  # Then try shopifysku
+                    if not shopify_sku:
+                        shopify_sku = row.get('Shopify SKU', '')  # Then try Shopify SKU
+                    
+                    # Create base order data
+                    order_data = {
+                        "order id": row.get('ordernumber', ''),
+                        "externalorderid": row.get('ordernumber', ''),
+                        "ordernumber": row.get('ordernumber', ''),
+                        "CustomerFirstName": row.get('CustomerFirstName', ''),
+                        "customerLastname": row.get('customerLastname', ''),
+                        "customeremail": row.get('customeremail', ''),
+                        "customerphone": row.get('customerphone', ''),
+                        "shiptoname": row.get('shiptoname', ''),
+                        "shiptostreet1": row.get('shiptostreet1', ''),
+                        "shiptostreet2": row.get('shiptostreet2', ''),
+                        "shiptocity": row.get('shiptocity', ''),
+                        "shiptostate": row.get('shiptostate', ''),
+                        "shiptopostalcode": row.get('shiptopostalcode', ''),
+                        "note": row.get('note', ''),
+                        "placeddate": row.get('placeddate', ''),
+                        "preferredcarrierserviceid": row.get('preferredcarrierserviceid', ''),
+                        "totalorderamount": row.get('totalorderamount', ''),
+                        "shopsku": shopify_sku,  # Use the original Shopify SKU
+                        "shopquantity": row.get('shopquantity', row.get('Transaction Quantity', 1)),  # Try shopquantity first, then Transaction Quantity
+                        "externalid": row.get('ordernumber', ''),
+                        "Tags": row.get('Tags', ''),
+                        "MAX PKG NUM": row.get('MAX PKG NUM', ''),
+                        "Fulfillment Center": row.get('Fulfillment Center', '')
+                    }
+                    
+                    # Log if we couldn't find the Shopify SKU
+                    if not shopify_sku:
+                        logger.warning(f"Could not find Shopify SKU for order {row.get('ordernumber', 'unknown')}, using warehouse SKU: {row.get('sku', '')}")
+                        order_data["shopsku"] = row.get('sku', '')  # Fallback to warehouse SKU
+                    
+                    input_orders.append(order_data)
+                except Exception as e:
+                    logger.error(f"Error converting order {row.get('ordernumber', 'unknown')}: {str(e)}")
+                    continue
             
+            # Convert to DataFrame
             result_df = pd.DataFrame(input_orders)
+            
+            # Verify we didn't lose any orders
+            result_order_numbers = set(result_df['ordernumber'].unique())
+            if len(result_order_numbers) != len(processed_order_numbers):
+                logger.warning(f"Order count mismatch: processed={len(processed_order_numbers)}, converted={len(result_order_numbers)}")
+                missing_orders = processed_order_numbers - result_order_numbers
+                if missing_orders:
+                    logger.warning(f"Missing orders: {missing_orders}")
+            
+            # Log SKU mapping statistics
+            original_skus = set(processed_orders_df['sku'].unique())
+            converted_skus = set(result_df['shopsku'].unique())
+            logger.info(f"SKU mapping: original={len(original_skus)}, converted={len(converted_skus)}")
+            
             logger.info(f"Successfully converted {len(processed_orders_df)} processed orders to {len(result_df)} input orders")
             return result_df
             

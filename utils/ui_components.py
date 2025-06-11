@@ -655,18 +655,9 @@ def render_orders_tab(processed_orders, shortage_summary=None):
         
         # Add filters for orders with/without issues
         st.markdown("---")
-        filter_col1, filter_col2 = st.columns(2)
-        
-        with filter_col1:
-            # Filter for orders without issues
-            orders_without_issues = display_orders[display_orders["Issues"] == ""]["ordernumber"].unique()
-            st.metric("✅ Orders Without Issues", f"{len(orders_without_issues):,}")
-            
-        with filter_col2:
-            # Filter for orders with issues
-            orders_with_issues = display_orders[display_orders["Issues"] != ""]["ordernumber"].unique()
-            st.metric("⚠️ Orders With Issues", f"{len(orders_with_issues):,}")
-        
+        orders_without_issues = display_orders[display_orders["Issues"] == ""]["ordernumber"].unique()
+        orders_with_issues = display_orders[display_orders["Issues"] != ""]["ordernumber"].unique()
+
         # Initialize filter state in session state if not exists
         if 'order_filter' not in st.session_state:
             st.session_state.order_filter = 'all'
@@ -674,13 +665,13 @@ def render_orders_tab(processed_orders, shortage_summary=None):
         # Add filter buttons
         filter_col1, filter_col2, filter_col3 = st.columns(3)
         with filter_col1:
-            if st.button("Show All Orders", key="show_all_orders"):
+            if st.button("📊 Show All Orders", key="show_all_orders"):
                 st.session_state.order_filter = 'all'
         with filter_col2:
-            if st.button("Show Orders Without Issues", key="show_without_issues"):
+            if st.button(f"✅ Show Orders Without Issues", key="show_without_issues"):
                 st.session_state.order_filter = 'without_issues'
         with filter_col3:
-            if st.button("Show Orders With Issues", key="show_with_issues"):
+            if st.button(f"⚠️ Show Orders With Issues", key="show_with_issues"):
                 st.session_state.order_filter = 'with_issues'
             
         # Apply filters based on session state
@@ -1068,12 +1059,23 @@ def render_orders_tab(processed_orders, shortage_summary=None):
                                         if 'error' in recalc_result:
                                             st.warning(f"Recalculation: {recalc_result['error']}")
                                         else:
-                                            # Update session state
+                                            # Update session state with recalculated orders
                                             st.session_state.processed_orders = st.session_state.staging_processor.orders_in_processing.copy()
                                             
                                             # Get after state
                                             after_orders = len(st.session_state.staging_processor.orders_in_processing)
                                             after_staged = len(st.session_state.staging_processor.staged_orders)
+                                            
+                                            # Update order counts in session state
+                                            if not st.session_state.processed_orders.empty:
+                                                display_orders = st.session_state.processed_orders[st.session_state.processed_orders['staged'] == False].copy()
+                                                if 'Issues' in display_orders.columns and 'ordernumber' in display_orders.columns:
+                                                    orders_without_issues = display_orders[display_orders["Issues"] == ""]["ordernumber"].unique()
+                                                    orders_with_issues = display_orders[display_orders["Issues"] != ""]["ordernumber"].unique()
+                                                    total_orders = len(display_orders["ordernumber"].unique())
+                                                    st.session_state.orders_without_issues = len(orders_without_issues)
+                                                    st.session_state.orders_with_issues = len(orders_with_issues)
+                                                    st.session_state.total_orders = total_orders
                                             
                                             # Show results
                                             st.success("✅ Smart recalculation completed!")
@@ -1287,46 +1289,39 @@ def render_orders_tab(processed_orders, shortage_summary=None):
             # Quick action buttons
             st.markdown("**🚀 Quick Actions:**")
             
-            if summary['staged_orders'] > 0 and summary['orders_in_processing'] > 0:
-                if st.button("🔄 Go to Recalculation Tab", key="go_to_recalc_tab"):
-                    st.info("💡 Navigate to: **📦 Inventory** → **🔄 Available for Recalculation** tab")
-                    st.caption("This is where you can see available inventory and recalculate orders")
-                
-                if st.button("📝 Go to SKU Mapping", key="go_to_sku_mapping"):
-                    st.info("💡 Navigate to: **⚙️ SKU Mapping** tab")
-                    st.caption("Use the Google Sheets link to edit bundle components before recalculation")
-                    
-                # Quick recalculate button (simplified version)
-                if st.button("⚡ Quick Recalculate Now", key="quick_recalc"):
-                    try:
-                        with st.spinner("Quick recalculating orders..."):
-                            recalc_result = st.session_state.staging_processor.recalculate_orders_with_updated_inventory()
+            # Quick recalculate button (simplified version)
+            if st.button("⚡ Quick Recalculate Now", key="quick_recalc"):
+                try:
+                    with st.spinner("Quick recalculating orders with latest SKU mappings..."):
+                        recalc_result = st.session_state.staging_processor.recalculate_orders_with_updated_inventory()
+                        
+                        if 'error' in recalc_result:
+                            st.error(f"Recalculation failed: {recalc_result['error']}")
+                        else:
+                            # Update session state
+                            st.session_state.processed_orders = st.session_state.staging_processor.orders_in_processing.copy()
                             
-                            if 'error' in recalc_result:
-                                st.error(f"Recalculation failed: {recalc_result['error']}")
-                            else:
-                                # Update session state
-                                st.session_state.processed_orders = st.session_state.staging_processor.orders_in_processing.copy()
-                                
-                                # Add the staged flag back and combine with staged orders
-                                if 'staged' not in st.session_state.processed_orders.columns:
-                                    st.session_state.processed_orders['staged'] = False
-                                
+                            # Add the staged flag back and combine with staged orders
+                            if 'staged' not in st.session_state.processed_orders.columns:
+                                st.session_state.processed_orders['staged'] = False
+                            
+                            # Add staged orders if they exist, avoiding duplicates
+                            if hasattr(st.session_state.staging_processor, 'staged_orders') and not st.session_state.staging_processor.staged_orders.empty:
                                 staged_df = st.session_state.staging_processor.staged_orders.copy()
-                                if not staged_df.empty:
-                                    staged_df['staged'] = True
-                                    st.session_state.processed_orders = pd.concat([
-                                        st.session_state.processed_orders, 
-                                        staged_df
-                                    ], ignore_index=True)
+                                staged_df['staged'] = True
                                 
-                                st.success("✅ Quick recalculation completed!")
-                                st.rerun()
-                                
-                    except Exception as e:
-                        st.error(f"Error during quick recalculation: {e}")
-            else:
-                st.caption("Stage orders first to enable recalculation actions")
+                                # Combine and remove duplicates properly
+                                combined = pd.concat([st.session_state.processed_orders, staged_df], ignore_index=True)
+                                # Remove duplicates by ordernumber and sku, keeping staged version if present
+                                combined = combined.sort_values('staged', ascending=False)
+                                combined = combined.drop_duplicates(subset=['ordernumber', 'sku'], keep='first')
+                                st.session_state.processed_orders = combined.reset_index(drop=True)
+                            
+                            st.success("✅ Quick recalculation completed!")
+                            st.rerun()
+                except Exception as e:
+                    st.error(f"Error during quick recalculation: {e}")
+
                 
     else:
         st.warning("⚠️ Recalculation not available. Please upload and process files first.")
@@ -1524,6 +1519,12 @@ def render_inventory_tab(shortage_summary, grouped_shortage_summary, initial_inv
                             # Perform recalculation
                             try:
                                 with st.spinner("Recalculating orders with Available for Recalculation inventory..."):
+                                    # First reload SKU mappings
+                                    if hasattr(st.session_state, 'staging_processor') and st.session_state.staging_processor:
+                                        st.session_state.staging_processor.load_sku_mappings()
+                                        st.session_state.sku_mappings = st.session_state.staging_processor.sku_mappings
+                                    
+                                    # Then perform recalculation
                                     recalc_result = st.session_state.staging_processor.recalculate_orders_with_updated_inventory()
                                     
                                     if 'error' in recalc_result:
