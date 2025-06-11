@@ -2,10 +2,11 @@ import json
 import logging
 import os
 import sys
+import traceback
 
 import pandas as pd
 import streamlit as st
-
+logger = logging.getLogger(__name__)
 # Add project root to path to allow importing constants
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -971,7 +972,7 @@ class DataProcessor:
                 logger.debug(f"Processing bundle SKU: {shopify_sku}")
                 bundle_components = bundle_info_dict[fc_key][shopify_sku]
                 output_df = self._process_bundle_order(
-                    order_data, bundle_components, shop_quantity, inventory_df,
+                    order_data, bundle_components, shop_quantity, current_inventory_df,
                     running_balances, all_shortages, shortage_tracker, output_df,
                     sku_mappings, fc_key, row
                 )
@@ -980,7 +981,7 @@ class DataProcessor:
                 # For individual items, process directly without old weight data lookup
                 logger.debug(f"Processing single SKU: {shopify_sku}")
                 output_df = self._process_single_sku_order(
-                    order_data, shopify_sku, shop_quantity, inventory_df,
+                    order_data, shopify_sku, shop_quantity, current_inventory_df,
                     running_balances, all_shortages, shortage_tracker, output_df,
                     sku_mappings, fc_key, row
                 )
@@ -1213,30 +1214,28 @@ class DataProcessor:
         elif inventory_base_option == "inventory_minus_staged":
             logger.info("Calculating inventory minus staged orders as base.")
             try:
-                # calculate_inventory_minus_staged returns a dict: {sku|warehouse: balance}
-                inv_minus_staged_dict = self.calculate_inventory_minus_staged()
-                if not isinstance(inv_minus_staged_dict, dict):
-                    logger.error(f"calculate_inventory_minus_staged did not return a dict, got {type(inv_minus_staged_dict)}. "
+                # calculate_inventory_minus_staged now returns a DataFrame directly
+                inv_minus_staged_df = self.calculate_inventory_minus_staged()
+                if not isinstance(inv_minus_staged_df, pd.DataFrame):
+                    logger.error(f"calculate_inventory_minus_staged did not return a DataFrame, got {type(inv_minus_staged_df)}. "
                                  "Returning empty DataFrame.")
                     return empty_inventory_df
 
-                records = []
-                for key, balance in inv_minus_staged_dict.items():
-                    parts = key.split('|')
-                    if len(parts) == 2:
-                        sku, warehouse = parts
-                        records.append({'sku': sku, 'warehouse': warehouse, 'balance': balance})
-                    else:
-                        logger.warning(f"Skipping malformed key in inv_minus_staged_dict: {key}")
-                if not records:
-                    logger.info("No records to form inventory_minus_staged DataFrame. Might be no staged orders or no inventory. Returning empty DataFrame.")
+                if inv_minus_staged_df.empty:
+                    logger.warning("No inventory data available after subtracting staged orders. Returning empty DataFrame.")
                     return empty_inventory_df
-                df = pd.DataFrame(records)
-                # Standardize column names to capitalized for downstream compatibility
-                df = df.rename(columns={'sku': 'Sku', 'warehouse': 'WarehouseName', 'balance': 'Balance'})
-                return df
+
+                # Verify required columns exist
+                required_cols = {'Sku', 'WarehouseName', 'Balance'}
+                if not all(col in inv_minus_staged_df.columns for col in required_cols):
+                    logger.error(f"Missing required columns in inventory_minus_staged DataFrame. "
+                                f"Required: {required_cols}, Got: {list(inv_minus_staged_df.columns)}")
+                    return empty_inventory_df
+
+                return inv_minus_staged_df
+
             except Exception as e:
-                logger.error(f"Error calculating or converting inventory_minus_staged: {e}. Returning empty DataFrame.")
+                logger.error(f"Error calculating inventory_minus_staged: {e}. Returning empty DataFrame.")
                 return empty_inventory_df
         
         else:
@@ -1420,11 +1419,11 @@ class DataProcessor:
         
         return order_data
 
-    def _process_bundle_order(self, order_data, bundle_components, shop_quantity, inventory_df,
+    def _process_bundle_order(self, order_data, bundle_components, shop_quantity, current_inventory_df,
                              running_balances, all_shortages, shortage_tracker, output_df,
                              sku_mappings, fc_key, row):
         """Process a bundle order by handling each component"""
-        sku_column, balance_column = self._find_sku_columns(inventory_df)
+        sku_column, balance_column = self._find_sku_columns(current_inventory_df)
         if not sku_column:
             return output_df
 
@@ -1486,7 +1485,7 @@ class DataProcessor:
 
             # Get current balance and process allocation
             current_balance = self._get_current_balance(
-                component_inventory_sku, fc_key, running_balances, inventory_df, sku_column, balance_column
+                component_inventory_sku, fc_key, running_balances, current_inventory_df, sku_column, balance_column
             )
 
             # Check for shortages and allocate
@@ -1502,11 +1501,11 @@ class DataProcessor:
         
         return output_df
 
-    def _process_single_sku_order(self, order_data, shopify_sku, shop_quantity, inventory_df,
+    def _process_single_sku_order(self, order_data, shopify_sku, shop_quantity, current_inventory_df,
                                  running_balances, all_shortages, shortage_tracker, output_df,
                                  sku_mappings, fc_key, row) -> pd.DataFrame:
         """Process a single SKU order"""
-        sku_column, balance_column = self._find_sku_columns(inventory_df)
+        sku_column, balance_column = self._find_sku_columns(current_inventory_df)
         if not sku_column:
             return output_df
 
@@ -1556,7 +1555,7 @@ class DataProcessor:
 
         # Get current balance and process allocation
         current_balance = self._get_current_balance(
-            inventory_sku, fc_key, running_balances, inventory_df, sku_column, balance_column
+            inventory_sku, fc_key, running_balances, current_inventory_df, sku_column, balance_column
         )
 
         # Check for shortages and allocate
@@ -1648,7 +1647,9 @@ class DataProcessor:
             DataFrame: Comparison of inventory levels before and after processing
         """
         import pandas as pd
-        
+        if inventory_df is None:
+            logger.error("generate_inventory_comparison: inventory_df is None")
+            return pd.DataFrame()
         # Find the SKU column with case-insensitive matching
         sku_column = None
         for col in inventory_df.columns:
@@ -2931,14 +2932,17 @@ class DataProcessor:
             inventory_df (DataFrame, optional): Initial inventory. Uses self.initial_inventory if not provided
             
         Returns:
-            dict: Dictionary of {sku|warehouse: available_balance}
+            DataFrame: DataFrame with Sku, WarehouseName, Balance columns
         """
         if inventory_df is None:
+            if not hasattr(self, 'initial_inventory') or self.initial_inventory is None:
+                logger.error("No initial inventory available")
+                return pd.DataFrame(columns=['Sku', 'WarehouseName', 'Balance'])
             inventory_df = self.initial_inventory
             
-        if inventory_df.empty:
-            logger.warning("No initial inventory available")
-            return {}
+        if not isinstance(inventory_df, pd.DataFrame) or inventory_df.empty:
+            logger.warning("No valid initial inventory available")
+            return pd.DataFrame(columns=['Sku', 'WarehouseName', 'Balance'])
             
         # Start with initial inventory balances
         available_inventory = {}
@@ -2947,7 +2951,7 @@ class DataProcessor:
         sku_column, balance_column = self._find_sku_columns(inventory_df)
         if not sku_column or not balance_column:
             logger.error("Could not find SKU or balance columns in inventory")
-            return {}
+            return pd.DataFrame(columns=['Sku', 'WarehouseName', 'Balance'])
             
         # Find warehouse column - try multiple possible names
         warehouse_column = None
@@ -2959,7 +2963,7 @@ class DataProcessor:
         if not warehouse_column:
             logger.error("Could not find warehouse column in inventory DataFrame")
             logger.debug(f"Available columns: {list(inventory_df.columns)}")
-            return {}
+            return pd.DataFrame(columns=['Sku', 'WarehouseName', 'Balance'])
             
         # Initialize with initial inventory
         for _, row in inventory_df.iterrows():
@@ -2971,7 +2975,7 @@ class DataProcessor:
             available_inventory[composite_key] = balance
             
         # Subtract staged order quantities
-        if not self.staged_orders.empty:
+        if hasattr(self, 'staged_orders') and isinstance(self.staged_orders, pd.DataFrame) and not self.staged_orders.empty:
             for _, staged_order in self.staged_orders.iterrows():
                 sku = staged_order.get('sku', '')
                 warehouse = self.normalize_warehouse_name(staged_order.get('Fulfillment Center', 'Oxnard'))
@@ -2980,8 +2984,23 @@ class DataProcessor:
                 composite_key = f"{sku}|{warehouse}"
                 if composite_key in available_inventory:
                     available_inventory[composite_key] -= quantity
-                    
-        return available_inventory
+        
+        # Convert dictionary to DataFrame
+        records = []
+        for key, balance in available_inventory.items():
+            if '|' in key:
+                sku, warehouse = key.split('|')
+                records.append({
+                    'Sku': sku,
+                    'WarehouseName': warehouse,
+                    'Balance': balance
+                })
+        
+        result_df = pd.DataFrame(records)
+        if result_df.empty:
+            result_df = pd.DataFrame(columns=['Sku', 'WarehouseName', 'Balance'])
+        
+        return result_df
     
     def unstage_selected_orders(self, order_indices, staged_orders_df=None):
         """
@@ -3079,15 +3098,60 @@ class DataProcessor:
         Returns:
             dict: Recalculated orders and inventory data with detailed results
         """
-        if self.orders_in_processing.empty:
-            return {"error": "No orders in processing to recalculate"}
+        logger.info("Starting recalculation process...")
         
-        # Defensive check for initial_inventory
-        if self.initial_inventory is None or not isinstance(self.initial_inventory, pd.DataFrame) or self.initial_inventory.empty:
-            return {"error": "Initial inventory is not loaded or is empty. Please upload inventory and re-initialize workflow."}
+        # Check if we have orders to recalculate
+        if not hasattr(self, 'orders_in_processing'):
+            logger.error("orders_in_processing attribute not found")
+            return {"error": "No orders in processing to recalculate"}
+            
+        if self.orders_in_processing is None:
+            logger.error("orders_in_processing is None")
+            return {"error": "No orders in processing to recalculate"}
+            
+        if self.orders_in_processing.empty:
+            logger.error("orders_in_processing is empty")
+            return {"error": "No orders in processing to recalculate"}
+            
+        logger.info(f"Found {len(self.orders_in_processing)} orders to recalculate")
+        
+        # Check if we have initial inventory
+        if not hasattr(self, 'initial_inventory'):
+            logger.error("initial_inventory attribute not found")
+            if hasattr(st.session_state, 'initial_inventory') and st.session_state.initial_inventory is not None:
+                logger.info("Found initial_inventory in session state, using that")
+                self.initial_inventory = st.session_state.initial_inventory
+            else:
+                return {"error": "Initial inventory is not loaded. Please upload inventory and re-initialize workflow."}
+        
+        if self.initial_inventory is None:
+            logger.error("initial_inventory is None")
+            return {"error": "Initial inventory is not loaded. Please upload inventory and re-initialize workflow."}
+        
+        # Validate initial inventory
+        if not isinstance(self.initial_inventory, pd.DataFrame):
+            logger.error(f"initial_inventory is not a DataFrame, got {type(self.initial_inventory)}")
+            return {"error": "Initial inventory is empty or invalid. Please upload inventory and re-initialize workflow."}
+            
+        if self.initial_inventory.empty:
+            logger.error("initial_inventory DataFrame is empty")
+            return {"error": "Initial inventory is empty or invalid. Please upload inventory and re-initialize workflow."}
+            
+        logger.info(f"Initial inventory validated: {len(self.initial_inventory)} rows with columns: {list(self.initial_inventory.columns)}")
+        
+        # Check if we have staged orders
+        if not hasattr(self, 'staged_orders'):
+            logger.info("staged_orders attribute not found, initializing empty DataFrame")
+            self.staged_orders = pd.DataFrame()
+        elif self.staged_orders is None:
+            logger.info("staged_orders is None, initializing empty DataFrame")
+            self.staged_orders = pd.DataFrame()
+            
+        logger.info(f"Staged orders status: {len(self.staged_orders)} orders")
         
         # Update SKU mappings if provided
         if sku_mappings_updates:
+            logger.info("Updating SKU mappings")
             self.update_sku_mappings(sku_mappings_updates)
         
         # Get before-recalculation state for comparison
@@ -3096,49 +3160,90 @@ class DataProcessor:
             "staged_orders": len(self.staged_orders),
             "total_orders": len(self.orders_in_processing) + len(self.staged_orders)
         }
+        logger.info(f"Before recalculation state: {before_state}")
         
         # Convert orders in processing back to input format
         try:
+            logger.info("Converting orders in processing to input format...")
             orders_input = self._convert_processed_orders_to_input_format(self.orders_in_processing)
+            
             if orders_input is None:
-                logger.error("orders_input is None, using empty DataFrame with order columns.")
+                logger.error("_convert_processed_orders_to_input_format returned None")
+                logger.info("Creating empty DataFrame with order columns")
                 orders_input = pd.DataFrame(columns=[
-                    "order id", "externalorderid", "ordernumber", "CustomerFirstName", "customerLastname", "customeremail", "customerphone", "shiptoname", "shiptostreet1", "shiptostreet2", "shiptocity", "shiptostate", "shiptopostalcode", "note", "placeddate", "preferredcarrierserviceid", "totalorderamount", "shopsku", "shopquantity", "externalid", "Tags", "MAX PKG NUM", "Fulfillment Center"
+                    "order id", "externalorderid", "ordernumber", "CustomerFirstName", "customerLastname", 
+                    "customeremail", "customerphone", "shiptoname", "shiptostreet1", "shiptostreet2", 
+                    "shiptocity", "shiptostate", "shiptopostalcode", "note", "placeddate", 
+                    "preferredcarrierserviceid", "totalorderamount", "shopsku", "shopquantity", 
+                    "externalid", "Tags", "MAX PKG NUM", "Fulfillment Center"
                 ])
+                
             if orders_input.empty:
+                logger.error("Converted orders_input is empty")
                 return {"error": "Failed to convert orders to input format - result is None or empty"}
-            logger.info(f"Converted {len(self.orders_in_processing)} processed orders to {len(orders_input)} input orders")
+                
+            logger.info(f"Successfully converted {len(self.orders_in_processing)} processed orders to {len(orders_input)} input orders")
+            logger.debug(f"Input orders columns: {list(orders_input.columns)}")
+            
         except Exception as e:
-            logger.error(f"Error converting processed orders to input format: {e}")
+            logger.error(f"Error converting processed orders to input format: {str(e)}")
+            logger.error(f"Error type: {type(e)}")
+            logger.error(f"Error traceback: {traceback.format_exc()}")
             return {"error": f"Failed to convert orders to input format: {str(e)}"}
         
         # Reprocess orders with inventory minus staged and updated mappings
-        logger.info(f"Recalculating {len(orders_input)} orders using 'inventory_minus_staged' base.")
+        logger.info(f"Recalculating {len(orders_input)} orders using 'inventory_minus_staged' base")
         try:
+            # Get inventory base before processing
+            inventory_base = self._get_inventory_base("inventory_minus_staged")
+            logger.info(f"Got inventory base: type={type(inventory_base)}, "
+                       f"is_none={inventory_base is None}, "
+                       f"columns={getattr(inventory_base, 'columns', None)}, "
+                       f"rows={len(inventory_base) if isinstance(inventory_base, pd.DataFrame) else 'N/A'}")
+            
             recalculated_data = self.process_orders(
                 orders_df=orders_input,
                 inventory_base="inventory_minus_staged", # Use available inventory
                 sku_mappings=self.sku_mappings # Use updated mappings
             )
             
+            logger.info(f"process_orders returned: type={type(recalculated_data)}, "
+                       f"keys={list(recalculated_data.keys()) if isinstance(recalculated_data, dict) else 'N/A'}")
+            
             # Check if process_orders returned valid data
-            if not recalculated_data or 'orders' not in recalculated_data:
+            if not recalculated_data:
+                logger.error("process_orders returned empty data")
+                return {"error": "process_orders returned no data"}
+                
+            if not isinstance(recalculated_data, dict):
+                logger.error(f"process_orders returned non-dict type: {type(recalculated_data)}")
+                return {"error": "process_orders returned invalid data type"}
+                
+            if 'orders' not in recalculated_data:
+                logger.error(f"process_orders result missing 'orders' key. Available keys: {list(recalculated_data.keys())}")
                 return {"error": "process_orders returned no data or missing 'orders' key"}
             
             if recalculated_data['orders'] is None:
+                logger.error("process_orders returned None for orders")
                 return {"error": "process_orders returned None for orders"}
             
             # Update orders in processing with recalculated results
             if 'orders' in recalculated_data and recalculated_data['orders'] is not None:
+                logger.info("Updating orders in processing with recalculated results")
                 self.orders_in_processing = recalculated_data['orders'].copy()
                 
                 # Ensure staged column exists and is set correctly
                 if 'staged' not in self.orders_in_processing.columns:
+                    logger.info("Adding 'staged' column to orders_in_processing")
                     self.orders_in_processing['staged'] = False
                 else:
                     # Make sure all recalculated orders are marked as not staged
+                    logger.info("Setting all recalculated orders as not staged")
                     self.orders_in_processing['staged'] = False
+                    
+                logger.info(f"Updated orders_in_processing: {len(self.orders_in_processing)} rows")
             else:
+                logger.error("Recalculated orders data is None or missing")
                 return {"error": "Recalculated orders data is None or missing"}
             
             # Get after-recalculation state
@@ -3147,6 +3252,7 @@ class DataProcessor:
                 "staged_orders": len(self.staged_orders),
                 "total_orders": len(self.orders_in_processing) + len(self.staged_orders)
             }
+            logger.info(f"After recalculation state: {after_state}")
             
             # Add recalculation summary to the results
             recalculated_data['recalculation_summary'] = {
@@ -3159,11 +3265,13 @@ class DataProcessor:
                 }
             }
             
-            logger.info(f"Recalculation completed: {before_state['orders_in_processing']} orders recalculated")
+            logger.info(f"Recalculation completed successfully: {before_state['orders_in_processing']} orders recalculated")
             return recalculated_data
             
         except Exception as e:
-            logger.error(f"Error during recalculation: {e}")
+            logger.error(f"Error during recalculation: {str(e)}")
+            logger.error(f"Error type: {type(e)}")
+            logger.error(f"Error traceback: {traceback.format_exc()}")
             return {"error": f"Recalculation failed: {str(e)}"}
     
     def get_debug_inventory_state(self):
@@ -3253,7 +3361,14 @@ class DataProcessor:
             input_orders = []
             
             # Ensure required columns exist
-            required_cols = ['order id', 'ordernumber', 'shopifysku2']
+            required_cols = [
+                'order id', 'externalorderid', 'ordernumber', 'CustomerFirstName', 
+                'customerLastname', 'customeremail', 'customerphone', 'shiptoname', 
+                'shiptostreet1', 'shiptostreet2', 'shiptocity', 'shiptostate', 
+                'shiptopostalcode', 'note', 'placeddate', 'preferredcarrierserviceid', 
+                'totalorderamount', 'shopifysku2', 'shopquantity', 'externalid', 
+                'Tags', 'MAX PKG NUM', 'Fulfillment Center'
+            ]
             missing_cols = [col for col in required_cols if col not in processed_orders_df.columns]
             if missing_cols:
                 logger.error(f"Missing required columns for conversion: {missing_cols}")
@@ -3400,25 +3515,56 @@ class DataProcessor:
         Returns:
             dict: Various inventory views
         """
-        # Calculate inventory minus orders in processing
-        inventory_minus_processing = self._calculate_inventory_minus_orders(self.orders_in_processing)
-        
-        # Calculate inventory minus staged orders
-        inventory_minus_staged = self.calculate_inventory_minus_staged()
-        
-        # Calculate staging summary
-        staging_summary = {
-            "orders_in_processing": len(self.orders_in_processing),
-            "staged_orders": len(self.staged_orders),
-            "total_orders": len(self.orders_in_processing) + len(self.staged_orders)
-        }
-        
-        return {
-            "initial_inventory": self.initial_inventory,
-            "inventory_minus_processing": inventory_minus_processing,
-            "inventory_minus_staged": inventory_minus_staged,
-            "staging_summary": staging_summary
-        }
+        try:
+            # Calculate inventory minus orders in processing
+            inventory_minus_processing = self._calculate_inventory_minus_orders(self.orders_in_processing)
+            
+            # Calculate inventory minus staged orders
+            inventory_minus_staged = self.calculate_inventory_minus_staged()
+            
+            # Ensure inventory_minus_staged is a DataFrame
+            if not isinstance(inventory_minus_staged, pd.DataFrame):
+                if isinstance(inventory_minus_staged, dict):
+                    # Convert dictionary to DataFrame
+                    records = []
+                    for key, balance in inventory_minus_staged.items():
+                        if '|' in key:
+                            sku, warehouse = key.split('|')
+                            records.append({
+                                'Sku': sku,
+                                'WarehouseName': warehouse,
+                                'Balance': balance
+                            })
+                    inventory_minus_staged = pd.DataFrame(records)
+                else:
+                    inventory_minus_staged = pd.DataFrame(columns=['Sku', 'WarehouseName', 'Balance'])
+            
+            # Calculate staging summary
+            staging_summary = {
+                "orders_in_processing": len(self.orders_in_processing) if hasattr(self, 'orders_in_processing') and isinstance(self.orders_in_processing, pd.DataFrame) else 0,
+                "staged_orders": len(self.staged_orders) if hasattr(self, 'staged_orders') and isinstance(self.staged_orders, pd.DataFrame) else 0,
+                "total_orders": 0  # Will be calculated below
+            }
+            staging_summary["total_orders"] = staging_summary["orders_in_processing"] + staging_summary["staged_orders"]
+            
+            return {
+                "initial_inventory": self.initial_inventory if hasattr(self, 'initial_inventory') else pd.DataFrame(),
+                "inventory_minus_processing": inventory_minus_processing,
+                "inventory_minus_staged": inventory_minus_staged,
+                "staging_summary": staging_summary
+            }
+        except Exception as e:
+            logger.error(f"Error in get_inventory_calculations: {str(e)}")
+            return {
+                "initial_inventory": pd.DataFrame(),
+                "inventory_minus_processing": {},
+                "inventory_minus_staged": pd.DataFrame(columns=['Sku', 'WarehouseName', 'Balance']),
+                "staging_summary": {
+                    "orders_in_processing": 0,
+                    "staged_orders": 0,
+                    "total_orders": 0
+                }
+            }
     
     def get_bundle_availability_analysis(self, bundle_skus):
         """
@@ -3516,7 +3662,7 @@ class DataProcessor:
         Returns:
             dict: Dictionary of {sku|warehouse: remaining_balance}
         """
-        if self.initial_inventory.empty:
+        if not hasattr(self, 'initial_inventory') or not isinstance(self.initial_inventory, pd.DataFrame) or self.initial_inventory.empty:
             return {}
             
         # Start with initial inventory
@@ -3532,7 +3678,7 @@ class DataProcessor:
             remaining_inventory[composite_key] = balance
             
         # Subtract order quantities
-        if not orders_df.empty:
+        if isinstance(orders_df, pd.DataFrame) and not orders_df.empty:
             for _, order in orders_df.iterrows():
                 sku = order.get('sku', '')
                 warehouse = self.normalize_warehouse_name(order.get('Fulfillment Center', 'Oxnard'))
@@ -3543,7 +3689,7 @@ class DataProcessor:
                     remaining_inventory[composite_key] -= quantity
                     
         return remaining_inventory
-    
+
     def get_available_inventory_for_recalculation(self):
         """
         Get a clear view of available inventory for recalculation (Initial - Staged).
@@ -3555,25 +3701,35 @@ class DataProcessor:
             # Calculate inventory minus staged orders
             available_inventory = self.calculate_inventory_minus_staged()
             
-            # Generate summary statistics
-            total_items = len(available_inventory)
-            available_items = sum(1 for balance in available_inventory.values() if balance > 0)
-            out_of_stock_items = sum(1 for balance in available_inventory.values() if balance == 0)
-            oversold_items = sum(1 for balance in available_inventory.values() if balance < 0)
-            total_available_balance = sum(max(0, balance) for balance in available_inventory.values())
-            total_oversold_balance = sum(min(0, balance) for balance in available_inventory.values())
-            
-            # Convert to list format for easier display
-            inventory_list = []
-            for key, balance in available_inventory.items():
-                if "|" in key:
-                    sku, warehouse = key.split("|", 1)
-                    inventory_list.append({
-                        "sku": sku,
-                        "warehouse": warehouse,
-                        "available_balance": balance,
-                        "status": "available" if balance > 0 else "out_of_stock" if balance == 0 else "oversold"
-                    })
+            # Handle DataFrame case
+            if isinstance(available_inventory, pd.DataFrame) and not available_inventory.empty:
+                # Generate summary statistics from DataFrame
+                total_items = len(available_inventory)
+                available_items = sum(1 for balance in available_inventory['Balance'] if isinstance(balance, (int, float)) and balance > 0)
+                out_of_stock_items = sum(1 for balance in available_inventory['Balance'] if isinstance(balance, (int, float)) and balance == 0)
+                oversold_items = sum(1 for balance in available_inventory['Balance'] if isinstance(balance, (int, float)) and balance < 0)
+                total_available_balance = sum(max(0, balance) for balance in available_inventory['Balance'] if isinstance(balance, (int, float)))
+                total_oversold_balance = sum(min(0, balance) for balance in available_inventory['Balance'] if isinstance(balance, (int, float)))
+                
+                # Convert to list format for easier display
+                inventory_list = []
+                for _, row in available_inventory.iterrows():
+                    if isinstance(row['Balance'], (int, float)):
+                        inventory_list.append({
+                            "sku": row['Sku'],
+                            "warehouse": row['WarehouseName'],
+                            "available_balance": row['Balance'],
+                            "status": "available" if row['Balance'] > 0 else "out_of_stock" if row['Balance'] == 0 else "oversold"
+                        })
+            else:
+                # Fallback for empty or invalid data
+                total_items = 0
+                available_items = 0
+                out_of_stock_items = 0
+                oversold_items = 0
+                total_available_balance = 0
+                total_oversold_balance = 0
+                inventory_list = []
             
             return {
                 "inventory_items": inventory_list,
