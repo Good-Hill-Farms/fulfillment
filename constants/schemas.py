@@ -38,7 +38,7 @@ class OrderItem(BaseModel):
     tags: str = Field(alias="Tags", default="")
     
     class Config:
-        allow_population_by_field_name = True
+        populate_by_name = True
 
 
 class InventoryItem(BaseModel):
@@ -52,7 +52,7 @@ class InventoryItem(BaseModel):
     balance: float = Field(alias="Balance", default=0)
     
     class Config:
-        allow_population_by_field_name = True
+        populate_by_name = True
 
 
 class BundleComponent(BaseModel):
@@ -213,7 +213,7 @@ class InventoryComparison(BaseModel):
     is_used_in_bundle: bool = Field(alias="Is Used In Bundle")
     
     class Config:
-        allow_population_by_field_name = True
+        populate_by_name = True
 
 
 # --- Legacy Models for Airtable Integration ---

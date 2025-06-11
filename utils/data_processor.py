@@ -12,7 +12,19 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from constants.schemas import SchemaManager
 from utils.data_parser import DataParser
 from utils.airtable_handler import AirtableHandler
-from utils.google_sheets import load_sku_mappings_from_sheets
+
+# Optional Google Sheets import - make it conditional
+try:
+    from utils.google_sheets import load_sku_mappings_from_sheets
+    GOOGLE_SHEETS_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Google Sheets integration not available: {e}")
+    GOOGLE_SHEETS_AVAILABLE = False
+    
+    def load_sku_mappings_from_sheets():
+        """Fallback function when Google Sheets is not available"""
+        logger.warning("Google Sheets integration not available - using fallback empty mappings")
+        return {"Oxnard": {"singles": {}, "bundles": {}}, "Wheeling": {"singles": {}, "bundles": {}}}
 
 logger = logging.getLogger(__name__)
 
@@ -2928,10 +2940,22 @@ class DataProcessor:
             logger.error("Could not find SKU or balance columns in inventory")
             return {}
             
+        # Find warehouse column - try multiple possible names
+        warehouse_column = None
+        for possible_col in ['warehouse', 'WarehouseName', 'Warehouse', 'warehouse_name']:
+            if possible_col in inventory_df.columns:
+                warehouse_column = possible_col
+                break
+        
+        if not warehouse_column:
+            logger.error("Could not find warehouse column in inventory DataFrame")
+            logger.debug(f"Available columns: {list(inventory_df.columns)}")
+            return {}
+            
         # Initialize with initial inventory
         for _, row in inventory_df.iterrows():
             sku = row[sku_column]
-            warehouse = self.normalize_warehouse_name(row.get('WarehouseName', 'Oxnard'))
+            warehouse = self.normalize_warehouse_name(row.get(warehouse_column, 'Oxnard'))
             balance = float(row[balance_column]) if pd.notna(row[balance_column]) else 0
             
             composite_key = f"{sku}|{warehouse}"
@@ -3038,12 +3062,13 @@ class DataProcessor:
     def recalculate_orders_with_updated_inventory(self, sku_mappings_updates=None):
         """
         Recalculate orders in processing using updated SKU mappings and inventory minus staged orders.
+        Enhanced version with better state management and error handling.
         
         Args:
             sku_mappings_updates (dict, optional): Updated SKU mappings to apply
             
         Returns:
-            dict: Recalculated orders and inventory data
+            dict: Recalculated orders and inventory data with detailed results
         """
         if self.orders_in_processing.empty:
             return {"error": "No orders in processing to recalculate"}
@@ -3052,20 +3077,280 @@ class DataProcessor:
         if sku_mappings_updates:
             self.update_sku_mappings(sku_mappings_updates)
             
+        # Get before-recalculation state for comparison
+        before_state = {
+            "orders_in_processing": len(self.orders_in_processing),
+            "staged_orders": len(self.staged_orders),
+            "total_orders": len(self.orders_in_processing) + len(self.staged_orders)
+        }
+        
         # Convert orders in processing back to input format
-        orders_input = self._convert_processed_orders_to_input_format(self.orders_in_processing)
+        try:
+            orders_input = self._convert_processed_orders_to_input_format(self.orders_in_processing)
+            
+            if orders_input is None or orders_input.empty:
+                return {"error": "Failed to convert orders to input format - result is None or empty"}
+            
+            logger.info(f"Converted {len(self.orders_in_processing)} processed orders to {len(orders_input)} input orders")
+            
+        except Exception as e:
+            logger.error(f"Error converting processed orders to input format: {e}")
+            return {"error": f"Failed to convert orders to input format: {str(e)}"}
         
         # Reprocess orders with inventory minus staged and updated mappings
         logger.info(f"Recalculating {len(orders_input)} orders using 'inventory_minus_staged' base.")
-        recalculated_data = self.process_orders(
-            orders_df=orders_input,
-            inventory_base="inventory_minus_staged", # Let process_orders handle fetching this inventory
-            sku_mappings=self.sku_mappings # Use updated mappings
-        )
-        # Update orders in processing
-        self.orders_in_processing = recalculated_data['orders']
+        try:
+            recalculated_data = self.process_orders(
+                orders_df=orders_input,
+                inventory_base="inventory_minus_staged", # Use available inventory
+                sku_mappings=self.sku_mappings # Use updated mappings
+            )
+            
+            # Check if process_orders returned valid data
+            if not recalculated_data or 'orders' not in recalculated_data:
+                return {"error": "process_orders returned no data or missing 'orders' key"}
+            
+            if recalculated_data['orders'] is None:
+                return {"error": "process_orders returned None for orders"}
+            
+            # Update orders in processing with recalculated results
+            if 'orders' in recalculated_data and recalculated_data['orders'] is not None:
+                self.orders_in_processing = recalculated_data['orders'].copy()
+                
+                # Ensure staged column exists and is set correctly
+                if 'staged' not in self.orders_in_processing.columns:
+                    self.orders_in_processing['staged'] = False
+                else:
+                    # Make sure all recalculated orders are marked as not staged
+                    self.orders_in_processing['staged'] = False
+            else:
+                return {"error": "Recalculated orders data is None or missing"}
+            
+            # Get after-recalculation state
+            after_state = {
+                "orders_in_processing": len(self.orders_in_processing),
+                "staged_orders": len(self.staged_orders),
+                "total_orders": len(self.orders_in_processing) + len(self.staged_orders)
+            }
+            
+            # Add recalculation summary to the results
+            recalculated_data['recalculation_summary'] = {
+                "before": before_state,
+                "after": after_state,
+                "changes": {
+                    "orders_recalculated": before_state["orders_in_processing"],
+                    "new_shortages": len(recalculated_data.get('shortage_summary', [])),
+                    "inventory_base_used": "inventory_minus_staged"
+                }
+            }
+            
+            logger.info(f"Recalculation completed: {before_state['orders_in_processing']} orders recalculated")
+            return recalculated_data
+            
+        except Exception as e:
+            logger.error(f"Error during recalculation: {e}")
+            return {"error": f"Recalculation failed: {str(e)}"}
+    
+    def get_debug_inventory_state(self):
+        """
+        Get detailed debugging information about inventory state for troubleshooting.
         
-        return recalculated_data
+        Returns:
+            dict: Comprehensive debug information about inventory states
+        """
+        debug_info = {
+            "timestamp": pd.Timestamp.now().isoformat(),
+            "workflow_state": {
+                "orders_in_processing": len(self.orders_in_processing),
+                "staged_orders": len(self.staged_orders),
+                "initial_inventory_rows": len(self.initial_inventory) if hasattr(self, 'initial_inventory') else 0
+            }
+        }
+        
+        try:
+            # Get initial inventory info
+            if hasattr(self, 'initial_inventory') and not self.initial_inventory.empty:
+                debug_info["initial_inventory"] = {
+                    "total_items": len(self.initial_inventory),
+                    "columns": list(self.initial_inventory.columns),
+                    "sample_data": self.initial_inventory.head(5).to_dict('records'),
+                    "warehouses": self.initial_inventory['warehouse'].unique().tolist() if 'warehouse' in self.initial_inventory.columns else []
+                }
+            else:
+                debug_info["initial_inventory"] = {"error": "No initial inventory data available"}
+            
+            # Get staged orders info
+            if not self.staged_orders.empty:
+                debug_info["staged_orders"] = {
+                    "total_orders": len(self.staged_orders),
+                    "columns": list(self.staged_orders.columns),
+                    "sample_data": self.staged_orders.head(3).to_dict('records'),
+                    "fulfillment_centers": self.staged_orders['Fulfillment Center'].unique().tolist() if 'Fulfillment Center' in self.staged_orders.columns else []
+                }
+            else:
+                debug_info["staged_orders"] = {"total_orders": 0, "message": "No staged orders"}
+            
+            # Get inventory minus staged calculation
+            inventory_minus_staged = self.calculate_inventory_minus_staged()
+            debug_info["inventory_minus_staged"] = {
+                "total_items": len(inventory_minus_staged),
+                "positive_balance_items": sum(1 for balance in inventory_minus_staged.values() if balance > 0),
+                "zero_balance_items": sum(1 for balance in inventory_minus_staged.values() if balance == 0),
+                "negative_balance_items": sum(1 for balance in inventory_minus_staged.values() if balance < 0),
+                "sample_items": dict(list(inventory_minus_staged.items())[:10]) if inventory_minus_staged else {}
+            }
+            
+            # Get current inventory state if available
+            if hasattr(self, 'current_inventory_state') and self.current_inventory_state:
+                debug_info["current_inventory_state"] = {
+                    "total_items": len(self.current_inventory_state),
+                    "sample_items": dict(list(self.current_inventory_state.items())[:10])
+                }
+            else:
+                debug_info["current_inventory_state"] = {"message": "No current inventory state available"}
+            
+        except Exception as e:
+            debug_info["error"] = f"Error generating debug info: {str(e)}"
+        
+        return debug_info
+    
+    def _convert_processed_orders_to_input_format(self, processed_orders_df):
+        """
+        Convert processed orders back to input format for reprocessing.
+        Enhanced with better error handling and None checks.
+        
+        Args:
+            processed_orders_df (DataFrame): Processed orders dataframe
+            
+        Returns:
+            DataFrame: Orders in input format, or None if conversion fails
+        """
+        if processed_orders_df is None:
+            logger.error("Cannot convert None processed_orders_df to input format")
+            return None
+            
+        if processed_orders_df.empty:
+            logger.warning("Cannot convert empty processed_orders_df to input format")
+            return pd.DataFrame()
+        
+        try:
+            # Group by order to reconstruct original order structure
+            input_orders = []
+            
+            # Ensure required columns exist
+            required_cols = ['order id', 'ordernumber', 'shopifysku2']
+            missing_cols = [col for col in required_cols if col not in processed_orders_df.columns]
+            if missing_cols:
+                logger.error(f"Missing required columns for conversion: {missing_cols}")
+                return None
+            
+            for order_id, order_group in processed_orders_df.groupby('order id'):
+                # Take the first row as the base order info
+                base_order = order_group.iloc[0].copy()
+                
+                # Use the original Shopify SKU and quantity
+                input_orders.append({
+                    'order id': base_order.get('order id', ''),
+                    'externalorderid': base_order.get('externalorderid', ''),
+                    'ordernumber': base_order.get('ordernumber', ''),
+                    'CustomerFirstName': base_order.get('CustomerFirstName', ''),
+                    'customerLastname': base_order.get('customerLastname', ''),
+                    'customeremail': base_order.get('customeremail', ''),
+                    'customerphone': base_order.get('customerphone', ''),
+                    'shiptoname': base_order.get('shiptoname', ''),
+                    'shiptostreet1': base_order.get('shiptostreet1', ''),
+                    'shiptostreet2': base_order.get('shiptostreet2', ''),
+                    'shiptocity': base_order.get('shiptocity', ''),
+                    'shiptostate': base_order.get('shiptostate', ''),
+                    'shiptopostalcode': base_order.get('shiptopostalcode', ''),
+                    'note': base_order.get('note', ''),
+                    'placeddate': base_order.get('placeddate', ''),
+                    'preferredcarrierserviceid': base_order.get('preferredcarrierserviceid', ''),
+                    'totalorderamount': base_order.get('totalorderamount', ''),
+                    'shopsku': base_order.get('shopifysku2', ''),  # Use original Shopify SKU
+                    'shopquantity': base_order.get('shopquantity', 1),
+                    'externalid': base_order.get('externalid', ''),
+                    'Tags': base_order.get('Tags', ''),
+                    'MAX PKG NUM': base_order.get('MAX PKG NUM', ''),
+                    'Fulfillment Center': base_order.get('Fulfillment Center', '')
+                })
+            
+            result_df = pd.DataFrame(input_orders)
+            logger.info(f"Successfully converted {len(processed_orders_df)} processed orders to {len(result_df)} input orders")
+            return result_df
+            
+        except Exception as e:
+            logger.error(f"Error in _convert_processed_orders_to_input_format: {e}")
+            return None
+    
+    def get_staging_workflow_status(self):
+        """
+        Get comprehensive status of the staging workflow for UI display.
+        
+        Returns:
+            dict: Complete workflow status information
+        """
+        try:
+            # Get basic counts
+            orders_in_processing = len(self.orders_in_processing)
+            orders_staged = len(self.staged_orders)
+            total_orders = orders_in_processing + orders_staged
+            
+            # Get inventory calculations
+            inventory_calcs = self.get_inventory_calculations()
+            available_inventory = self.get_available_inventory_for_recalculation()
+            
+            # Calculate workflow readiness
+            ready_for_recalculation = orders_staged > 0 and orders_in_processing > 0
+            has_available_inventory = available_inventory['summary']['available_items'] > 0
+            
+            # Determine next recommended action
+            if ready_for_recalculation:
+                if has_available_inventory:
+                    next_action = "ready_for_recalculation"
+                    next_action_description = "Ready to recalculate with available inventory"
+                else:
+                    next_action = "check_inventory"
+                    next_action_description = "Check available inventory - may be insufficient"
+            elif orders_in_processing > 0 and orders_staged == 0:
+                next_action = "stage_orders"
+                next_action_description = "Stage some orders to protect inventory"
+            elif orders_staged > 0 and orders_in_processing == 0:
+                next_action = "unstage_or_complete"
+                next_action_description = "All orders staged - unstage some to recalculate or complete workflow"
+            else:
+                next_action = "upload_data"
+                next_action_description = "Upload and process orders and inventory"
+            
+            return {
+                "orders": {
+                    "in_processing": orders_in_processing,
+                    "staged": orders_staged,
+                    "total": total_orders
+                },
+                "inventory": available_inventory['summary'],
+                "workflow": {
+                    "ready_for_recalculation": ready_for_recalculation,
+                    "has_available_inventory": has_available_inventory,
+                    "next_action": next_action,
+                    "next_action_description": next_action_description
+                },
+                "raw_calculations": inventory_calcs
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting staging workflow status: {e}")
+            return {
+                "orders": {"in_processing": 0, "staged": 0, "total": 0},
+                "inventory": {"total_items": 0, "available_items": 0, "availability_rate": 0},
+                "workflow": {
+                    "ready_for_recalculation": False,
+                    "has_available_inventory": False,
+                    "next_action": "error",
+                    "next_action_description": f"Error getting workflow status: {str(e)}"
+                },
+                "error": str(e)
+            }
     
     def update_sku_mappings(self, mappings_updates):
         """
@@ -3221,7 +3506,7 @@ class DataProcessor:
             
         # Start with initial inventory
         remaining_inventory = {}
-        
+            
         # Initialize with initial inventory
         for _, row in self.initial_inventory.iterrows():
             sku = row['sku']
@@ -3244,51 +3529,65 @@ class DataProcessor:
                     
         return remaining_inventory
     
-    def _convert_processed_orders_to_input_format(self, processed_orders_df):
+    def get_available_inventory_for_recalculation(self):
         """
-        Convert processed orders back to input format for reprocessing.
+        Get a clear view of available inventory for recalculation (Initial - Staged).
         
-        Args:
-            processed_orders_df (DataFrame): Processed orders dataframe
-            
         Returns:
-            DataFrame: Orders in input format
+            dict: Dictionary with detailed available inventory information
         """
-        # Group by order to reconstruct original order structure
-        input_orders = []
-        
-        for order_id, order_group in processed_orders_df.groupby('order id'):
-            # Take the first row as the base order info
-            base_order = order_group.iloc[0].copy()
+        try:
+            # Calculate inventory minus staged orders
+            available_inventory = self.calculate_inventory_minus_staged()
             
-            # Use the original Shopify SKU and quantity
-            input_orders.append({
-                'order id': base_order.get('order id', ''),
-                'externalorderid': base_order.get('externalorderid', ''),
-                'ordernumber': base_order.get('ordernumber', ''),
-                'CustomerFirstName': base_order.get('CustomerFirstName', ''),
-                'customerLastname': base_order.get('customerLastname', ''),
-                'customeremail': base_order.get('customeremail', ''),
-                'customerphone': base_order.get('customerphone', ''),
-                'shiptoname': base_order.get('shiptoname', ''),
-                'shiptostreet1': base_order.get('shiptostreet1', ''),
-                'shiptostreet2': base_order.get('shiptostreet2', ''),
-                'shiptocity': base_order.get('shiptocity', ''),
-                'shiptostate': base_order.get('shiptostate', ''),
-                'shiptopostalcode': base_order.get('shiptopostalcode', ''),
-                'note': base_order.get('note', ''),
-                'placeddate': base_order.get('placeddate', ''),
-                'preferredcarrierserviceid': base_order.get('preferredcarrierserviceid', ''),
-                'totalorderamount': base_order.get('totalorderamount', ''),
-                'shopsku': base_order.get('shopifysku2', ''),  # Use original Shopify SKU
-                'shopquantity': base_order.get('shopquantity', 1),
-                'externalid': base_order.get('externalid', ''),
-                'Tags': base_order.get('Tags', ''),
-                'MAX PKG NUM': base_order.get('MAX PKG NUM', ''),
-                'Fulfillment Center': base_order.get('Fulfillment Center', '')
-            })
+            # Generate summary statistics
+            total_items = len(available_inventory)
+            available_items = sum(1 for balance in available_inventory.values() if balance > 0)
+            out_of_stock_items = sum(1 for balance in available_inventory.values() if balance == 0)
+            oversold_items = sum(1 for balance in available_inventory.values() if balance < 0)
+            total_available_balance = sum(max(0, balance) for balance in available_inventory.values())
+            total_oversold_balance = sum(min(0, balance) for balance in available_inventory.values())
             
-        return pd.DataFrame(input_orders)
+            # Convert to list format for easier display
+            inventory_list = []
+            for key, balance in available_inventory.items():
+                if "|" in key:
+                    sku, warehouse = key.split("|", 1)
+                    inventory_list.append({
+                        "sku": sku,
+                        "warehouse": warehouse,
+                        "available_balance": balance,
+                        "status": "available" if balance > 0 else "out_of_stock" if balance == 0 else "oversold"
+                    })
+            
+            return {
+                "inventory_items": inventory_list,
+                "summary": {
+                    "total_items": total_items,
+                    "available_items": available_items,
+                    "out_of_stock_items": out_of_stock_items,
+                    "oversold_items": oversold_items,
+                    "total_available_balance": total_available_balance,
+                    "total_oversold_balance": abs(total_oversold_balance),
+                    "availability_rate": (available_items / total_items * 100) if total_items > 0 else 0
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting available inventory for recalculation: {e}")
+            return {
+                "inventory_items": [],
+                "summary": {
+                    "total_items": 0,
+                    "available_items": 0,
+                    "out_of_stock_items": 0,
+                    "oversold_items": 0,
+                    "total_available_balance": 0,
+                    "total_oversold_balance": 0,
+                    "availability_rate": 0
+                },
+                "error": str(e)
+            }
 
 
 if __name__ == "__main__":

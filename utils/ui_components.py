@@ -8,8 +8,9 @@ from st_aggrid import (
     GridOptionsBuilder,
     GridUpdateMode,
 )
-import plotly.graph_objects as go
+import logging
 
+logger = logging.getLogger(__name__)
 
 def render_header():
     """Render the application header"""
@@ -42,6 +43,12 @@ def render_workflow_status():
             
             inv_minus_processing = len(inventory_calcs.get('inventory_minus_processing', {}))
             inv_minus_staged = len(inventory_calcs.get('inventory_minus_staged', {}))
+            
+            # Calculate available inventory statistics
+            inventory_minus_staged_dict = inventory_calcs.get('inventory_minus_staged', {})
+            available_items = sum(1 for balance in inventory_minus_staged_dict.values() if balance > 0)
+            total_available_balance = sum(max(0, balance) for balance in inventory_minus_staged_dict.values())
+            
         except Exception as e:
             logger.warning(f"Error getting inventory calculations: {e}")
             orders_in_processing = 0
@@ -49,12 +56,16 @@ def render_workflow_status():
             total_orders_processed = 0
             inv_minus_processing = 0
             inv_minus_staged = 0
+            available_items = 0
+            total_available_balance = 0
     else:
         orders_in_processing = 0
         orders_staged = 0
         total_orders_processed = 0
         inv_minus_processing = 0
         inv_minus_staged = 0
+        available_items = 0
+        total_available_balance = 0
     
     # Progress calculation
     completed_steps = 0
@@ -68,6 +79,24 @@ def render_workflow_status():
     progress_percentage = completed_steps / total_steps
     
     with st.expander(f"📋 Workflow Status ({progress_percentage:.0%} complete)", expanded=False):
+        
+        # Show key metrics first
+        if workflow_initialized and (orders_in_processing > 0 or orders_staged > 0):
+            st.markdown("**📊 Current Status Overview:**")
+            metric_cols = st.columns(5)
+            
+            with metric_cols[0]:
+                st.metric("📋 Processing", orders_in_processing)
+            with metric_cols[1]:
+                st.metric("🏷️ Staged", orders_staged)  
+            with metric_cols[2]:
+                st.metric("📦 Available Items", available_items)
+            with metric_cols[3]:
+                st.metric("📊 Total Available", f"{total_available_balance:.0f}")
+            with metric_cols[4]:
+                recalculation_ready = orders_staged > 0 and orders_in_processing > 0
+                st.metric("🔄 Ready to Recalc", "✅ Yes" if recalculation_ready else "❌ No")
+        
         # Workflow steps with detailed descriptions
         workflow_steps = [
             {
@@ -91,7 +120,7 @@ def render_workflow_status():
             {
                 "step": "📊 Orders in Processing & Inventory Calculations",
                 "status": "✅" if orders_in_processing > 0 or orders_staged > 0 else "⏳",
-                "description": f"Processing: {orders_in_processing} orders | Inventory items: {inv_minus_processing}",
+                "description": f"Processing: {orders_in_processing} orders | Available inventory: {available_items} items",
                 "completed": orders_in_processing > 0 or orders_staged > 0
             },
             {
@@ -103,20 +132,21 @@ def render_workflow_status():
             {
                 "step": "🔄 Change Bundle Rules",
                 "status": "🔄" if orders_staged > 0 else "⏳",
-                "description": "Edit bundle components in SKU Mapping tab",
+                "description": "Edit bundle components via warehouse-specific Google Sheets links",
                 "completed": False,
                 "in_progress": orders_staged > 0
             },
             {
                 "step": "⚡ Apply Changes to Processing Queue", 
                 "status": "🔄" if orders_staged > 0 else "⏳",
-                "description": f"Using inventory minus staged ({inv_minus_staged} items available)",
+                "description": f"Using Available for Recalculation ({available_items} items with {total_available_balance:.0f} total units)",
                 "completed": False,
                 "in_progress": orders_staged > 0
             }
         ]
         
         # Display workflow in columns with descriptions
+        st.markdown("**📋 Workflow Steps:**")
         cols = st.columns(7)
         
         for i, step_info in enumerate(workflow_steps):
@@ -139,246 +169,29 @@ def render_workflow_status():
         # Progress bar
         st.progress(progress_percentage)
         
-        # Next action guidance
+        # Next action guidance with specific links
         if workflow_initialized:
             if orders_staged > 0 and orders_in_processing > 0:
-                st.info("🔄 Next: Edit bundle rules in SKU Mapping tab, then recalculate in Orders tab")
+                st.success("🔄 **Ready for Recalculation!**")
+                st.info("""
+                **Next Steps:**
+                1. 📝 Edit bundle rules (optional):
+                   - [📊 Edit Oxnard SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=549145618) (Sheet: INPUT_bundles_cvr_oxnard)
+                   - [📊 Edit Wheeling SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=0) (Sheet: INPUT_bundles_cvr_wheeling)
+                2. 🔄 Go to **📦 Inventory** → **Available for Recalculation** tab 
+                3. ⚡ Click **'Recalculate All Processing Orders'** button
+                
+                This will use your **Available for Recalculation** inventory (Initial - Staged = {available_items} items) 
+                to recalculate the {orders_in_processing} orders still in processing.
+                """.format(available_items=available_items, orders_in_processing=orders_in_processing))
             elif orders_in_processing > 0 and orders_staged == 0:
-                st.info("🏷️ Next: Select orders in Orders tab and move to staging")
+                st.info("🏷️ **Next Step:** Select orders in **📜 Orders** tab and move to staging to protect their inventory allocation.")
             elif total_orders_processed == 0:
-                st.info("📤 Next: Upload orders and inventory files")
+                st.info("📤 **Next Step:** Upload orders and inventory files using the sidebar.")
             else:
-                st.success("✅ Workflow complete")
-
-def create_aggrid_table(df, height=400, selection_mode='multiple', enable_enterprise_modules=True, 
-                       fit_columns_on_grid_load=False, theme='alpine', key=None, groupable=True, 
-                       filterable=True, sortable=True, editable=False, show_hints=False, enable_download=True,
-                       enable_sidebar=True, enable_pivot=True, enable_value_aggregation=True, 
-                       enhanced_menus=True, suppress_callback_exceptions=True):
-    """
-    Create an enhanced ag-Grid table with auto-sizing, filtering, grouping, sorting, and download capabilities.
-    
-    Args:
-        df: DataFrame to display
-        height: Table height in pixels
-        selection_mode: 'single', 'multiple', or 'disabled'
-        enable_enterprise_modules: Enable advanced features (disabled by default to prevent JSON serialization issues)
-        fit_columns_on_grid_load: Auto-fit columns to grid width
-        theme: ag-Grid theme ('alpine', 'balham', 'material')
-        key: Unique key for the table
-        groupable: Enable column grouping
-        filterable: Enable column filtering
-        sortable: Enable column sorting
-        editable: Enable cell editing
-        show_hints: Show helpful hints to users
-        enable_download: Enable download functionality
-        enable_sidebar: Enable sidebar for advanced grouping/filtering
-        enable_pivot: Enable pivot functionality
-        enable_value_aggregation: Enable value aggregation in groups
-        enhanced_menus: Enable enhanced context menus and column menu options
-        suppress_callback_exceptions: Suppress callback exceptions for better performance
-    
-    Returns:
-        dict: Contains AgGrid response and additional info
-    """
-    try:
-        # Create GridOptionsBuilder with simplified configuration
-        gb = GridOptionsBuilder.from_dataframe(df)
-        
-        # Configure default column properties with enhanced filtering and grouping
-        gb.configure_default_column(
-            filterable=filterable,
-            sortable=sortable,
-            resizable=True,
-            editable=editable,
-            groupable=groupable,
-            enableRowGroup=groupable,
-            enablePivot=enable_pivot,
-            enableValue=enable_value_aggregation,
-            filter=True,
-            floatingFilter=True,  # Enable floating filters for better UX
-            suppressMenu=False,
-            menuTabs=['filterMenuTab', 'generalMenuTab', 'columnsMenuTab'] if filterable else [],
-            minWidth=120,  # Set minimum column width
-            width=150,     # Set default column width
-            suppressSizeToFit=False  # Allow columns to be resized to fit content
-        )
-        
-        # Configure selection
-        if selection_mode != 'disabled':
-            gb.configure_selection(
-                selection_mode, 
-                use_checkbox=True,
-                header_checkbox=True,  # Adds select all checkbox in header
-                groupSelectsChildren=True,
-                groupSelectsFiltered=True
-            )
-        
-        # Configure enhanced column types for better filtering and grouping
-        for col in df.columns:
-            # Set specific widths for important columns
-            col_width = 150  # default
-            if any(keyword in col.lower() for keyword in ['sku', 'id', 'number']):
-                col_width = 180  # wider for SKUs and IDs
-            elif any(keyword in col.lower() for keyword in ['name', 'description']):
-                col_width = 200  # wider for names
-            elif any(keyword in col.lower() for keyword in ['qty', 'quantity', 'balance']):
-                col_width = 120  # narrower for numbers
-            
-            if df[col].dtype in ['int64', 'float64']:
-                # Numeric columns with enhanced number filter and aggregation
-                gb.configure_column(
-                    col, 
-                    type=["numericColumn"],
-                    filter="agNumberColumnFilter",
-                    enableValue=True,  # Enable for aggregation
-                    aggFunc=['sum', 'avg', 'min', 'max', 'count'],
-                    floatingFilter=True,
-                    width=col_width,
-                    minWidth=100
-                )
-            elif df[col].dtype == 'datetime64[ns]':
-                # Date columns with enhanced date filter
-                gb.configure_column(
-                    col,
-                    filter="agDateColumnFilter",
-                    type=["dateColumn"],
-                    floatingFilter=True,
-                    width=col_width,
-                    minWidth=120
-                )
-            else:
-                # Text columns with enhanced text filter and grouping
-                gb.configure_column(
-                    col,
-                    filter="agTextColumnFilter",
-                    enableRowGroup=True,  # Enable for grouping
-                    floatingFilter=True,
-                    width=col_width,
-                    minWidth=120
-                )
-        
-        # Configure sidebar with working configuration for streamlit-aggrid 1.0.5
-        if enable_sidebar:
-            try:
-                # Use the correct method for streamlit-aggrid 1.0.5
-                gb.configure_side_bar()
-            except Exception as e:
-                print(f"Sidebar configuration failed: {e}")
-                pass
-        
-        # Configure basic grouping (simplified to avoid issues)
-        if groupable:
-            try:
-                gb.configure_grid_options(
-                    groupSelectsChildren=True,
-                    groupSelectsFiltered=True,
-                    suppressRowGroupHidesColumns=False,
-                    groupDefaultExpanded=1
-                )
-            except Exception as e:
-                print(f"Grouping configuration failed: {e}")
-                pass
-        
-        # Configure basic aggregation for numeric columns
-        if enable_value_aggregation:
-            for col in df.columns:
-                if df[col].dtype in ['int64', 'float64']:
-                    try:
-                        gb.configure_column(
-                            col,
-                            enableValue=True
-                        )
-                    except Exception as e:
-                        # Skip if column configuration causes issues
-                        pass
-        
-        # Build grid options
-        grid_options = gb.build()     
-        
-        # Create the AgGrid with original working configuration
-        grid_response = AgGrid(
-            df,
-            gridOptions=grid_options,
-            height=height,
-            data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
-            update_mode=GridUpdateMode.MODEL_CHANGED,
-            fit_columns_on_grid_load=fit_columns_on_grid_load,
-            theme=theme,
-            enable_enterprise_modules=enable_enterprise_modules,
-            allow_unsafe_jscode=True,  # Allow JavaScript code to prevent serialization errors
-            key=key
-        )
-        
-    except Exception as e:
-        # Fallback to basic Streamlit dataframe if AgGrid fails
-        st.error(f"AgGrid failed to render due to JSON serialization error: {e}")
-        st.write("Falling back to basic table view:")
-        
-        # Display basic dataframe (without key parameter which isn't supported in older versions)
-        st.dataframe(df, height=height, use_container_width=True)
-        
-        # Create a mock response for compatibility
-        grid_response = {
-            'data': df.to_dict('records'),
-            'selected_rows': [],
-            'selected_data': []
-        }
-    
-    
-    # Display enhanced usage instructions and selection summary
-    if show_hints:
-        with st.expander("💡 AgGrid Usage Tips", expanded=False):
-            st.markdown("""
-            **🔍 Filtering & Searching:**
-            - Use the floating filter boxes below column headers for instant filtering
-            - Click the ⋮ menu on any column header for advanced filter options
-            - Use the sidebar (→) for drag-and-drop grouping and column management
-            
-            **📊 Grouping & Analysis:**
-            - Drag columns from the sidebar to "Row Groups" to group data
-            - Drag numeric columns to "Values" to see aggregations (sum, avg, min, max)
-            - Use "Pivot Mode" in the sidebar for cross-tabulation analysis
-            
-            **✅ Row Selection:**
-            - **Header checkbox**: Click checkbox in header to select/deselect all visible rows
-            - **Individual checkboxes**: Use checkboxes to select individual rows  
-            - **Ctrl+A**: Select all visible rows
-            - **Ctrl+Click**: Multi-select rows
-            - Selected row count is displayed below the grid
-            
-            **📥 Built-in Export Options:**
-            - **Right-click on the grid** to access export menu
-            - **Export to CSV**: Download filtered/selected data as CSV
-            - **Export to Excel**: Download filtered/selected data as Excel
-            - **Copy to Clipboard**: Copy data for pasting elsewhere
-            - **Print**: Print the current view of the data
-            
-            **⌨️ Advanced Features:**
-            - Right-click on the grid for context menu options
-            - Ctrl+Right-click for additional context menu
-            - Tab/Shift+Tab: Navigate between cells and filters
-            - Drag column borders to resize columns
-            """)
-    
-    
-    # Return comprehensive response
-    return {
-        'grid_response': grid_response,
-        'selected_count': len(grid_response['selected_rows']) if grid_response['selected_rows'] is not None else 0,
-        'filtered_count': len(grid_response['data']) if grid_response['data'] is not None else len(df)
-    }
-
-def render_progress_bar(current_step, total_steps, step_name):
-    """Render a progress bar for processes"""
-    progress = st.progress(0)
-    # Avoid division by zero
-    if total_steps > 0:
-        progress.progress(current_step / total_steps)
-    else:
-        progress.progress(0)
-    st.caption(f"Step {current_step}/{total_steps}: {step_name}")
-
+                st.success("✅ **Workflow complete!** All orders have been processed.")
+        else:
+            st.warning("⚠️ **Get Started:** Upload your orders and inventory files to begin the workflow.")
 
 def render_inventory_analysis(processed_orders, inventory_df):
     """
@@ -816,7 +629,7 @@ def render_orders_tab(processed_orders, shortage_summary=None):
         if 'staged' in display_orders.columns:
             display_orders = display_orders.drop(columns=['staged'])
         # Display key metrics
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4, col5 = st.columns(5)
         
         with col1:
             total_orders = len(display_orders["ordernumber"].unique()) if "ordernumber" in display_orders.columns else 0
@@ -834,6 +647,48 @@ def render_orders_tab(processed_orders, shortage_summary=None):
         with col4:
             fulfillment_centers = display_orders["Fulfillment Center"].nunique() if "Fulfillment Center" in display_orders.columns else 0
             st.metric("🏭 Warehouses Used", fulfillment_centers)
+        
+        with col5:
+            # Show staged orders count and delta from total
+            st.metric("🏷️ Orders Staged", f"{staged_orders:,}", delta=f"of {total_orders:,} total" if total_orders > 0 else "")
+        
+        # Show inventory calculation: Initial - Staged = Available for Recalculation
+        if ('staging_processor' in st.session_state and 
+            st.session_state.staging_processor and 
+            st.session_state.workflow_initialized):
+            try:
+                inventory_calcs = st.session_state.staging_processor.get_inventory_calculations()
+                inventory_minus_staged = inventory_calcs.get('inventory_minus_staged', {})
+                available_items = sum(1 for balance in inventory_minus_staged.values() if balance > 0)
+                total_available_balance = sum(max(0, balance) for balance in inventory_minus_staged.values())
+                # Calculate initial and used in staging
+                initial_inventory = st.session_state.initial_inventory if 'initial_inventory' in st.session_state else None
+                initial_items = 0
+                initial_units = 0
+                used_items = 0
+                used_units = 0
+                if initial_inventory is not None and not initial_inventory.empty:
+                    initial_items = len(initial_inventory)
+                    if 'Balance' in initial_inventory.columns:
+                        initial_units = initial_inventory['Balance'].sum()
+                    elif 'AvailableQty' in initial_inventory.columns:
+                        initial_units = initial_inventory['AvailableQty'].sum()
+                    # Used in staging: sum of (initial - available) for each SKU|warehouse
+                    initial_lookup = {}
+                    for _, row in initial_inventory.iterrows():
+                        sku = row.get('Sku') or row.get('sku')
+                        warehouse = row.get('warehouse') or row.get('WarehouseName') or row.get('Warehouse')
+                        balance = row.get('balance') if 'balance' in row else row.get('Balance') if 'Balance' in row else row.get('AvailableQty')
+                        if sku is not None and warehouse is not None and balance is not None:
+                            initial_lookup[f"{sku}|{warehouse}"] = float(balance)
+                    for key, balance in inventory_minus_staged.items():
+                        if key in initial_lookup:
+                            used = initial_lookup[key] - balance
+                            if used > 0:
+                                used_items += 1
+                                used_units += used
+            except Exception as e:
+                logger.warning(f"Could not calculate inventory minus staged: {e}")
         
         # Ensure shortage_count matches issues count for consistency
         if shortage_summary is not None and not shortage_summary.empty:
@@ -1085,11 +940,17 @@ def render_orders_tab(processed_orders, shortage_summary=None):
                     
                     with col1:
                         if st.button("📝 Edit Bundle Mappings"):
-                            st.info("Navigate to the ⚙️ SKU Mapping tab to edit bundle components, then return here to apply changes.")
+                            st.info("""
+                            **Edit Bundle Components:**
+                            - [📊 Edit Oxnard SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=549145618) (Sheet: INPUT_bundles_cvr_oxnard)
+                            - [📊 Edit Wheeling SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=0) (Sheet: INPUT_bundles_cvr_wheeling)
+                            
+                            Edit bundle components before recalculation.
+                            """)
                     
                     with col2:
                         if st.button("🎯 Stage & Edit Bundles"):
-                            st.caption("Stage selected orders first, then edit bundles safely")
+                            st.caption("Stage selected orders first, then edit bundles via Google Sheets")
                             # Initialize staging processor if needed
                             if st.session_state.staging_processor is None and st.session_state.get('workflow_initialized', False):
                                 from utils.data_processor import DataProcessor
@@ -1115,7 +976,7 @@ def render_orders_tab(processed_orders, shortage_summary=None):
                                         staging_result = st.session_state.staging_processor.stage_selected_orders(order_indices)
                                         if 'error' not in staging_result:
                                             st.session_state.processed_orders = st.session_state.staging_processor.orders_in_processing.copy()
-                                            st.success("✅ Orders staged! Now edit bundle components in SKU Mapping tab.")
+                                            st.success("✅ Orders staged! Now edit bundle components using these Google Sheets links: \n- [Oxnard](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=549145618) | [Wheeling](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=0)")
                                             st.rerun()
                                         else:
                                             st.error(f"Staging error: {staging_result['error']}")
@@ -1271,6 +1132,7 @@ def render_orders_tab(processed_orders, shortage_summary=None):
     
     # Add recalculation section at the bottom of Orders tab
     st.markdown("---")
+    st.markdown("**🔄 Smart Recalculation Workflow**")
     
     # Check if we have the staging processor available and workflow is initialized
     if (st.session_state.get('workflow_initialized', False) and
@@ -1307,15 +1169,101 @@ def render_orders_tab(processed_orders, shortage_summary=None):
         inventory_calcs = staging_processor.get_inventory_calculations()
         summary = inventory_calcs['staging_summary']
         
-        if summary['staged_orders'] > 0 and summary['orders_in_processing'] > 0:
-            st.info("""
-            🔄 Current Workflow State: 
-            - ✅ You have {staged} staged orders (their inventory is protected)
-            - ✅ You have {processing} orders left in processing (ready for recalculation with updated inventory)
-            - 🔄 Next: Edit bundle rules in SKU Mapping tab, then click 'Recalculate Remaining Processing Orders'
-            """.format(staged=summary['staged_orders'], processing=summary['orders_in_processing']))
-        elif summary['orders_in_processing'] > 0 and summary['staged_orders'] == 0:
-            st.info("🏷️ Next Step: Stage some orders first to begin the iterative workflow with bundle adjustments.")
+        # Get available inventory info
+        inventory_minus_staged = inventory_calcs.get('inventory_minus_staged', {})
+        available_items = sum(1 for balance in inventory_minus_staged.values() if balance > 0)
+        total_available_balance = sum(max(0, balance) for balance in inventory_minus_staged.values())
+        
+        # Create workflow guidance based on current state
+        recalc_col1, recalc_col2 = st.columns([2, 1])
+        # staged_orders it's lines from orders_in_processing that are staged
+        # orders_in_processing it's lines from orders_in_processing that are not staged
+        # summary['staged_orders'] it's the number of lines from orders_in_processing that are staged
+        # summary['orders_in_processing'] it's the number of lines from orders_in_processing that are not staged
+        # available_items it's the number of lines from orders_in_processing that are not staged
+        # total_available_balance it's the total balance of the inventory items that are not staged
+        
+        
+        with recalc_col1:
+            if summary['staged_orders'] > 0 and summary['orders_in_processing'] > 0:
+                st.success("🔄 **Ready for Smart Recalculation!**")
+                st.info(f"""
+                **Current Status:**
+                - ✅ {summary['staged_orders']} order lines are staged (inventory protected)
+                - 📋 {summary['orders_in_processing']} order lines ready for recalculation
+                - 📦 {available_items} unique SKUs available for recalculation)
+                
+                **Recommended Workflow:**
+                1. 📝 **Edit Bundle Rules** (optional):
+                   - [📊 Edit Oxnard SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=549145618) (Sheet: INPUT_bundles_cvr_oxnard)
+                   - [📊 Edit Wheeling SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=0) (Sheet: INPUT_bundles_cvr_wheeling)
+                2. 🔄 **Recalculate**: Go to 📦 Inventory → 🔄 Available for Recalculation tab
+                3. ⚡ **Apply**: Click 'Recalculate All Processing Orders' to use updated inventory
+                """)
+            elif summary['orders_in_processing'] > 0 and summary['staged_orders'] == 0:
+                st.warning("🏷️ **Next Step: Stage Some Order Lines**")
+                st.info(f"""
+                You have {summary['orders_in_processing']} order lines in processing but none staged yet.
+                
+                **To start the smart recalculation workflow:**
+                1. ✅ Select order lines above and click 'Move Selected to Staging'
+                2. 📝 Edit bundle rules (optional):
+                   - [📊 Edit Oxnard SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=549145618) (Sheet: INPUT_bundles_cvr_oxnard)
+                   - [📊 Edit Wheeling SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=0) (Sheet: INPUT_bundles_cvr_wheeling)
+                3. 🔄 Recalculate remaining order lines using protected inventory
+                """)
+            elif summary['staged_orders'] > 0 and summary['orders_in_processing'] == 0:
+                st.info("✅ **All Order Lines Staged**")
+                st.caption(f"All {summary['staged_orders']} order lines are currently staged. Move some back to processing if you want to recalculate them.")
+            else:
+                st.info("📊 **No Order Lines Available**")
+                st.caption("Upload and process orders to begin the smart recalculation workflow.")
+        
+        with recalc_col2:
+            # Quick action buttons
+            st.markdown("**🚀 Quick Actions:**")
+            
+            if summary['staged_orders'] > 0 and summary['orders_in_processing'] > 0:
+                if st.button("🔄 Go to Recalculation Tab", key="go_to_recalc_tab"):
+                    st.info("💡 Navigate to: **📦 Inventory** → **🔄 Available for Recalculation** tab")
+                    st.caption("This is where you can see available inventory and recalculate orders")
+                
+                if st.button("📝 Go to SKU Mapping", key="go_to_sku_mapping"):
+                    st.info("💡 Navigate to: **⚙️ SKU Mapping** tab")
+                    st.caption("Use the Google Sheets link to edit bundle components before recalculation")
+                    
+                # Quick recalculate button (simplified version)
+                if st.button("⚡ Quick Recalculate Now", key="quick_recalc"):
+                    try:
+                        with st.spinner("Quick recalculating orders..."):
+                            recalc_result = st.session_state.staging_processor.recalculate_orders_with_updated_inventory()
+                            
+                            if 'error' in recalc_result:
+                                st.error(f"Recalculation failed: {recalc_result['error']}")
+                            else:
+                                # Update session state
+                                st.session_state.processed_orders = st.session_state.staging_processor.orders_in_processing.copy()
+                                
+                                # Add the staged flag back and combine with staged orders
+                                if 'staged' not in st.session_state.processed_orders.columns:
+                                    st.session_state.processed_orders['staged'] = False
+                                
+                                staged_df = st.session_state.staging_processor.staged_orders.copy()
+                                if not staged_df.empty:
+                                    staged_df['staged'] = True
+                                    st.session_state.processed_orders = pd.concat([
+                                        st.session_state.processed_orders, 
+                                        staged_df
+                                    ], ignore_index=True)
+                                
+                                st.success("✅ Quick recalculation completed!")
+                                st.rerun()
+                                
+                    except Exception as e:
+                        st.error(f"Error during quick recalculation: {e}")
+            else:
+                st.caption("Stage orders first to enable recalculation actions")
+                
     else:
         st.warning("⚠️ Recalculation not available. Please upload and process files first.")
 
@@ -1323,6 +1271,7 @@ def render_inventory_tab(shortage_summary, grouped_shortage_summary, initial_inv
     """Renders the Inventory tab with all inventory-related information"""
     from utils.data_processor import DataProcessor
     from datetime import datetime
+    import pandas as pd
     st.header("📦 Inventory & Shortages")
     
     # Display only useful shortage summary information
@@ -1349,11 +1298,12 @@ def render_inventory_tab(shortage_summary, grouped_shortage_summary, initial_inv
         with cols[2]:
             st.metric("💱 Affected Orders", affected_orders)
     
-    # Create updated tabs structure for inventory views
-    initial_inventory_tab, inventory_after_processing_tab, shortages_tab = st.tabs([
-        "Initial Inventory",
-        "Projected Inventory (After Full Processing)", 
-        "Shortages"
+    # Create updated tabs structure for inventory views - ADD AVAILABLE INVENTORY TAB
+    initial_inventory_tab, available_inventory_tab, inventory_after_processing_tab, shortages_tab = st.tabs([
+        "📋 Initial Inventory",
+        "🔄 Available for Recalculation (Initial - Staged)", 
+        "📊 Projected Inventory (After Full Processing)",
+        "⚠️ Shortages"
     ])
     
     with initial_inventory_tab:
@@ -1367,6 +1317,268 @@ def render_inventory_tab(shortage_summary, grouped_shortage_summary, initial_inv
             )
         else:
             st.info("No initial inventory data available")
+    
+    # NEW TAB: Available for Recalculation (Initial - Staged)
+    with available_inventory_tab:
+        st.markdown("**🔄 Available Inventory for Recalculation (Initial Inventory minus Staged Orders)**")
+        
+        # Check if we have staging processor available
+        if ('staging_processor' in st.session_state and 
+            st.session_state.staging_processor and 
+            st.session_state.get('workflow_initialized', False)):
+            
+            try:
+                # Get inventory calculations from staging processor
+                inventory_calcs = st.session_state.staging_processor.get_inventory_calculations()
+                inventory_minus_staged = inventory_calcs.get('inventory_minus_staged', {})
+                staging_summary = inventory_calcs.get('staging_summary', {})
+                
+                # Display summary metrics
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("📦 Available Items", len(inventory_minus_staged))
+                with col2:
+                    st.metric("🏷️ Orders Staged", staging_summary.get('staged_orders', 0))
+                with col3:
+                    st.metric("📋 Orders in Processing", staging_summary.get('orders_in_processing', 0))
+                with col4:
+                    positive_inventory = sum(1 for balance in inventory_minus_staged.values() if balance > 0)
+                    st.metric("✅ Items with Stock", positive_inventory)
+                
+                if inventory_minus_staged:
+                    # Convert to DataFrame for display
+                    available_inventory_data = []
+                    # Build a lookup for initial inventory
+                    initial_inventory_lookup = {}
+                    if initial_inventory is not None and not initial_inventory.empty:
+                        for _, row in initial_inventory.iterrows():
+                            sku = row.get('sku') or row.get('Sku')
+                            warehouse = row.get('warehouse') or row.get('WarehouseName') or row.get('Warehouse')
+                            balance = row.get('balance') if 'balance' in row else row.get('Balance') if 'Balance' in row else row.get('AvailableQty')
+                            if sku is not None and warehouse is not None and balance is not None:
+                                initial_inventory_lookup[f"{sku}|{warehouse}"] = float(balance)
+                    for key, balance in inventory_minus_staged.items():
+                        if "|" in key:
+                            sku, warehouse = key.split("|", 1)
+                            initial = initial_inventory_lookup.get(key, None)
+                            used_in_staging = initial - balance if initial is not None else None
+                            available_inventory_data.append({
+                                "SKU": sku,
+                                "Warehouse": warehouse,
+                                "Initial": initial,
+                                "Used in Staging": used_in_staging,
+                                "Available Balance": balance,
+                                "Status": "✅ Available" if balance > 0 else "❌ Out of Stock" if balance == 0 else "⚠️ Oversold"
+                            })
+                    if available_inventory_data:
+                        available_df = pd.DataFrame(available_inventory_data)
+                        # Sort by available balance (highest first, then by SKU)
+                        available_df = available_df.sort_values(['Available Balance', 'SKU'], ascending=[False, True])
+                        
+                        # Color coding and filtering options
+                        st.markdown("**Filter Options:**")
+                        filter_col1, filter_col2, filter_col3 = st.columns(3)
+                        
+                        with filter_col1:
+                            show_available = st.checkbox("✅ Show Available (>0)", value=True, key="show_available")
+                        with filter_col2:
+                            show_out_of_stock = st.checkbox("❌ Show Out of Stock (=0)", value=True, key="show_out_of_stock")
+                        with filter_col3:
+                            show_oversold = st.checkbox("⚠️ Show Oversold (<0)", value=True, key="show_oversold")
+                        
+                        # Apply filters
+                        filtered_df = available_df.copy()
+                        if not show_available:
+                            filtered_df = filtered_df[filtered_df['Available Balance'] <= 0]
+                        if not show_out_of_stock:
+                            filtered_df = filtered_df[filtered_df['Available Balance'] != 0]
+                        if not show_oversold:
+                            filtered_df = filtered_df[filtered_df['Available Balance'] >= 0]
+                        
+                        st.markdown(f"**Showing {len(filtered_df)} of {len(available_df)} inventory items**")
+                        
+                        # Display the table
+                        create_aggrid_table(
+                            filtered_df,
+                            height=500,
+                            key="available_inventory_grid",
+                            theme="alpine",
+                            selection_mode='multiple',
+                            show_hints=False,
+                            enable_enterprise_modules=True,
+                            enable_sidebar=True,
+                            enable_pivot=True,
+                            enable_value_aggregation=True,
+                            groupable=True,
+                            filterable=True
+                        )
+                        
+                        # Add action buttons
+                        st.markdown("---")
+                        st.markdown("**🔄 Recalculation Actions**")
+                        
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            if st.button("🔄 Recalculate All Processing Orders", key="recalc_all_processing"):
+                                st.info("This will recalculate all orders currently in processing using the Available for Recalculation inventory above.")
+                                
+                                # Perform recalculation
+                                try:
+                                    with st.spinner("Recalculating orders with Available for Recalculation inventory..."):
+                                        recalc_result = st.session_state.staging_processor.recalculate_orders_with_updated_inventory()
+                                        
+                                        if 'error' in recalc_result:
+                                            st.error(f"Recalculation failed: {recalc_result['error']}")
+                                        else:
+                                            # Update session state
+                                            st.session_state.processed_orders = st.session_state.staging_processor.orders_in_processing.copy()
+                                            
+                                            # Add the staged flag back
+                                            if 'staged' not in st.session_state.processed_orders.columns:
+                                                st.session_state.processed_orders['staged'] = False
+                                            
+                                            # Update staged orders view  
+                                            staged_df = st.session_state.staging_processor.staged_orders.copy()
+                                            if not staged_df.empty:
+                                                staged_df['staged'] = True
+                                                # Combine processing and staged orders
+                                                st.session_state.processed_orders = pd.concat([
+                                                    st.session_state.processed_orders, 
+                                                    staged_df
+                                                ], ignore_index=True)
+                                            
+                                            st.success("✅ Recalculation completed successfully!")
+                                            st.info("Navigate to the Orders tab to see the updated results.")
+                                            st.rerun()
+                                            
+                                except Exception as e:
+                                    st.error(f"Error during recalculation: {e}")
+                        
+                        with col2:
+                            if st.button("📝 Edit SKU Mappings First", key="edit_mappings_hint"):
+                                st.info("""
+                                **Edit Bundle Components:**
+                                - [📊 Edit Oxnard SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=549145618) (Sheet: INPUT_bundles_cvr_oxnard)
+                                - [📊 Edit Wheeling SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=0) (Sheet: INPUT_bundles_cvr_wheeling)
+                                
+                                After editing, return here to recalculate.
+                                """)
+                        
+                        with col3:
+                            if st.button("📊 Refresh Calculations", key="refresh_inventory_calcs"):
+                                st.info("Refreshing inventory calculations...")
+                                st.rerun()
+                        
+                        # DEBUG SECTION
+                        st.markdown("---")
+                        with st.expander("🔧 Debug: Inventory-Staging Data", expanded=False):
+                            st.markdown("**🔍 Debugging Information for Inventory-Staging Process**")
+                            
+                            try:
+                                # Get debug information from staging processor
+                                debug_info = st.session_state.staging_processor.get_debug_inventory_state()
+                                
+                                # Display workflow state
+                                st.markdown("**📊 Current Workflow State:**")
+                                workflow_state = debug_info.get('workflow_state', {})
+                                debug_col1, debug_col2, debug_col3 = st.columns(3)
+                                
+                                with debug_col1:
+                                    st.metric("📋 Orders in Processing", workflow_state.get('orders_in_processing', 0))
+                                with debug_col2:
+                                    st.metric("🏷️ Staged Orders", workflow_state.get('staged_orders', 0))
+                                with debug_col3:
+                                    st.metric("📦 Initial Inventory Rows", workflow_state.get('initial_inventory_rows', 0))
+                                
+                                # Display initial inventory debug info
+                                if 'initial_inventory' in debug_info:
+                                    st.markdown("**📦 Initial Inventory Debug:**")
+                                    initial_inv = debug_info['initial_inventory']
+                                    if 'error' not in initial_inv:
+                                        st.write(f"- Total items: {initial_inv.get('total_items', 0)}")
+                                        st.write(f"- Columns: {', '.join(initial_inv.get('columns', []))}")
+                                        st.write(f"- Warehouses: {', '.join(initial_inv.get('warehouses', []))}")
+                                        
+                                        if initial_inv.get('sample_data'):
+                                            st.markdown("**Sample Initial Inventory Data:**")
+                                            st.json(initial_inv['sample_data'][:3])  # Show first 3 items
+                                    else:
+                                        st.warning(f"Initial inventory error: {initial_inv.get('error')}")
+                                
+                                # Display staged orders debug info
+                                if 'staged_orders' in debug_info:
+                                    st.markdown("**🏷️ Staged Orders Debug:**")
+                                    staged_info = debug_info['staged_orders']
+                                    st.write(f"- Total staged orders: {staged_info.get('total_orders', 0)}")
+                                    if staged_info.get('total_orders', 0) > 0:
+                                        st.write(f"- Fulfillment centers: {', '.join(staged_info.get('fulfillment_centers', []))}")
+                                        
+                                        if staged_info.get('sample_data'):
+                                            st.markdown("**Sample Staged Orders Data:**")
+                                            st.json(staged_info['sample_data'][:2])  # Show first 2 orders
+                                
+                                # Display inventory minus staged debug info
+                                if 'inventory_minus_staged' in debug_info:
+                                    st.markdown("**🔄 Inventory Minus Staged Debug:**")
+                                    inv_minus = debug_info['inventory_minus_staged']
+                                    
+                                    debug_metrics_col1, debug_metrics_col2, debug_metrics_col3, debug_metrics_col4 = st.columns(4)
+                                    with debug_metrics_col1:
+                                        st.metric("📦 Total Items", inv_minus.get('total_items', 0))
+                                    with debug_metrics_col2:
+                                        st.metric("✅ Positive Balance", inv_minus.get('positive_balance_items', 0))
+                                    with debug_metrics_col3:
+                                        st.metric("⚖️ Zero Balance", inv_minus.get('zero_balance_items', 0))
+                                    with debug_metrics_col4:
+                                        st.metric("❌ Negative Balance", inv_minus.get('negative_balance_items', 0))
+                                    
+                                    if inv_minus.get('sample_items'):
+                                        st.markdown("**Sample Inventory Minus Staged Items:**")
+                                        st.json(inv_minus['sample_items'])
+                                
+                                # Display current inventory state
+                                if 'current_inventory_state' in debug_info:
+                                    st.markdown("**📊 Current Inventory State Debug:**")
+                                    current_inv = debug_info['current_inventory_state']
+                                    if 'message' not in current_inv:
+                                        st.write(f"- Total items: {current_inv.get('total_items', 0)}")
+                                        if current_inv.get('sample_items'):
+                                            st.markdown("**Sample Current Inventory Items:**")
+                                            st.json(current_inv['sample_items'])
+                                    else:
+                                        st.info(current_inv.get('message'))
+                                
+                                # Display raw calculation data
+                                st.markdown("**🔧 Raw Calculation Access:**")
+                                if st.button("📄 Show Raw Inventory Calculations", key="show_raw_calcs"):
+                                    try:
+                                        raw_calcs = st.session_state.staging_processor.get_inventory_calculations()
+                                        st.json(raw_calcs)
+                                    except Exception as e:
+                                        st.error(f"Error getting raw calculations: {e}")
+                                
+                                # Show errors if any
+                                if 'error' in debug_info:
+                                    st.error(f"Debug error: {debug_info['error']}")
+                                
+                                # Timestamp
+                                st.caption(f"Debug info generated at: {debug_info.get('timestamp', 'unknown')}")
+                                
+                            except Exception as e:
+                                st.error(f"Error generating debug information: {e}")
+                                st.write("This usually means the staging processor is not properly initialized.")
+                    else:
+                        st.warning("No inventory data available to display")
+                else:
+                    st.info("No available inventory data. This happens when there are no staged orders or no initial inventory.")
+                    
+            except Exception as e:
+                st.error(f"Error calculating available inventory: {e}")
+                st.info("Please ensure orders have been processed and staged before viewing available inventory.")
+        else:
+            st.warning("⚠️ Staging processor not available.")
+            st.info("Please upload and process files first, then stage some orders to see available inventory for recalculation.")
     
     with inventory_after_processing_tab:
         st.markdown("**Projected Inventory After Full Current Processing Run**")
@@ -1521,6 +1733,51 @@ def render_staging_tab():
 def render_sku_mapping_editor(sku_mappings, data_processor):
     """Renders the SKU Mapping display with warehouse tabs and proper bundle editing"""
     st.markdown("**SKU Mapping**")
+    
+    # Add prominent links to Google Sheets for each warehouse
+    st.info("📝 **To Edit SKU Mappings:** Use the warehouse-specific Google Sheets links below (changes will be loaded on next app refresh)")
+    
+    # Create direct links for each warehouse
+    st.markdown("**🔗 Direct Links to Edit SKU Mappings by Warehouse:**")
+    
+    # Create columns for warehouse links
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("""
+        **🏢 Oxnard Warehouse:**
+        
+        [📊 Edit Oxnard SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=549145618)
+        
+        *Sheet: INPUT_bundles_cvr_oxnard*
+        """)
+    
+    with col2:
+        st.markdown("""
+        **🏭 Wheeling Warehouse:**
+        
+        [📊 Edit Wheeling SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=0)
+        
+        *Sheet: INPUT_bundles_cvr_wheeling*
+        """)
+    
+    # Reload button
+    link_col1, link_col2 = st.columns([3, 1])
+    
+    with link_col2:
+        if st.button("🔄 Reload Mappings", help="Reload SKU mappings from Google Sheets after making changes"):
+            # Trigger a reload of SKU mappings
+            if hasattr(st.session_state, 'staging_processor') and st.session_state.staging_processor:
+                try:
+                    st.session_state.staging_processor.sku_mappings = st.session_state.staging_processor.load_sku_mappings()
+                    st.success("✅ SKU mappings reloaded from Google Sheets!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error reloading mappings: {e}")
+            else:
+                st.warning("No data processor available for reloading")
+    
+    st.markdown("---")
     
     # Debug info
     if sku_mappings is not None:
@@ -1799,3 +2056,232 @@ def render_sku_mapping_editor(sku_mappings, data_processor):
                             else:
                                 st.error("❌ Please enter bundle SKU and components")
     
+def create_aggrid_table(df, height=400, selection_mode='multiple', enable_enterprise_modules=True, 
+                       fit_columns_on_grid_load=False, theme='alpine', key=None, groupable=True, 
+                       filterable=True, sortable=True, editable=False, show_hints=False, enable_download=True,
+                       enable_sidebar=True, enable_pivot=True, enable_value_aggregation=True, 
+                       enhanced_menus=True, suppress_callback_exceptions=True):
+    """
+    Create an enhanced ag-Grid table with auto-sizing, filtering, grouping, sorting, and download capabilities.
+    
+    Args:
+        df: DataFrame to display
+        height: Table height in pixels
+        selection_mode: 'single', 'multiple', or 'disabled'
+        enable_enterprise_modules: Enable advanced features (disabled by default to prevent JSON serialization issues)
+        fit_columns_on_grid_load: Auto-fit columns to grid width
+        theme: ag-Grid theme ('alpine', 'balham', 'material')
+        key: Unique key for the table
+        groupable: Enable column grouping
+        filterable: Enable column filtering
+        sortable: Enable column sorting
+        editable: Enable cell editing
+        show_hints: Show helpful hints to users
+        enable_download: Enable download functionality
+        enable_sidebar: Enable sidebar for advanced grouping/filtering
+        enable_pivot: Enable pivot functionality
+        enable_value_aggregation: Enable value aggregation in groups
+        enhanced_menus: Enable enhanced context menus and column menu options
+        suppress_callback_exceptions: Suppress callback exceptions for better performance
+    
+    Returns:
+        dict: Contains AgGrid response and additional info
+    """
+    try:
+        # Create GridOptionsBuilder with simplified configuration
+        gb = GridOptionsBuilder.from_dataframe(df)
+        
+        # Configure default column properties with enhanced filtering and grouping
+        gb.configure_default_column(
+            filterable=filterable,
+            sortable=sortable,
+            resizable=True,
+            editable=editable,
+            groupable=groupable,
+            enableRowGroup=groupable,
+            enablePivot=enable_pivot,
+            enableValue=enable_value_aggregation,
+            filter=True,
+            floatingFilter=True,  # Enable floating filters for better UX
+            suppressMenu=False,
+            menuTabs=['filterMenuTab', 'generalMenuTab', 'columnsMenuTab'] if filterable else [],
+            minWidth=120,  # Set minimum column width
+            width=150,     # Set default column width
+            suppressSizeToFit=False  # Allow columns to be resized to fit content
+        )
+        
+        # Configure selection
+        if selection_mode != 'disabled':
+            gb.configure_selection(
+                selection_mode, 
+                use_checkbox=True,
+                header_checkbox=True,  # Adds select all checkbox in header
+                groupSelectsChildren=True,
+                groupSelectsFiltered=True
+            )
+        
+        # Configure enhanced column types for better filtering and grouping
+        for col in df.columns:
+            # Set specific widths for important columns
+            col_width = 150  # default
+            if any(keyword in col.lower() for keyword in ['sku', 'id', 'number']):
+                col_width = 180  # wider for SKUs and IDs
+            elif any(keyword in col.lower() for keyword in ['name', 'description']):
+                col_width = 200  # wider for names
+            elif any(keyword in col.lower() for keyword in ['qty', 'quantity', 'balance']):
+                col_width = 120  # narrower for numbers
+            
+            if df[col].dtype in ['int64', 'float64']:
+                # Numeric columns with enhanced number filter and aggregation
+                gb.configure_column(
+                    col, 
+                    type=["numericColumn"],
+                    filter="agNumberColumnFilter",
+                    enableValue=True,  # Enable for aggregation
+                    aggFunc=['sum', 'avg', 'min', 'max', 'count'],
+                    floatingFilter=True,
+                    width=col_width,
+                    minWidth=100
+                )
+            elif df[col].dtype == 'datetime64[ns]':
+                # Date columns with enhanced date filter
+                gb.configure_column(
+                    col,
+                    filter="agDateColumnFilter",
+                    type=["dateColumn"],
+                    floatingFilter=True,
+                    width=col_width,
+                    minWidth=120
+                )
+            else:
+                # Text columns with enhanced text filter and grouping
+                gb.configure_column(
+                    col,
+                    filter="agTextColumnFilter",
+                    enableRowGroup=True,  # Enable for grouping
+                    floatingFilter=True,
+                    width=col_width,
+                    minWidth=120
+                )
+        
+        # Configure sidebar with working configuration for streamlit-aggrid 1.0.5
+        if enable_sidebar:
+            try:
+                # Use the correct method for streamlit-aggrid 1.0.5
+                gb.configure_side_bar()
+            except Exception as e:
+                print(f"Sidebar configuration failed: {e}")
+                pass
+        
+        # Configure basic grouping (simplified to avoid issues)
+        if groupable:
+            try:
+                gb.configure_grid_options(
+                    groupSelectsChildren=True,
+                    groupSelectsFiltered=True,
+                    suppressRowGroupHidesColumns=False,
+                    groupDefaultExpanded=1
+                )
+            except Exception as e:
+                print(f"Grouping configuration failed: {e}")
+                pass
+        
+        # Configure basic aggregation for numeric columns
+        if enable_value_aggregation:
+            for col in df.columns:
+                if df[col].dtype in ['int64', 'float64']:
+                    try:
+                        gb.configure_column(
+                            col,
+                            enableValue=True
+                        )
+                    except Exception as e:
+                        # Skip if column configuration causes issues
+                        pass
+        
+        # Build grid options
+        grid_options = gb.build()     
+        
+        # Create the AgGrid with original working configuration
+        grid_response = AgGrid(
+            df,
+            gridOptions=grid_options,
+            height=height,
+            data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
+            update_mode=GridUpdateMode.MODEL_CHANGED,
+            fit_columns_on_grid_load=fit_columns_on_grid_load,
+            theme=theme,
+            enable_enterprise_modules=enable_enterprise_modules,
+            allow_unsafe_jscode=True,  # Allow JavaScript code to prevent serialization errors
+            key=key
+        )
+        
+    except Exception as e:
+        # Fallback to basic Streamlit dataframe if AgGrid fails
+        st.error(f"AgGrid failed to render due to JSON serialization error: {e}")
+        st.write("Falling back to basic table view:")
+        
+        # Display basic dataframe (without key parameter which isn't supported in older versions)
+        st.dataframe(df, height=height, use_container_width=True)
+        
+        # Create a mock response for compatibility
+        grid_response = {
+            'data': df.to_dict('records'),
+            'selected_rows': [],
+            'selected_data': []
+        }
+    
+    
+    # Display enhanced usage instructions and selection summary
+    if show_hints:
+        with st.expander("💡 AgGrid Usage Tips", expanded=False):
+            st.markdown("""
+            **🔍 Filtering & Searching:**
+            - Use the floating filter boxes below column headers for instant filtering
+            - Click the ⋮ menu on any column header for advanced filter options
+            - Use the sidebar (→) for drag-and-drop grouping and column management
+            
+            **📊 Grouping & Analysis:**
+            - Drag columns from the sidebar to "Row Groups" to group data
+            - Drag numeric columns to "Values" to see aggregations (sum, avg, min, max)
+            - Use "Pivot Mode" in the sidebar for cross-tabulation analysis
+            
+            **✅ Row Selection:**
+            - **Header checkbox**: Click checkbox in header to select/deselect all visible rows
+            - **Individual checkboxes**: Use checkboxes to select individual rows  
+            - **Ctrl+A**: Select all visible rows
+            - **Ctrl+Click**: Multi-select rows
+            - Selected row count is displayed below the grid
+            
+            **📥 Built-in Export Options:**
+            - **Right-click on the grid** to access export menu
+            - **Export to CSV**: Download filtered/selected data as CSV
+            - **Export to Excel**: Download filtered/selected data as Excel
+            - **Copy to Clipboard**: Copy data for pasting elsewhere
+            - **Print**: Print the current view of the data
+            
+            **⌨️ Advanced Features:**
+            - Right-click on the grid for context menu options
+            - Ctrl+Right-click for additional context menu
+            - Tab/Shift+Tab: Navigate between cells and filters
+            - Drag column borders to resize columns
+            """)
+    
+    
+    # Return comprehensive response
+    return {
+        'grid_response': grid_response,
+        'selected_count': len(grid_response['selected_rows']) if grid_response['selected_rows'] is not None else 0,
+        'filtered_count': len(grid_response['data']) if grid_response['data'] is not None else len(df)
+    }
+
+def render_progress_bar(current_step, total_steps, step_name):
+    """Render a progress bar for processes"""
+    progress = st.progress(0)
+    # Avoid division by zero
+    if total_steps > 0:
+        progress.progress(current_step / total_steps)
+    else:
+        progress.progress(0)
+    st.caption(f"Step {current_step}/{total_steps}: {step_name}")
+
