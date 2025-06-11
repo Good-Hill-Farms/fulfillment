@@ -1715,7 +1715,7 @@ def render_staging_tab():
     )
     
     # Handle selection and removal without rerun
-    if grid_response['grid_response']['selected_rows']:
+    if grid_response['grid_response'] and len(grid_response['grid_response']['selected_rows']) > 0:
         selected_rows = grid_response['grid_response']['selected_rows']
         selected_count = len(selected_rows)
         
@@ -1723,9 +1723,9 @@ def render_staging_tab():
         
         # Display summary of selected items
         if selected_count > 0:
-            selected_skus = len(set([row.get('sku', '') for row in selected_rows]))
-            selected_orders = len(set([row.get('ordernumber', '') for row in selected_rows]))
-            selected_qty = sum([row.get('Transaction Quantity', 0) for row in selected_rows])
+            selected_skus = len(set([row['sku'] if isinstance(row, dict) and 'sku' in row else '' for row in selected_rows]))
+            selected_orders = len(set([row['ordernumber'] if isinstance(row, dict) and 'ordernumber' in row else '' for row in selected_rows]))
+            selected_qty = sum([row['Transaction Quantity'] if isinstance(row, dict) and 'Transaction Quantity' in row else 0 for row in selected_rows])
             
             st.write(f"📦 {selected_qty} units | 🏷️ {selected_skus} unique SKUs | 📝 {selected_orders} orders")
             

@@ -878,12 +878,17 @@ class DataProcessor:
         else:
             logger.info("Using provided 'inventory_df' directly for processing.")
 
+        # Defensive check: ensure current_inventory_df is a DataFrame
+        if current_inventory_df is None or not isinstance(current_inventory_df, pd.DataFrame):
+            logger.error("current_inventory_df is None or not a DataFrame, using empty DataFrame.")
+            current_inventory_df = self._empty_inventory_df()
+        logger.info(f"[process_orders] current_inventory_df type: {type(current_inventory_df)}, columns: {getattr(current_inventory_df, 'columns', None)}")
+
         # Initialize inventory state using the determined inventory DataFrame
         if current_inventory_df is not None and not current_inventory_df.empty:
             self._initialize_inventory_state(current_inventory_df, running_balances, initial_inventory_state, affected_skus)
         else:
-            logger.warning("Inventory DataFrame (current_inventory_df) is empty or None after selection/provision. "
-                           "Processing may not use inventory or might lead to errors if inventory is expected.")
+            logger.warning("Inventory DataFrame (current_inventory_df) is empty or None after selection/provision. Processing may not use inventory or might lead to errors if inventory is expected.")
 
         # Load SKU weight data if not provided
         if sku_weight_data is None:
@@ -1006,6 +1011,9 @@ class DataProcessor:
             "initial_inventory": initial_inventory_df,
             "inventory_comparison": inventory_comparison
         }
+
+    def _empty_inventory_df(self):
+        return pd.DataFrame(columns=['Sku', 'WarehouseName', 'Balance'])
 
     def _convert_initial_inventory_to_df(self, initial_inventory_state):
         """
@@ -1217,15 +1225,16 @@ class DataProcessor:
                     parts = key.split('|')
                     if len(parts) == 2:
                         sku, warehouse = parts
-                        records.append({'Sku': sku, 'WarehouseName': warehouse, 'Balance': balance})
+                        records.append({'sku': sku, 'warehouse': warehouse, 'balance': balance})
                     else:
                         logger.warning(f"Skipping malformed key in inv_minus_staged_dict: {key}")
-                
                 if not records:
                     logger.info("No records to form inventory_minus_staged DataFrame. Might be no staged orders or no inventory. Returning empty DataFrame.")
                     return empty_inventory_df
-                
-                return pd.DataFrame(records)
+                df = pd.DataFrame(records)
+                # Standardize column names to capitalized for downstream compatibility
+                df = df.rename(columns={'sku': 'Sku', 'warehouse': 'WarehouseName', 'balance': 'Balance'})
+                return df
             except Exception as e:
                 logger.error(f"Error calculating or converting inventory_minus_staged: {e}. Returning empty DataFrame.")
                 return empty_inventory_df
@@ -3072,11 +3081,15 @@ class DataProcessor:
         """
         if self.orders_in_processing.empty:
             return {"error": "No orders in processing to recalculate"}
-            
+        
+        # Defensive check for initial_inventory
+        if self.initial_inventory is None or not isinstance(self.initial_inventory, pd.DataFrame) or self.initial_inventory.empty:
+            return {"error": "Initial inventory is not loaded or is empty. Please upload inventory and re-initialize workflow."}
+        
         # Update SKU mappings if provided
         if sku_mappings_updates:
             self.update_sku_mappings(sku_mappings_updates)
-            
+        
         # Get before-recalculation state for comparison
         before_state = {
             "orders_in_processing": len(self.orders_in_processing),
@@ -3087,12 +3100,14 @@ class DataProcessor:
         # Convert orders in processing back to input format
         try:
             orders_input = self._convert_processed_orders_to_input_format(self.orders_in_processing)
-            
-            if orders_input is None or orders_input.empty:
+            if orders_input is None:
+                logger.error("orders_input is None, using empty DataFrame with order columns.")
+                orders_input = pd.DataFrame(columns=[
+                    "order id", "externalorderid", "ordernumber", "CustomerFirstName", "customerLastname", "customeremail", "customerphone", "shiptoname", "shiptostreet1", "shiptostreet2", "shiptocity", "shiptostate", "shiptopostalcode", "note", "placeddate", "preferredcarrierserviceid", "totalorderamount", "shopsku", "shopquantity", "externalid", "Tags", "MAX PKG NUM", "Fulfillment Center"
+                ])
+            if orders_input.empty:
                 return {"error": "Failed to convert orders to input format - result is None or empty"}
-            
             logger.info(f"Converted {len(self.orders_in_processing)} processed orders to {len(orders_input)} input orders")
-            
         except Exception as e:
             logger.error(f"Error converting processed orders to input format: {e}")
             return {"error": f"Failed to convert orders to input format: {str(e)}"}

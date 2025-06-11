@@ -187,6 +187,9 @@ def main():
                         
                         if 'initial_inventory' in result:
                             st.session_state.initial_inventory = result['initial_inventory']
+                            # Always sync to staging_processor
+                            if st.session_state.staging_processor is not None:
+                                st.session_state.staging_processor.initial_inventory = st.session_state.initial_inventory
                         
                         if 'inventory_comparison' in result:
                             st.session_state.inventory_comparison = result['inventory_comparison']
