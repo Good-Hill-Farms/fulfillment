@@ -10,7 +10,7 @@ The system is built on 6 core components that work together to provide a complet
 
 ```
 📱 app.py - Main Streamlit application & orchestration
-📊 data_parser.py - CSV parsing, validation & normalization  
+📊 data_parser.py - CSV parsing, validation & normalization
 ⚙️ data_processor.py - Core business logic & processing engine
 🌐 google_sheets.py - External data integration (SKU mappings)
 🤖 llm_handler.py - AI assistant & decision support
@@ -28,7 +28,7 @@ graph TB
     E --> F[Bundle Processing & Component Breakdown]
     F --> G[Staging & Workflow Management]
     G --> H[Fulfillment Plan Generation]
-    
+
     I[Inventory CSV] --> E
     J[SKU Mappings] --> C
     K[Shipping Zones] --> D
@@ -352,7 +352,7 @@ ZIP Ranges:
 ### orders.csv
 Required columns from Shopify export:
 - `order id` - Order number
-- `Shipping: Zip` - Customer ZIP code  
+- `Shipping: Zip` - Customer ZIP code
 - `SKU Helper` - Shopify product SKU
 - `Line: Fulfillable Quantity` - How many items
 - `NEW Tags` - Priority tags (P1, P2, etc.)
@@ -494,6 +494,6 @@ gcloud run deploy fulfillment-app --memory 2Gi --cpu 1
 
 ---
 
-**Version**: 1.0.0 (Production Ready)  
+**Version**: 1.0.0 (Production Ready)
 **Documentation Updated**: December 2024
 **Focus**: Accurate Batch Processing System Documentation

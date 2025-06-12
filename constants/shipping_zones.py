@@ -14,7 +14,7 @@ import pandas as pd
 FULFILLMENT_CENTERS = {
     "oxnard": {
         "name": "Oxnard",
-        "state": "CA", 
+        "state": "CA",
         "zip": "93030",  # Updated to Oxnard ZIP code
         "legacy_zip": "93021",  # Moorpark ZIP for reference
         "default_zone": None,  # No default zone - must be determined by ZIP code
