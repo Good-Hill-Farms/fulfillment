@@ -708,6 +708,7 @@ def render_orders_tab(processed_orders, shortage_summary=None):
         # Don't show the staged column to the user
         if "staged" in display_orders.columns:
             display_orders = display_orders.drop(columns=["staged"])
+
         # Display key metrics
         col1, col2, col3, col4, col5 = st.columns(5)
 
@@ -799,279 +800,57 @@ def render_orders_tab(processed_orders, shortage_summary=None):
             # Filter display_orders to show all lines for these orders
             filtered_orders = display_orders[display_orders["ordernumber"].isin(order_numbers)]
 
-        # Show inventory calculation: Initial - Staged = Available for Recalculation
-        if (
-            "staging_processor" in st.session_state
-            and st.session_state.staging_processor
-            and st.session_state.workflow_initialized
-        ):
-            try:
-                inventory_calcs = st.session_state.staging_processor.get_inventory_calculations()
-                inventory_minus_staged = inventory_calcs.get(
-                    "inventory_minus_staged", pd.DataFrame()
+        st.markdown("---")
+        # Add global search field with improved layout
+        search_container = st.container()
+        with search_container:
+            st.markdown("**🔍 Search Orders**")
+            st.caption("Search will show all line items from orders that contain a match")
+            search_col1, search_col2 = st.columns([3, 1])
+            with search_col1:
+                search_query = st.text_input(
+                    "Enter search term",
+                    key="global_search_query",
+                    placeholder="Search by order number, SKU, description, or any other field...",
+                )
+            with search_col2:
+                search_mode = st.selectbox(
+                    "Search in",
+                    ["All Fields", "Order Numbers Only", "SKUs Only"],
+                    key="search_mode",
+                    help="Choose which fields to search in",
                 )
 
-                # Handle DataFrame case
-                if (
-                    isinstance(inventory_minus_staged, pd.DataFrame)
-                    and not inventory_minus_staged.empty
-                ):
-                    available_items = sum(
-                        1
-                        for balance in inventory_minus_staged["Balance"]
-                        if isinstance(balance, (int, float)) and balance > 0
-                    )
-                    total_available_balance = sum(
-                        max(0, balance)
-                        for balance in inventory_minus_staged["Balance"]
-                        if isinstance(balance, (int, float))
-                    )
-                else:
-                    # Fallback for other cases
-                    available_items = 0
-                    total_available_balance = 0
-                    logger.warning(
-                        "Could not calculate inventory minus staged: Invalid data format"
-                    )
-
-                # Calculate initial and used in staging
-                initial_inventory = (
-                    st.session_state.initial_inventory
-                    if "initial_inventory" in st.session_state
-                    else None
-                )
-                used_items = 0
-                used_units = 0
-                if initial_inventory is not None and not initial_inventory.empty:
-                    len(initial_inventory)
-                    if "Balance" in initial_inventory.columns:
-                        initial_inventory["Balance"].sum()
-                    elif "AvailableQty" in initial_inventory.columns:
-                        initial_inventory["AvailableQty"].sum()
-                    # Used in staging: sum of (initial - available) for each SKU|warehouse
-                    initial_lookup = {}
-                    for _, row in initial_inventory.iterrows():
-                        sku = row.get("Sku") or row.get("sku")
-                        warehouse = (
-                            row.get("warehouse") or row.get("WarehouseName") or row.get("Warehouse")
-                        )
-                        balance = (
-                            row.get("balance")
-                            if "balance" in row
-                            else row.get("Balance")
-                            if "Balance" in row
-                            else row.get("AvailableQty")
-                        )
-                        if sku is not None and warehouse is not None and balance is not None:
-                            initial_lookup[f"{sku}|{warehouse}"] = float(balance)
-                    for key, balance in inventory_minus_staged.items():
-                        if key in initial_lookup:
-                            used = initial_lookup[key] - balance
-                            if used > 0:
-                                used_items += 1
-                                used_units += used
-            except Exception as e:
-                logger.warning(f"Could not calculate inventory minus staged: {e}")
-
-        # Use the most up-to-date shortage_summary (prefer session state over parameter)
-        if "shortage_summary" in st.session_state and st.session_state.shortage_summary is not None:
-            # Always use session state if it exists (even if empty - means no shortages after recalculation)
-            shortage_summary = st.session_state.shortage_summary
-            shortage_count = len(shortage_summary) if not shortage_summary.empty else 0
-        elif shortage_summary is not None and not shortage_summary.empty:
-            shortage_count = len(shortage_summary)
-            # Update session state with shortage_summary for use in other components
-            st.session_state.shortage_summary = shortage_summary
-        else:
-            shortage_count = 0
-
-        if shortage_summary is not None and not shortage_summary.empty:
-            # Find SKU column using flexible matching patterns
-            sku_keywords = ["sku", "item", "product", "part"]
-            sku_col = None
-
-            # Find the first column that contains any of the SKU keywords
-            for col in shortage_summary.columns:
-                if any(keyword in col.lower() for keyword in sku_keywords):
-                    sku_col = col
-                    break
-
-            # If still no match, try a case-insensitive exact match for 'sku'
-            if not sku_col:
-                for col in shortage_summary.columns:
-                    if col.lower() == "sku":
-                        sku_col = col
-                        break
-
-            # Calculate unique SKUs if we found a column
-            if sku_col:
-                unique_skus = shortage_summary[sku_col].nunique()
+        # Apply global search if query exists
+        if search_query:
+            search_query = search_query.lower()
+            matching_orders = set()  # Keep track of matching order numbers
+            
+            if search_mode == "Order Numbers Only":
+                # Search only in order numbers
+                mask = filtered_orders["ordernumber"].astype(str).str.contains(search_query, case=False, na=False)
+                matching_orders.update(filtered_orders[mask]["ordernumber"].unique())
+            elif search_mode == "SKUs Only":
+                # Search only in SKUs
+                mask = filtered_orders["sku"].astype(str).str.contains(search_query, case=False, na=False)
+                matching_orders.update(filtered_orders[mask]["ordernumber"].unique())
             else:
-                # If still no match and the DataFrame has data, use the first column as fallback
-                if not shortage_summary.empty and len(shortage_summary.columns) > 0:
-                    unique_skus = shortage_summary[shortage_summary.columns[0]].nunique()
-                else:
-                    unique_skus = shortage_count  # Default to shortage_count if no columns found
+                # Search across all string columns
+                for column in filtered_orders.columns:
+                    if filtered_orders[column].dtype == 'object':  # Only search string columns
+                        mask = filtered_orders[column].astype(str).str.contains(search_query, case=False, na=False)
+                        matching_orders.update(filtered_orders[mask]["ordernumber"].unique())
 
-            # Find order number column using flexible matching patterns
-            order_keywords = [
-                "order",
-                "ordernumber",
-                "order number",
-                "orderid",
-                "order id",
-                "external",
-            ]
-            order_col = None
+            # Show all lines for matching orders
+            filtered_orders = filtered_orders[filtered_orders["ordernumber"].isin(matching_orders)]
 
-            # Find the first column that contains any of the order keywords
-            for col in shortage_summary.columns:
-                if any(keyword in col.lower() for keyword in order_keywords):
-                    order_col = col
-                    break
-
-            # Calculate affected orders if we found a column
-            if order_col:
-                affected_orders = shortage_summary[order_col].nunique()
+            # Show search results summary
+            matching_orders_count = len(matching_orders)
+            matching_lines = len(filtered_orders)
+            if matching_orders_count > 0:
+                st.info(f"📋 Showing {matching_lines} line items from {matching_orders_count} orders containing '{search_query}'")
             else:
-                # If we didn't find an order column but found a SKU column, assume 1 order per shortage
-                affected_orders = shortage_count
-
-            # Calculate items with multiple issues (duplicates)
-            if "Issues" in filtered_orders.columns:
-                multiple_issues_count = (
-                    len(filtered_orders[filtered_orders["Issues"] != ""]) - shortage_count
-                    if shortage_count > 0
-                    else 0
-                )
-            else:
-                multiple_issues_count = 0
-
-            if shortage_count > 0:
-                # Create a clearer, more structured shortage message
-                st.info(
-                    f"⚠️ INVENTORY SHORTAGES DETECTED:\n"
-                    + f"• {shortage_count} inventory shortage instances\n"
-                    + f"• {unique_skus} unique Warehouse SKUs affected\n"
-                    + f"• {affected_orders} orders impacted"
-                    + (
-                        f"\n• {multiple_issues_count} additional shortage flags (line items with multiple shortage types)"
-                        if multiple_issues_count > 0
-                        else ""
-                    )
-                )
-
-                # Add an expander with detailed shortage information including fulfillment center and order IDs
-                with st.expander("📋 View Detailed Shortages by Fulfillment Center", expanded=False):
-                    if shortage_summary is not None and not shortage_summary.empty:
-                        # Create a detailed view of shortages with fulfillment center info
-                        detailed_view = shortage_summary.copy()
-
-                        # Find important columns using flexible matching
-                        fc_col = next(
-                            (
-                                col
-                                for col in detailed_view.columns
-                                if any(
-                                    keyword in col.lower()
-                                    for keyword in [
-                                        "fulfillment",
-                                        "center",
-                                        "warehouse",
-                                        "location",
-                                    ]
-                                )
-                            ),
-                            None,
-                        )
-                        sku_col = next(
-                            (
-                                col
-                                for col in detailed_view.columns
-                                if any(
-                                    keyword in col.lower() for keyword in ["sku", "item", "product"]
-                                )
-                                and not any(kw in col.lower() for kw in ["shopify", "related"])
-                            ),
-                            None,
-                        )
-                        order_col = next(
-                            (
-                                col
-                                for col in detailed_view.columns
-                                if any(
-                                    keyword in col.lower()
-                                    for keyword in ["order", "ordernumber", "orderid"]
-                                )
-                            ),
-                            None,
-                        )
-                        shopify_cols = [
-                            col
-                            for col in detailed_view.columns
-                            if any(keyword in col.lower() for keyword in ["shopify", "related"])
-                        ]
-
-                        # Group by fulfillment center and warehouse SKU
-                        if fc_col and sku_col and order_col:
-                            # Group data by fulfillment center and SKU
-                            grouped = detailed_view.groupby([fc_col, sku_col])
-
-                            # Create result rows with grouped data
-                            result_rows = []
-                            for (fc, sku), group in grouped:
-                                row = {"fulfillment_center": fc, "warehouse_sku": sku}
-
-                                # Collect all related Shopify SKUs
-                                for col in shopify_cols:
-                                    unique_values = group[col].dropna().unique()
-                                    if len(unique_values) > 0:
-                                        row["shopify_sku"] = ", ".join(
-                                            sorted(unique_values.astype(str))
-                                        )
-                                    else:
-                                        row["shopify_sku"] = ""
-
-                                # Add affected order IDs
-                                unique_orders = sorted(
-                                    group[order_col].dropna().unique().astype(str)
-                                )
-                                row["order_id"] = ", ".join(unique_orders)
-
-                                # Add counts
-                                row["affected_orders"] = len(unique_orders)
-                                row["line_items"] = len(group)
-
-                                result_rows.append(row)
-
-                            # Convert to DataFrame and reorder columns
-                            if result_rows:
-                                grouped_df = pd.DataFrame(result_rows)
-
-                                # Reorder columns for better display
-                                column_order = [
-                                    "fulfillment_center",
-                                    "warehouse_sku",
-                                    "shopify_sku",
-                                    "order_id",
-                                ]
-
-                                # Display the grouped table
-                                st.dataframe(
-                                    grouped_df,
-                                    height=400,
-                                    use_container_width=True,
-                                    hide_index=True,
-                                )
-                            else:
-                                st.info("No detailed shortage information available")
-                        else:
-                            # Fallback if we can't find the needed columns
-                            st.info(
-                                "Could not identify necessary columns for grouping in shortage data"
-                            )
-                    else:
-                        st.info("No shortage data available")
+                st.warning("No orders found matching your search criteria")
 
         # Create AgGrid table
         gb = GridOptionsBuilder.from_dataframe(filtered_orders)
