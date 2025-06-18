@@ -4,6 +4,11 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 from st_aggrid import AgGrid, DataReturnMode, GridOptionsBuilder, GridUpdateMode
+import numpy as np
+from datetime import datetime
+import json
+import plotly.graph_objects as go
+from typing import Dict, List, Any, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -42,13 +47,21 @@ def render_workflow_status():
             len(inventory_calcs.get("inventory_minus_staged", {}))
 
             # Calculate available inventory statistics
-            inventory_minus_staged_dict = inventory_calcs.get("inventory_minus_staged", {})
-            available_items = sum(
-                1 for balance in inventory_minus_staged_dict.values() if balance > 0
-            )
-            total_available_balance = sum(
-                max(0, balance) for balance in inventory_minus_staged_dict.values()
-            )
+            inventory_minus_staged = inventory_calcs.get("inventory_minus_staged", pd.DataFrame())
+            
+            # Calculate available inventory statistics
+            if isinstance(inventory_minus_staged, pd.DataFrame) and not inventory_minus_staged.empty:
+                available_items = sum(
+                    1 for balance in inventory_minus_staged["Balance"].values
+                    if isinstance(balance, (int, float, np.number)) and float(balance) > 0
+                )
+                total_available_balance = sum(
+                    float(balance) for balance in inventory_minus_staged["Balance"].values
+                    if isinstance(balance, (int, float, np.number)) and float(balance) > 0
+                )
+            else:
+                available_items = 0
+                total_available_balance = 0
 
         except Exception as e:
             logger.warning(f"Error getting inventory calculations: {e}")
@@ -2303,20 +2316,8 @@ def render_staging_tab():
         if not grid_response:
             return
 
-        if not isinstance(grid_response, dict):
-            logger.warning("Grid response is not a dictionary")
-            return
-
-        if "grid_response" not in grid_response:
-            logger.warning("grid_response key not found in response")
-            return
-
-        grid_data = grid_response["grid_response"]
-        if not isinstance(grid_data, dict):
-            logger.warning("grid_response value is not a dictionary")
-            return
-
-        selected_rows = grid_data.get("selected_rows", [])
+        # The grid_response from AgGrid is already a dictionary containing selected_rows
+        selected_rows = grid_response.get("selected_rows", [])
         if not selected_rows:
             return
 

@@ -4126,7 +4126,7 @@ class DataProcessor:
                         if "|" in key:
                             sku, warehouse = key.split("|")
                             records.append(
-                                {"Sku": sku, "WarehouseName": warehouse, "Balance": balance}
+                                {"Sku": sku, "WarehouseName": warehouse, "Balance": float(balance) if pd.notna(balance) else 0}
                             )
                     inventory_minus_staged = pd.DataFrame(records)
                 else:
