@@ -2288,28 +2288,39 @@ def render_staging_tab():
             st.write("Unique order numbers in staging:")
             st.code(", ".join(map(str, unique_order_numbers)))
 
-    # Create staging grid
-    grid_response = create_aggrid_table(
-        display_orders,
-        height=600,
-        selection_mode="multiple",
-        enable_enterprise_modules=True,
-        theme="alpine",
-        key="staging_grid",
-    )
+    try:
+        # Create staging grid
+        grid_response = create_aggrid_table(
+            display_orders,
+            height=600,
+            selection_mode="multiple",
+            enable_enterprise_modules=True,
+            theme="alpine",
+            key="staging_grid",
+        )
 
-    # Handle selection and removal without rerun
-    if (
-        grid_response
-        and isinstance(grid_response, dict)
-        and "grid_response" in grid_response
-        and grid_response["grid_response"]
-        and "selected_rows" in grid_response["grid_response"]
-        and grid_response["grid_response"]["selected_rows"]
-    ):
-        selected_rows = grid_response["grid_response"]["selected_rows"]
+        # Handle selection and removal with defensive checks
+        if not grid_response:
+            return
+
+        if not isinstance(grid_response, dict):
+            logger.warning("Grid response is not a dictionary")
+            return
+
+        if "grid_response" not in grid_response:
+            logger.warning("grid_response key not found in response")
+            return
+
+        grid_data = grid_response["grid_response"]
+        if not isinstance(grid_data, dict):
+            logger.warning("grid_response value is not a dictionary")
+            return
+
+        selected_rows = grid_data.get("selected_rows", [])
+        if not selected_rows:
+            return
+
         selected_count = len(selected_rows)
-
         st.write(f"Selected: {selected_count} items")
 
         # Display summary of selected items
@@ -2317,31 +2328,36 @@ def render_staging_tab():
             selected_skus = len(
                 set(
                     [
-                        row["sku"] if isinstance(row, dict) and "sku" in row else ""
+                        row.get("sku", "")
                         for row in selected_rows
+                        if isinstance(row, dict)
                     ]
                 )
             )
             selected_orders = len(
                 set(
                     [
-                        row["ordernumber"] if isinstance(row, dict) and "ordernumber" in row else ""
+                        row.get("ordernumber", "")
                         for row in selected_rows
+                        if isinstance(row, dict)
                     ]
                 )
             )
             selected_qty = sum(
                 [
-                    row["Transaction Quantity"]
-                    if isinstance(row, dict) and "Transaction Quantity" in row
-                    else 0
+                    float(row.get("Transaction Quantity", 0))
                     for row in selected_rows
+                    if isinstance(row, dict)
                 ]
             )
 
             st.write(
                 f"📦 {selected_qty} units | 🏷️ {selected_skus} unique SKUs | 📝 {selected_orders} orders"
             )
+
+    except Exception as e:
+        logger.error(f"Error in staging grid: {str(e)}")
+        st.error("An error occurred while processing the staging grid. Please try again.")
 
 
 def render_sku_mapping_editor(sku_mappings, data_processor):
