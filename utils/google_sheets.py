@@ -100,6 +100,19 @@ def process_sku_data(data: List[List[Any]], center: str) -> Dict[str, Dict[str, 
     # Get headers and rows
     headers = data[0]
     rows = data[1:]
+    
+    # DEBUG: Print headers and first few rows to see what we're getting from Google Sheets
+    print(f"\n=== DEBUG: Processing {center} ===")
+    print(f"Headers: {headers}")
+    print(f"Total rows: {len(rows)}")
+    
+    # Print first 5 rows to see the actual data
+    for i, row in enumerate(rows[:5]):
+        print(f"Row {i+2}: {row}")
+    
+    # Look for the specific SKUs you mentioned
+    target_skus = ["f.avocado_hass-2lb", "f.avocado_hass-2lb_3-bab"]
+    print(f"\nLooking for target SKUs: {target_skus}")
 
     # Initialize result structure
     result = {center: {"singles": {}, "bundles": {}}}
@@ -113,12 +126,30 @@ def process_sku_data(data: List[List[Any]], center: str) -> Dict[str, Dict[str, 
                 continue
 
             order_sku = mapping["shopifysku2"]
+            
+            # DEBUG: Print info for target SKUs
+            if order_sku in target_skus:
+                print(f"\nFOUND TARGET SKU '{order_sku}' at row {row_idx}:")
+                print(f"  Raw row: {row}")
+                print(f"  Mapping: {mapping}")
+                print(f"  picklist sku: {mapping.get('picklist sku', 'NOT FOUND')}")
+                print(f"  actualqty: {mapping.get('actualqty', 'NOT FOUND')}")
+                print(f"  Total Pick Weight: {mapping.get('Total Pick Weight', 'NOT FOUND')}")
+            
             if order_sku not in sku_groups:
                 sku_groups[order_sku] = []
             sku_groups[order_sku].append((row_idx, mapping))
         except Exception as e:
             logger.error(f"Error grouping row {row_idx}: {e}")
             continue
+
+    # DEBUG: Show what SKU groups we found
+    print(f"\nFound {len(sku_groups)} unique SKUs")
+    for sku in target_skus:
+        if sku in sku_groups:
+            print(f"Target SKU '{sku}' has {len(sku_groups[sku])} rows")
+        else:
+            print(f"Target SKU '{sku}' NOT FOUND in data!")
 
     # Process each SKU group
     for order_sku, group_rows in sku_groups.items():
@@ -171,6 +202,12 @@ def process_sku_data(data: List[List[Any]], center: str) -> Dict[str, Dict[str, 
                         "pick_type": mapping.get("Pick Type", ""),
                         "pick_type_inventory": mapping.get("Product Type", ""),
                     }
+                    
+                    # DEBUG: Print result for target SKUs
+                    if order_sku in target_skus:
+                        print(f"\nPROCESSED TARGET SKU '{order_sku}':")
+                        print(f"  Result: {result[center]['singles'][order_sku]}")
+                    
                     logger.debug(f"Processed single SKU {order_sku}")
                 except Exception as e:
                     logger.warning(f"Error processing single SKU {order_sku} at row {row_idx}: {e}")
