@@ -133,33 +133,47 @@ def save_as_excel(df, filename, colorful=False):
             worksheet.write(row, df.columns.get_loc('Sku'), df.iloc[row-2]['Sku'], default_format)
             worksheet.write(row, df.columns.get_loc('Name'), df.iloc[row-2]['Name'], default_format)
             worksheet.write(row, df.columns.get_loc('Type'), df.iloc[row-2]['Type'], default_format)
-            worksheet.write(row, df.columns.get_loc('Expected AvailableQty'), df.iloc[row-2]['Expected AvailableQty'], default_format)
             
-            # QTY columns
-            worksheet.write(row, df.columns.get_loc('QTY_1'), df.iloc[row-2]['QTY_1'], qty_format)
-            worksheet.write(row, df.columns.get_loc('QTY_2'), df.iloc[row-2]['QTY_2'], qty_format)
-            worksheet.write(row, df.columns.get_loc('QTY_3'), df.iloc[row-2]['QTY_3'], qty_format)
+            # Handle either AvailableQty or Expected AvailableQty
+            qty_col = 'Expected AvailableQty' if 'Expected AvailableQty' in df.columns else 'AvailableQty'
+            worksheet.write(row, df.columns.get_loc(qty_col), df.iloc[row-2][qty_col], default_format)
             
-            # LOT columns
-            worksheet.write(row, df.columns.get_loc('LOT_1'), df.iloc[row-2]['LOT_1'], lot_format)
-            worksheet.write(row, df.columns.get_loc('LOT_2'), df.iloc[row-2]['LOT_2'], lot_format)
-            worksheet.write(row, df.columns.get_loc('LOT_3'), df.iloc[row-2]['LOT_3'], lot_format)
+            # Only write QTY/LOT columns if they exist
+            for col in ['QTY_1', 'QTY_2', 'QTY_3']:
+                if col in df.columns:
+                    worksheet.write(row, df.columns.get_loc(col), df.iloc[row-2][col], qty_format)
             
-            # Notes column
-            worksheet.write(row, df.columns.get_loc('Notes'), df.iloc[row-2]['Notes'], notes_format)
+            for col in ['LOT_1', 'LOT_2', 'LOT_3']:
+                if col in df.columns:
+                    worksheet.write(row, df.columns.get_loc(col), df.iloc[row-2][col], lot_format)
             
-            # BatchDetails column
-            worksheet.write(row, df.columns.get_loc('BatchDetails'), df.iloc[row-2]['BatchDetails'], batch_format)
+            # Only write Notes if it exists
+            if 'Notes' in df.columns:
+                worksheet.write(row, df.columns.get_loc('Notes'), df.iloc[row-2]['Notes'], notes_format)
+            
+            # Only write BatchDetails if it exists
+            if 'BatchDetails' in df.columns:
+                worksheet.write(row, df.columns.get_loc('BatchDetails'), df.iloc[row-2]['BatchDetails'], batch_format)
         
         # Set column widths
         worksheet.set_column('A:A', 10)  # ItemId
         worksheet.set_column('B:B', 20)  # Sku
         worksheet.set_column('C:C', 30)  # Name
         worksheet.set_column('D:D', 15)  # Type
-        worksheet.set_column('E:E', 15)  # Expected AvailableQty
-        worksheet.set_column('F:K', 10)  # QTY/LOT columns
-        worksheet.set_column('L:L', 30)  # Notes
-        worksheet.set_column('M:M', 50)  # BatchDetails
+        worksheet.set_column('E:E', 15)  # AvailableQty/Expected AvailableQty
+        
+        # Only set QTY/LOT column widths if they exist
+        if any(col in df.columns for col in ['QTY_1', 'LOT_1', 'QTY_2', 'LOT_2', 'QTY_3', 'LOT_3']):
+            worksheet.set_column('F:K', 10)  # QTY/LOT columns
+        
+        # Only set Notes/BatchDetails widths if they exist
+        if 'Notes' in df.columns:
+            notes_col = chr(ord('A') + df.columns.get_loc('Notes'))
+            worksheet.set_column(f'{notes_col}:{notes_col}', 30)  # Notes
+        
+        if 'BatchDetails' in df.columns:
+            batch_col = chr(ord('A') + df.columns.get_loc('BatchDetails'))
+            worksheet.set_column(f'{batch_col}:{batch_col}', 50)  # BatchDetails
         
         # Freeze the header row (now row 1 instead of 0)
         worksheet.freeze_panes(2, 0)

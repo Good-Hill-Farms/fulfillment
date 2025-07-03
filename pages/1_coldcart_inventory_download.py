@@ -24,8 +24,8 @@ def main():
             try:
                 df = get_inventory_data()
                 if df is not None:
-                st.session_state['inventory_df'] = df
-                st.success("✅ Data fetched successfully!")
+                    st.session_state['inventory_df'] = df
+                    st.success("✅ Data fetched successfully!")
                 else:
                     st.error("❌ No data received from the API")
                     st.info("Please check if your API token is correctly set in the environment variables.")
@@ -41,7 +41,7 @@ def main():
             try:
                 df = get_inventory_data()
                 if df is not None:
-                st.session_state['inventory_df'] = df
+                    st.session_state['inventory_df'] = df
                 else:
                     st.error("❌ No data received from the API")
                     st.info("Please check if your API token is correctly set in the environment variables.")
@@ -129,6 +129,10 @@ def main():
     
     # Download buttons for filtered data
     st.subheader("Download Filtered Data")
+    
+    # Add note about export filtering
+    st.caption("Note: Export includes only items with Expected AvailableQty > 0")
+    
     col1, col2 = st.columns(2)
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -147,7 +151,7 @@ def main():
     
     with col2:
         excel_filename = f"inventory_export_{timestamp}.xlsx"
-        excel_path = save_as_excel(filtered_df, excel_filename)
+        excel_path = save_as_excel(filtered_df, excel_filename, colorful=True)  # Add colorful parameter
         with open(excel_path, 'rb') as f:
             st.download_button(
                 label=f"📥 Download Filtered Data as Excel ({len(filtered_df)} items)",

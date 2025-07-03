@@ -36,7 +36,7 @@ def main():
                     df['ItemId'] = df['ItemId'].astype(int)
                     
                     # Create a summary DataFrame with total quantities and additional columns
-                    summary_df = df.groupby(['ItemId', 'Sku', 'Name', 'Type'], as_index=False).agg({
+                    summary_df = df.groupby(['ItemId', 'Sku', 'Name', 'Type'], as_index=False, group_keys=False).agg({
                         'AvailableQty': 'sum'
                     }).rename(columns={'AvailableQty': 'Expected AvailableQty'})
                     
@@ -101,7 +101,7 @@ def main():
                     df['ItemId'] = df['ItemId'].astype(int)
                     
                     # Create a summary DataFrame with total quantities and additional columns
-                    summary_df = df.groupby(['ItemId', 'Sku', 'Name', 'Type'], as_index=False).agg({
+                    summary_df = df.groupby(['ItemId', 'Sku', 'Name', 'Type'], as_index=False, group_keys=False).agg({
                         'AvailableQty': 'sum'
                     }).rename(columns={'AvailableQty': 'Expected AvailableQty'})
                     
