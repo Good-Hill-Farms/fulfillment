@@ -24,8 +24,8 @@ def main():
             try:
                 df = get_inventory_data()
                 if df is not None:
-                    st.session_state['inventory_df'] = df
-                    st.success("✅ Data fetched successfully!")
+                st.session_state['inventory_df'] = df
+                st.success("✅ Data fetched successfully!")
                 else:
                     st.error("❌ No data received from the API")
                     st.info("Please check if your API token is correctly set in the environment variables.")
@@ -41,7 +41,7 @@ def main():
             try:
                 df = get_inventory_data()
                 if df is not None:
-                    st.session_state['inventory_df'] = df
+                st.session_state['inventory_df'] = df
                 else:
                     st.error("❌ No data received from the API")
                     st.info("Please check if your API token is correctly set in the environment variables.")
