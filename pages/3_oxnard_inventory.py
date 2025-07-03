@@ -20,8 +20,8 @@ def main():
     st.markdown(f"### Data as of {current_time_la.strftime('%Y-%m-%d %H:%M:%S')} (Los Angeles)")
     
     st.markdown("""
-    This page allows you to download and analyze the current inventory data for the Oxnard warehouse (formerly Moorpark).
-    The data includes SKUs, quantities, and other relevant information.
+    This page allows you to download and analyze the current inventory data for the Oxnard warehouse.
+    The data includes SKUs, quantities, and other relevant information from both CA-Moorpark-93021 and CA-Oxnard-93030 locations.
     """)
     
     # Add a refresh button
@@ -30,8 +30,8 @@ def main():
             try:
                 df = get_inventory_data()
                 if df is not None:
-                    # Filter for Oxnard warehouse (which is labeled as Moorpark in the data)
-                    df = df[df['WarehouseName'] == 'CA-Moorpark-93021'].copy()
+                    # Filter for both Moorpark and Oxnard warehouses
+                    df = df[df['WarehouseName'].isin(['CA-Moorpark-93021', 'CA-Oxnard-93030'])].copy()
                     # Convert ItemId to integer
                     df['ItemId'] = df['ItemId'].astype(int)
                     
@@ -52,15 +52,16 @@ def main():
                     # Create a DataFrame with batch details
                     batch_df = df.copy()
                     # Include all quantities, not just positive ones
-                    batch_df = batch_df.sort_values('BatchCode', ascending=True)
+                    batch_df = batch_df.sort_values(['WarehouseName', 'BatchCode'], ascending=True)
                     
                     # Add batch information as a list to the summary
                     def format_batch_info(group):
                         batch_details = []
                         for _, row in group.iterrows():
+                            warehouse = row['WarehouseName'].split('-')[1]  # Extract Moorpark or Oxnard
                             batch_code = row['BatchCode'] if pd.notna(row['BatchCode']) and row['BatchCode'].strip() != '' else '#noBatchCode'
                             # Show all quantities, including negative ones
-                            batch_details.append(f"{batch_code}: {int(row['AvailableQty'])}")
+                            batch_details.append(f"{warehouse}: {batch_code}: {int(row['AvailableQty'])}")
                         return ', '.join(batch_details)
 
                     batch_info = batch_df.groupby(['ItemId', 'Sku'], group_keys=False).apply(format_batch_info).reset_index()
@@ -95,8 +96,8 @@ def main():
             try:
                 df = get_inventory_data()
                 if df is not None:
-                    # Filter for Oxnard warehouse (which is labeled as Moorpark in the data)
-                    df = df[df['WarehouseName'] == 'CA-Moorpark-93021'].copy()
+                    # Filter for both Moorpark and Oxnard warehouses
+                    df = df[df['WarehouseName'].isin(['CA-Moorpark-93021', 'CA-Oxnard-93030'])].copy()
                     # Convert ItemId to integer
                     df['ItemId'] = df['ItemId'].astype(int)
                     
@@ -117,15 +118,16 @@ def main():
                     # Create a DataFrame with batch details
                     batch_df = df.copy()
                     # Include all quantities, not just positive ones
-                    batch_df = batch_df.sort_values('BatchCode', ascending=True)
+                    batch_df = batch_df.sort_values(['WarehouseName', 'BatchCode'], ascending=True)
                     
                     # Add batch information as a list to the summary
                     def format_batch_info(group):
                         batch_details = []
                         for _, row in group.iterrows():
+                            warehouse = row['WarehouseName'].split('-')[1]  # Extract Moorpark or Oxnard
                             batch_code = row['BatchCode'] if pd.notna(row['BatchCode']) and row['BatchCode'].strip() != '' else '#noBatchCode'
                             # Show all quantities, including negative ones
-                            batch_details.append(f"{batch_code}: {int(row['AvailableQty'])}")
+                            batch_details.append(f"{warehouse}: {batch_code}: {int(row['AvailableQty'])}")
                         return ', '.join(batch_details)
 
                     batch_info = batch_df.groupby(['ItemId', 'Sku'], group_keys=False).apply(format_batch_info).reset_index()
