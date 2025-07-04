@@ -5,12 +5,31 @@ import numpy as np
 from datetime import datetime
 from utils.inventory_api import get_inventory_data, save_as_excel, save_as_csv
 import pytz
+import re
 
 st.set_page_config(
     page_title="Wheeling Inventory | ColdCart",
     page_icon="📊",
     layout="wide"
 )
+
+def extract_date_from_batch(batch_code):
+    if pd.isna(batch_code):
+        return ''
+    
+    # Try to find date in format MM/DD/YY
+    date_pattern = r'delivered__(\d{2}/\d{2}/\d{2})'
+    match = re.search(date_pattern, str(batch_code))
+    if match:
+        return match.group(1)
+    
+    # Try to find date after #
+    hash_pattern = r'#.*?(\d{2}/\d{2}/\d{2})'
+    match = re.search(hash_pattern, str(batch_code))
+    if match:
+        return match.group(1)
+    
+    return ''
 
 def main():
     st.title("📊 Wheeling Inventory | ColdCart")
@@ -34,20 +53,23 @@ def main():
                     # Filter for Wheeling warehouse and rename column
                     df = df[df['WarehouseName'] == 'IL-Wheeling-60090'].copy()
                     
-                    # Add empty columns for QTY, LOT, and Notes
+                    # Add empty columns for QTY, Unit, and Notes
                     df['Counted QTY'] = ''
-                    df['LOT'] = ''
+                    df['Unit'] = ''  # Empty unit
                     df['Notes'] = ''
+                    
+                    # Extract date from BatchCode to LOT
+                    df['LOT'] = df['BatchCode'].apply(extract_date_from_batch)
                     
                     # Convert ItemId to string
                     df['ItemId'] = df['ItemId'].astype(str)
                     
                     # Ensure Expected AvailableQty is numeric and rename it
                     df['Expected AvailableQty (ea)'] = pd.to_numeric(df['AvailableQty'], errors='coerce')
-                    df = df.drop(columns=['AvailableQty'])  # Remove the original column
+                    df = df.drop(columns=['AvailableQty', 'BatchCode'])  # Remove unused columns
                     
                     # Reorder columns
-                    df = df[['ItemId', 'Sku', 'Name', 'BatchCode', 'Expected AvailableQty (ea)', 'Counted QTY', 'LOT', 'Notes']]
+                    df = df[['ItemId', 'Sku', 'Name', 'LOT', 'Expected AvailableQty (ea)', 'Counted QTY', 'Unit', 'Notes']]
                     
                     st.session_state['wheeling_df'] = df
                     st.success("✅ Data fetched successfully!")
@@ -69,20 +91,23 @@ def main():
                     # Filter for Wheeling warehouse and rename column
                     df = df[df['WarehouseName'] == 'IL-Wheeling-60090'].copy()
                     
-                    # Add empty columns for QTY, LOT, and Notes
+                    # Add empty columns for QTY, Unit, and Notes
                     df['Counted QTY'] = ''
-                    df['LOT'] = ''
+                    df['Unit'] = ''  # Empty unit
                     df['Notes'] = ''
+                    
+                    # Extract date from BatchCode to LOT
+                    df['LOT'] = df['BatchCode'].apply(extract_date_from_batch)
                     
                     # Convert ItemId to string
                     df['ItemId'] = df['ItemId'].astype(str)
                     
                     # Ensure Expected AvailableQty is numeric and rename it
                     df['Expected AvailableQty (ea)'] = pd.to_numeric(df['AvailableQty'], errors='coerce')
-                    df = df.drop(columns=['AvailableQty'])  # Remove the original column
+                    df = df.drop(columns=['AvailableQty', 'BatchCode'])  # Remove unused columns
                     
                     # Reorder columns
-                    df = df[['ItemId', 'Sku', 'Name', 'BatchCode', 'Expected AvailableQty (ea)', 'Counted QTY', 'LOT', 'Notes']]
+                    df = df[['ItemId', 'Sku', 'Name', 'LOT', 'Expected AvailableQty (ea)', 'Counted QTY', 'Unit', 'Notes']]
                     
                     st.session_state['wheeling_df'] = df
                 else:
@@ -137,7 +162,7 @@ def main():
     with sort_col1:
         sort_by = st.selectbox(
             'Sort by',
-            ['ItemId', 'Sku', 'Name', 'BatchCode', 'Expected AvailableQty (ea)']
+            ['ItemId', 'Sku', 'Name', 'LOT', 'Expected AvailableQty (ea)']
         )
     with sort_col2:
         sort_order = st.selectbox('Order', ['Ascending', 'Descending'])
@@ -148,9 +173,17 @@ def main():
         ascending=(sort_order == 'Ascending')
     )
     
-    # Display the data
+    # Apply styling to the dataframe
+    def highlight_columns(x):
+        df_styled = pd.DataFrame('', index=x.index, columns=x.columns)
+        df_styled['Counted QTY'] = 'background-color: #e6ffe6'
+        df_styled['Unit'] = 'background-color: #e6ffe6'
+        df_styled['Notes'] = 'background-color: #e6ffe6'
+        return df_styled
+
+    # Display the data with styling
     st.dataframe(
-        filtered_df,
+        filtered_df.style.apply(highlight_columns, axis=None),
         use_container_width=True,
         hide_index=True
     )
@@ -172,18 +205,21 @@ def main():
         mask = (export_df['Expected AvailableQty (ea)'].fillna(-1) <= 0) & (export_df['Expected AvailableQty (ea)'].notna())
         export_df = export_df[~mask]
         
-        # Add 100 empty rows for export
+        # Add 50 empty rows for export
         empty_rows = pd.DataFrame({
-            'ItemId': [''] * 100,
-            'Sku': [''] * 100,
-            'Name': [''] * 100,
-            'BatchCode': [''] * 100,
-            'Expected AvailableQty (ea)': [np.nan] * 100,  # Use np.nan for numeric column
-            'Counted QTY': [''] * 100,
-            'LOT': [''] * 100,
-            'Notes': [''] * 100
+            'ItemId': [''] * 50,
+            'Sku': [''] * 50,
+            'Name': [''] * 50,
+            'LOT': [''] * 50,
+            'Expected AvailableQty (ea)': [np.nan] * 50,
+            'Counted QTY': [''] * 50,
+            'Unit': [''] * 50,
+            'Notes': [''] * 50
         })
         export_df = pd.concat([export_df, empty_rows], ignore_index=True)
+        
+        # Ensure column order matches display
+        export_df = export_df[['ItemId', 'Sku', 'Name', 'LOT', 'Expected AvailableQty (ea)', 'Counted QTY', 'Unit', 'Notes']]
         
         csv_path = save_as_csv(export_df, csv_filename)
         with open(csv_path, 'rb') as f:
@@ -202,18 +238,21 @@ def main():
         mask = (export_df['Expected AvailableQty (ea)'].fillna(-1) <= 0) & (export_df['Expected AvailableQty (ea)'].notna())
         export_df = export_df[~mask]
         
-        # Add 100 empty rows for export
+        # Add 50 empty rows for export
         empty_rows = pd.DataFrame({
-            'ItemId': [''] * 100,
-            'Sku': [''] * 100,
-            'Name': [''] * 100,
-            'BatchCode': [''] * 100,
-            'Expected AvailableQty (ea)': [np.nan] * 100,  # Use np.nan for numeric column
-            'Counted QTY': [''] * 100,
-            'LOT': [''] * 100,
-            'Notes': [''] * 100
+            'ItemId': [''] * 50,
+            'Sku': [''] * 50,
+            'Name': [''] * 50,
+            'LOT': [''] * 50,
+            'Expected AvailableQty (ea)': [np.nan] * 50,
+            'Counted QTY': [''] * 50,
+            'Unit': [''] * 50,
+            'Notes': [''] * 50
         })
         export_df = pd.concat([export_df, empty_rows], ignore_index=True)
+        
+        # Ensure column order matches display
+        export_df = export_df[['ItemId', 'Sku', 'Name', 'LOT', 'Expected AvailableQty (ea)', 'Counted QTY', 'Unit', 'Notes']]
         
         excel_path = save_as_excel(export_df, excel_filename, colorful=True)
         with open(excel_path, 'rb') as f:

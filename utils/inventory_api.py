@@ -93,8 +93,8 @@ def save_as_excel(df, filename, colorful=False):
             'border': 1
         })
         
-        qty_format = workbook.add_format({
-            'bg_color': '#b3d9ff',
+        input_format = workbook.add_format({
+            'bg_color': '#e6ffe6',  # Light green background
             'align': 'center',
             'valign': 'top',
             'border': 1
@@ -108,7 +108,7 @@ def save_as_excel(df, filename, colorful=False):
         })
         
         notes_format = workbook.add_format({
-            'bg_color': '#e6f2ff',
+            'bg_color': '#e6ffe6',  # Light green background
             'align': 'left',
             'valign': 'top',
             'text_wrap': True,
@@ -141,12 +141,12 @@ def save_as_excel(df, filename, colorful=False):
                 value = df.iloc[row-2][col]
                 
                 # Choose format based on column name
-                if col in ['QTY_1', 'QTY_2', 'QTY_3', 'Counted QTY']:
-                    fmt = qty_format
-                elif col in ['LOT_1', 'LOT_2', 'LOT_3', 'LOT']:
-                    fmt = lot_format
+                if col in ['Counted QTY', 'Unit']:
+                    fmt = input_format
                 elif col == 'Notes':
                     fmt = notes_format
+                elif col == 'LOT':
+                    fmt = lot_format
                 elif col in ['BatchCode', 'BatchDetails']:
                     fmt = batch_format
                 else:
