@@ -1,18 +1,19 @@
 import streamlit as st
 import os
 import pandas as pd
+import numpy as np
 from datetime import datetime
 from utils.inventory_api import get_inventory_data, save_as_excel, save_as_csv
 import pytz
 
 st.set_page_config(
-    page_title="Wheeling Inventory | ColdCart | SKU grouped",
+    page_title="Wheeling Inventory | ColdCart",
     page_icon="📊",
     layout="wide"
 )
 
 def main():
-    st.title("📊 Wheeling Inventory | ColdCart | SKU grouped")
+    st.title("📊 Wheeling Inventory | ColdCart")
     
     # Add current date in Los Angeles timezone
     la_tz = pytz.timezone('America/Los_Angeles')
@@ -30,55 +31,25 @@ def main():
             try:
                 df = get_inventory_data()
                 if df is not None:
-                    # Filter for Wheeling warehouse
+                    # Filter for Wheeling warehouse and rename column
                     df = df[df['WarehouseName'] == 'IL-Wheeling-60090'].copy()
-                    # Convert ItemId to integer
-                    df['ItemId'] = df['ItemId'].astype(int)
                     
-                    # Create a summary DataFrame with total quantities and additional columns
-                    summary_df = df.groupby(['ItemId', 'Sku', 'Name', 'Type'], as_index=False, group_keys=False).agg({
-                        'AvailableQty': 'sum'
-                    }).rename(columns={'AvailableQty': 'Expected AvailableQty'})
+                    # Add empty columns for QTY, LOT, and Notes
+                    df['Counted QTY'] = ''
+                    df['LOT'] = ''
+                    df['Notes'] = ''
                     
-                    # Add empty columns for QTY/LOT groups
-                    summary_df['QTY_1'] = ''
-                    summary_df['LOT_1'] = ''
-                    summary_df['QTY_2'] = ''
-                    summary_df['LOT_2'] = ''
-                    summary_df['QTY_3'] = ''
-                    summary_df['LOT_3'] = ''
-                    summary_df['Notes'] = ''
+                    # Convert ItemId to string
+                    df['ItemId'] = df['ItemId'].astype(str)
                     
-                    # Create a DataFrame with batch details
-                    batch_df = df.copy()
-                    # Include all quantities, not just positive ones
-                    batch_df = batch_df.sort_values('BatchCode', ascending=True)
-                    
-                    # Add batch information as a list to the summary
-                    def format_batch_info(group):
-                        batch_details = []
-                        for _, row in group.iterrows():
-                            batch_code = row['BatchCode'] if pd.notna(row['BatchCode']) and row['BatchCode'].strip() != '' else '#noBatchCode'
-                            # Show all quantities, including negative ones
-                            batch_details.append(f"{batch_code}: {int(row['AvailableQty'])}")
-                        return ', '.join(batch_details)
-
-                    batch_info = batch_df.groupby(['ItemId', 'Sku'], group_keys=False).apply(format_batch_info).reset_index()
-                    batch_info.columns = ['ItemId', 'Sku', 'BatchDetails']
-                    
-                    # Merge batch information with summary
-                    summary_df = summary_df.merge(batch_info, on=['ItemId', 'Sku'], how='left')
-                    
-                    # Format ItemId as integer without commas
-                    summary_df['ItemId'] = summary_df['ItemId'].astype(str)
+                    # Ensure Expected AvailableQty is numeric and rename it
+                    df['Expected AvailableQty (ea)'] = pd.to_numeric(df['AvailableQty'], errors='coerce')
+                    df = df.drop(columns=['AvailableQty'])  # Remove the original column
                     
                     # Reorder columns
-                    summary_df = summary_df[['ItemId', 'Sku', 'Name', 'Type', 'Expected AvailableQty', 
-                                          'QTY_1', 'LOT_1', 'QTY_2', 'LOT_2', 'QTY_3', 'LOT_3', 'Notes',
-                                          'BatchDetails']]
+                    df = df[['ItemId', 'Sku', 'Name', 'BatchCode', 'Expected AvailableQty (ea)', 'Counted QTY', 'LOT', 'Notes']]
                     
-                    # Store DataFrame in session state
-                    st.session_state['wheeling_df'] = summary_df
+                    st.session_state['wheeling_df'] = df
                     st.success("✅ Data fetched successfully!")
                 else:
                     st.error("❌ No data received from the API")
@@ -95,55 +66,25 @@ def main():
             try:
                 df = get_inventory_data()
                 if df is not None:
-                    # Filter for Wheeling warehouse
+                    # Filter for Wheeling warehouse and rename column
                     df = df[df['WarehouseName'] == 'IL-Wheeling-60090'].copy()
-                    # Convert ItemId to integer
-                    df['ItemId'] = df['ItemId'].astype(int)
                     
-                    # Create a summary DataFrame with total quantities and additional columns
-                    summary_df = df.groupby(['ItemId', 'Sku', 'Name', 'Type'], as_index=False, group_keys=False).agg({
-                        'AvailableQty': 'sum'
-                    }).rename(columns={'AvailableQty': 'Expected AvailableQty'})
+                    # Add empty columns for QTY, LOT, and Notes
+                    df['Counted QTY'] = ''
+                    df['LOT'] = ''
+                    df['Notes'] = ''
                     
-                    # Add empty columns for QTY/LOT groups
-                    summary_df['QTY_1'] = ''
-                    summary_df['LOT_1'] = ''
-                    summary_df['QTY_2'] = ''
-                    summary_df['LOT_2'] = ''
-                    summary_df['QTY_3'] = ''
-                    summary_df['LOT_3'] = ''
-                    summary_df['Notes'] = ''
+                    # Convert ItemId to string
+                    df['ItemId'] = df['ItemId'].astype(str)
                     
-                    # Create a DataFrame with batch details
-                    batch_df = df.copy()
-                    # Include all quantities, not just positive ones
-                    batch_df = batch_df.sort_values('BatchCode', ascending=True)
-                    
-                    # Add batch information as a list to the summary
-                    def format_batch_info(group):
-                        batch_details = []
-                        for _, row in group.iterrows():
-                            batch_code = row['BatchCode'] if pd.notna(row['BatchCode']) and row['BatchCode'].strip() != '' else '#noBatchCode'
-                            # Show all quantities, including negative ones
-                            batch_details.append(f"{batch_code}: {int(row['AvailableQty'])}")
-                        return ', '.join(batch_details)
-
-                    batch_info = batch_df.groupby(['ItemId', 'Sku'], group_keys=False).apply(format_batch_info).reset_index()
-                    batch_info.columns = ['ItemId', 'Sku', 'BatchDetails']
-                    
-                    # Merge batch information with summary
-                    summary_df = summary_df.merge(batch_info, on=['ItemId', 'Sku'], how='left')
-                    
-                    # Format ItemId as integer without commas
-                    summary_df['ItemId'] = summary_df['ItemId'].astype(str)
+                    # Ensure Expected AvailableQty is numeric and rename it
+                    df['Expected AvailableQty (ea)'] = pd.to_numeric(df['AvailableQty'], errors='coerce')
+                    df = df.drop(columns=['AvailableQty'])  # Remove the original column
                     
                     # Reorder columns
-                    summary_df = summary_df[['ItemId', 'Sku', 'Name', 'Type', 'Expected AvailableQty', 
-                                          'QTY_1', 'LOT_1', 'QTY_2', 'LOT_2', 'QTY_3', 'LOT_3', 'Notes',
-                                          'BatchDetails']]
+                    df = df[['ItemId', 'Sku', 'Name', 'BatchCode', 'Expected AvailableQty (ea)', 'Counted QTY', 'LOT', 'Notes']]
                     
-                    # Store DataFrame in session state
-                    st.session_state['wheeling_df'] = summary_df
+                    st.session_state['wheeling_df'] = df
                 else:
                     st.error("❌ No data received from the API")
                     st.info("Please check if your API token is correctly set in the environment variables.")
@@ -166,10 +107,6 @@ def main():
     filter_col1, filter_col2 = st.columns(2)
     
     with filter_col1:
-        # Type filter
-        types = ['All'] + sorted(df['Type'].unique().tolist())
-        selected_type = st.selectbox('Filter by Type', types)
-        
         # SKU search
         sku_search = st.text_input('Search by SKU')
     
@@ -183,9 +120,6 @@ def main():
     # Apply filters
     filtered_df = df.copy()
     
-    if selected_type != 'All':
-        filtered_df = filtered_df[filtered_df['Type'] == selected_type]
-    
     if sku_search:
         filtered_df = filtered_df[filtered_df['Sku'].str.contains(sku_search, case=False, na=False)]
     
@@ -193,7 +127,7 @@ def main():
         filtered_df = filtered_df[filtered_df['Name'].str.contains(name_search, case=False, na=False)]
     
     if show_in_stock:
-        filtered_df = filtered_df[filtered_df['Expected AvailableQty'] > 0]
+        filtered_df = filtered_df[filtered_df['Expected AvailableQty (ea)'].fillna(0) > 0]
     
     # Display filtered data statistics
     st.write(f"Showing {len(filtered_df)} out of {len(df)} items")
@@ -203,7 +137,7 @@ def main():
     with sort_col1:
         sort_by = st.selectbox(
             'Sort by',
-            ['ItemId', 'Sku', 'Name', 'Type', 'Expected AvailableQty']
+            ['ItemId', 'Sku', 'Name', 'BatchCode', 'Expected AvailableQty (ea)']
         )
     with sort_col2:
         sort_order = st.selectbox('Order', ['Ascending', 'Descending'])
@@ -225,7 +159,7 @@ def main():
     st.subheader("Download Filtered Data")
     
     # Add note about export filtering
-    st.caption("Note: Export includes only items with Expected AvailableQty > 0")
+    st.caption("Note: Export includes items with positive Expected AvailableQty and empty rows for manual input")
     
     col1, col2 = st.columns(2)
     
@@ -233,8 +167,24 @@ def main():
     
     with col1:
         csv_filename = f"wheeling_inventory_{timestamp}.csv"
-        # Filter for available items
-        export_df = filtered_df[filtered_df['Expected AvailableQty'] > 0].copy()
+        # Filter out items with 0 or negative quantity but keep empty rows
+        export_df = filtered_df.copy()
+        mask = (export_df['Expected AvailableQty (ea)'].fillna(-1) <= 0) & (export_df['Expected AvailableQty (ea)'].notna())
+        export_df = export_df[~mask]
+        
+        # Add 100 empty rows for export
+        empty_rows = pd.DataFrame({
+            'ItemId': [''] * 100,
+            'Sku': [''] * 100,
+            'Name': [''] * 100,
+            'BatchCode': [''] * 100,
+            'Expected AvailableQty (ea)': [np.nan] * 100,  # Use np.nan for numeric column
+            'Counted QTY': [''] * 100,
+            'LOT': [''] * 100,
+            'Notes': [''] * 100
+        })
+        export_df = pd.concat([export_df, empty_rows], ignore_index=True)
+        
         csv_path = save_as_csv(export_df, csv_filename)
         with open(csv_path, 'rb') as f:
             st.download_button(
@@ -247,9 +197,25 @@ def main():
     
     with col2:
         excel_filename = f"wheeling_inventory_{timestamp}.xlsx"
-        # Filter for available items
-        export_df = filtered_df[filtered_df['Expected AvailableQty'] > 0].copy()
-        excel_path = save_as_excel(export_df, excel_filename, colorful=True)  # Add colorful parameter
+        # Filter out items with 0 or negative quantity but keep empty rows
+        export_df = filtered_df.copy()
+        mask = (export_df['Expected AvailableQty (ea)'].fillna(-1) <= 0) & (export_df['Expected AvailableQty (ea)'].notna())
+        export_df = export_df[~mask]
+        
+        # Add 100 empty rows for export
+        empty_rows = pd.DataFrame({
+            'ItemId': [''] * 100,
+            'Sku': [''] * 100,
+            'Name': [''] * 100,
+            'BatchCode': [''] * 100,
+            'Expected AvailableQty (ea)': [np.nan] * 100,  # Use np.nan for numeric column
+            'Counted QTY': [''] * 100,
+            'LOT': [''] * 100,
+            'Notes': [''] * 100
+        })
+        export_df = pd.concat([export_df, empty_rows], ignore_index=True)
+        
+        excel_path = save_as_excel(export_df, excel_filename, colorful=True)
         with open(excel_path, 'rb') as f:
             st.download_button(
                 label=f"📥 Download Filtered Data as Excel ({len(export_df)} items)",
