@@ -3,8 +3,9 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from utils.inventory_api import get_inventory_data
+from utils.inventory_api import get_formatted_inventory
 from utils.google_sheets import load_agg_orders
+from datetime import datetime, timedelta
 
 st.set_page_config(
     page_title="Inventory Overview",
@@ -367,12 +368,14 @@ def main():
         st.dataframe(df_wheeling.rename(columns=wheeling_rename_map), use_container_width=True, hide_index=True)
 
     # Load and display current inventory data at the end
-    if 'inventory_df' not in st.session_state:
-        with st.spinner("Fetching initial inventory data..."):
+    if 'inventory_summary' not in st.session_state or 'inventory_details' not in st.session_state:
+        with st.spinner("Fetching inventory data..."):
             try:
-                df = get_inventory_data()
-                if df is not None:
-                    st.session_state['inventory_df'] = df
+                summary_df, detailed_df = get_formatted_inventory()
+                if summary_df is not None:
+                    st.session_state['inventory_summary'] = summary_df
+                    st.session_state['inventory_details'] = detailed_df
+                    st.success("✅ Inventory data fetched successfully!")
                 else:
                     st.error("❌ No data received from the API")
                     st.info("Please check if your API token is correctly set in the environment variables.")
@@ -381,87 +384,105 @@ def main():
                 st.error(f"❌ Error fetching data: {str(e)}")
                 st.info("Please check if your API token is correctly set in the environment variables.")
                 return
-    
-    df = st.session_state.get('inventory_df')
 
-    if df is not None:
-        # Consolidate Moorpark and Oxnard warehouses
-        df['WarehouseName'] = df['WarehouseName'].replace({
-            'CA-Moorpark-93021': 'Oxnard',
-            'CA-Oxnard-93030': 'Oxnard'
-        })
+    summary_df = st.session_state.get('inventory_summary')
+    detailed_df = st.session_state.get('inventory_details')
 
-        # Extract fruit from SKU if possible
-        df['Fruit'] = df['Sku'].str.extract(r'^([^_]+)(?:_|$)').fillna(df['Name'].str.split().str[0])
-
-        # Apply filters based on selection
-        filter_type = st.session_state.get('filter_type')
-        if filter_type == "Fruit" and 'selected_fruits' in st.session_state:
-            selected_fruits = st.session_state['selected_fruits']
-            if selected_fruits:
-                df = df[df['Fruit'].isin(selected_fruits)]
-        elif filter_type == "SKU" and 'selected_skus' in st.session_state:
-            selected_skus = st.session_state['selected_skus']
-            if selected_skus:
-                df = df[df['Sku'].isin(selected_skus)]
-
+    if summary_df is not None:
         st.header("Current Inventory (ColdCart)")
-        st.subheader("Total Inventory by SKU (ColdCart)")
         
-        if df.empty:
-            st.warning("No inventory data found for the selected filters.")
-            return
-            
-        sku_inventory = df.groupby(['Sku', 'Name', 'Fruit'])['AvailableQty'].sum().reset_index()
-        sku_inventory = sku_inventory[sku_inventory['AvailableQty'] > 0]
+        # Create tabs for different views
+        tab1, tab2, tab3 = st.tabs(["Summary by SKU", "By Warehouse", "Batch Code Details"])
         
-        # Sort by Fruit and then by SKU
-        sku_inventory = sku_inventory.sort_values(['Fruit', 'Sku'])
-        
-        # Display with fruit column
-        st.dataframe(
-            sku_inventory,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                'AvailableQty': st.column_config.NumberColumn(
-                    'Available Quantity',
-                    format="%d"
-                )
-            }
-        )
-
-        st.subheader("Inventory by SKU and Warehouse (ColdCart)")
-        # Filter original df to only include SKUs that are in stock somewhere
-        in_stock_skus = sku_inventory['Sku'].unique()
-        df_in_stock = df[df['Sku'].isin(in_stock_skus)]
-        
-        warehouse_sku_inventory = df_in_stock.groupby(['WarehouseName', 'Sku', 'Name', 'Fruit'])['AvailableQty'].sum().reset_index()
-        
-        # Filter out zero-quantity rows before pivoting
-        warehouse_sku_inventory = warehouse_sku_inventory[warehouse_sku_inventory['AvailableQty'] > 0]
-
-        # Pivot table for better readability, leave non-existent values as blank
-        if not warehouse_sku_inventory.empty:
-            # Sort by Fruit and SKU before pivoting
-            warehouse_sku_inventory = warehouse_sku_inventory.sort_values(['Fruit', 'Sku'])
-            
-            # Create pivot table with Fruit included in the index
-            pivot_table = warehouse_sku_inventory.pivot(
-                index=['Fruit', 'Sku', 'Name'],
-                columns='WarehouseName',
-                values='AvailableQty'
-            )
-            
-            # Fill NaN values with empty string for better display
-            pivot_table = pivot_table.fillna('')
-            
+        with tab1:
+            st.subheader("Total Inventory by SKU")
             st.dataframe(
-                pivot_table,
-                use_container_width=True
+                summary_df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    'AvailableQty': st.column_config.NumberColumn(
+                        'Available Quantity',
+                        format="%d"
+                    )
+                }
             )
-        else:
-            st.info("No warehouse-specific stock found for the items listed above.")
+            
+        with tab2:
+            st.subheader("Inventory by SKU and Warehouse")
+            
+            # Create pivot table for warehouse view
+            warehouse_pivot = summary_df.copy()
+            if 'WarehouseName' in warehouse_pivot.columns:
+                pivot_table = warehouse_pivot.pivot_table(
+                    index=['Fruit', 'Sku', 'Name'],
+                    columns='WarehouseName',
+                    values='AvailableQty',
+                    fill_value=''
+                )
+                
+                # Sort by Fruit and SKU
+                pivot_table = pivot_table.sort_index(level=['Fruit', 'Sku'])
+                
+                st.dataframe(
+                    pivot_table,
+                    use_container_width=True
+                )
+            else:
+                st.info("No warehouse-specific stock information available")
+            
+        with tab3:
+            if detailed_df is not None and not detailed_df.empty:
+                st.subheader("Inventory with Batch Codes")
+                
+                # Add filters
+                col1, col2 = st.columns(2)
+                
+                # Filter by age
+                age_filter = col1.radio(
+                    "Filter by Age",
+                    ["All", "Older than 2 weeks", "Newer than 2 weeks"],
+                    horizontal=True
+                )
+                
+                # Filter by warehouse
+                warehouses = sorted(detailed_df['WarehouseName'].unique())
+                selected_warehouses = col2.multiselect(
+                    "Filter by Warehouse",
+                    warehouses,
+                    default=warehouses
+                )
+                
+                # Apply filters
+                filtered_df = detailed_df[detailed_df['WarehouseName'].isin(selected_warehouses)].copy()
+                
+                if age_filter == "Older than 2 weeks":
+                    filtered_df = filtered_df[filtered_df['IsOld']]
+                elif age_filter == "Newer than 2 weeks":
+                    filtered_df = filtered_df[~filtered_df['IsOld']]
+                
+                # Display the data with conditional formatting
+                st.dataframe(
+                    filtered_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        'AvailableQty': st.column_config.NumberColumn(
+                            'Available Quantity',
+                            format="%d"
+                        ),
+                        'DeliveryDate': st.column_config.DatetimeColumn(
+                            'Delivery Date',
+                            format="MMM DD, YYYY"
+                        ),
+                        'IsOld': st.column_config.Column(
+                            'Is Old',
+                            help="Items older than 2 weeks from current PST time"
+                        )
+                    }
+                )
+            else:
+                st.info("No items with batch codes found in inventory")
 
 if __name__ == "__main__":
     main()
