@@ -3,6 +3,7 @@ import logging
 import os
 from typing import Any, Dict, List
 
+import pandas as pd
 from google.auth import default
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -15,7 +16,9 @@ logger = logging.getLogger(__name__)
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
 # Sheet IDs
-SPREADSHEET_ID = os.getenv("GOOGLE_SHEET_ID")
+GHF_INVENTORY_ID = "19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY"
+AGG_ORDERS_SHEET_NAME = "Agg_Orders"
+GHF_AGGREGATION_DASHBOARD_ID = "1CdTTV8pMqq_wS9vu0qa8HMykNkqtOverrIsP0WLSUeM"
 
 
 def get_credentials():
@@ -52,7 +55,7 @@ def get_sheet_data(sheet_name: str) -> List[List[Any]]:
         sheet = service.spreadsheets()
         result = (
             sheet.values()
-            .get(spreadsheetId=SPREADSHEET_ID, range=f"{sheet_name}!A1:Z1000")
+            .get(spreadsheetId=GHF_INVENTORY_ID, range=f"{sheet_name}")
             .execute()
         )
 
@@ -61,12 +64,66 @@ def get_sheet_data(sheet_name: str) -> List[List[Any]]:
             logger.warning(f"No data found in sheet {sheet_name}")
             return []
 
-        logger.info(f"Successfully fetched {len(values)} rows from {sheet_name}")
         return values
 
     except Exception as e:
         logger.error(f"Error fetching data from sheet {sheet_name}: {e}")
         return []
+
+
+def get_agg_order_data(sheet_name: str) -> List[List[Any]]:
+    """Fetches data from the Aggregation Google Sheet."""
+    try:
+        creds = get_credentials()
+        service = build("sheets", "v4", credentials=creds)
+        sheet = service.spreadsheets()
+        result = (
+            sheet.values()
+            .get(
+                spreadsheetId=GHF_AGGREGATION_DASHBOARD_ID,
+                range=f"{sheet_name}",
+            )
+            .execute()
+        )
+        values = result.get("values", [])
+        if not values:
+            logger.warning(f"No data found in sheet {sheet_name}")
+            return []
+        logger.info(f"Successfully fetched {len(values)} rows from {sheet_name}")
+        return values
+    except Exception as e:
+        logger.error(f"Error fetching agg data from sheet {sheet_name}: {e}")
+        return []
+
+
+def deduplicate_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Renames duplicate columns by appending a suffix."""
+    cols = pd.Series(df.columns)
+    for dup in cols[cols.duplicated()].unique():
+        cols[cols[cols == dup].index.values.tolist()] = [
+            f"{dup}_{i}" if i != 0 else dup for i in range(sum(cols == dup))
+        ]
+    df.columns = cols
+    return df
+
+
+def load_agg_orders() -> pd.DataFrame | None:
+    """Fetches order data from the 'Agg_Orders' Google Sheet."""
+    logger.info("Fetching data from Agg_Orders sheet...")
+    try:
+        values = get_agg_order_data(AGG_ORDERS_SHEET_NAME)
+        if not values:
+            return None
+
+        headers = values[0]
+        data = values[1:]
+        df = pd.DataFrame(data, columns=headers)
+        df = deduplicate_columns(df)
+        return df
+
+    except Exception as e:
+        logger.error(f"Failed to load Agg_Orders sheet: {e}")
+        return None
 
 
 def _safe_float_convert(value, default=0.0):
@@ -305,5 +362,14 @@ if __name__ == "__main__":
         print(
             f"Loaded {sum(len(result[warehouse]['singles']) for warehouse in result)} singles and {sum(len(result[warehouse]['bundles']) for warehouse in result)} bundles"
         )
+
+        result = load_agg_orders()
+        if result is not None:
+            with open("agg_orders.json", "w") as f:
+                # Convert DataFrame to a list of dictionaries before dumping to JSON
+                f.write(result.to_json(orient="records", indent=4))
+
+        print("Data saved to agg_orders.json")
+        print(f"Loaded {len(result)} rows from Agg_Orders")
     except Exception as e:
         print(f"Error occurred: {str(e)}")
