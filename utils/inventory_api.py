@@ -81,7 +81,7 @@ def save_as_excel(df, filename, colorful=False):
         # Add current date in Los Angeles timezone
         la_tz = pytz.timezone('America/Los_Angeles')
         current_time_la = datetime.now(la_tz)
-        date_str = f"Data as of {current_time_la.strftime('%Y-%m-%d %H:%M:%S')} (Los Angeles)"
+        date_str = f"Data as of {current_time_la.strftime('%B %d, %Y %H:%M:%S')} (Los Angeles)"
         worksheet.write(0, 0, date_str, date_header_format)
         
         # Add some cell formats
@@ -192,7 +192,7 @@ def save_as_csv(df, filename):
     # Add current date in Los Angeles timezone
     la_tz = pytz.timezone('America/Los_Angeles')
     current_time_la = datetime.now(la_tz)
-    date_str = f"Data as of {current_time_la.strftime('%Y-%m-%d %H:%M:%S')} (Los Angeles)"
+    date_str = f"Data as of {current_time_la.strftime('%B %d, %Y %H:%M:%S')} (Los Angeles)"
     output.write(date_str + '\n\n')  # Add an empty line after the date
     
     # Write DataFrame to the buffer

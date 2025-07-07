@@ -22,20 +22,34 @@ def extract_date_from_batch(batch_code):
     match = re.search(new_pattern, str(batch_code))
     if match:
         date_str = match.group(1)
-        # Keep as MMDDYY format
-        return date_str
+        try:
+            # Convert MMDDYY to Month DD, YY format
+            date = datetime.strptime(date_str, '%m%d%y')
+            return date.strftime('%B %d, %Y')
+        except ValueError:
+            return date_str
     
     # Try to find date in format MM/DD/YY
     date_pattern = r'delivered__(\d{2}/\d{2}/\d{2})'
     match = re.search(date_pattern, str(batch_code))
     if match:
-        return match.group(1)
+        date_str = match.group(1)
+        try:
+            date = datetime.strptime(date_str, '%m/%d/%y')
+            return date.strftime('%B %d, %Y')
+        except ValueError:
+            return date_str
     
     # Try to find date after #
     hash_pattern = r'#.*?(\d{2}/\d{2}/\d{2})'
     match = re.search(hash_pattern, str(batch_code))
     if match:
-        return match.group(1)
+        date_str = match.group(1)
+        try:
+            date = datetime.strptime(date_str, '%m/%d/%y')
+            return date.strftime('%B %d, %Y')
+        except ValueError:
+            return date_str
     
     return ''
 
@@ -45,7 +59,7 @@ def main():
     # Add current date in Los Angeles timezone
     la_tz = pytz.timezone('America/Los_Angeles')
     current_time_la = datetime.now(la_tz)
-    st.markdown(f"### Data as of {current_time_la.strftime('%Y-%m-%d %H:%M:%S')} (Los Angeles)")
+    st.markdown(f"### Data as of {current_time_la.strftime('%B %d, %Y %H:%M:%S')} (Los Angeles)")
     
     st.markdown("""
     This page allows you to download and analyze the current inventory data for the Oxnard warehouse.
