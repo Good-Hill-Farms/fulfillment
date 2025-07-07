@@ -17,6 +17,14 @@ def extract_date_from_batch(batch_code):
     if pd.isna(batch_code):
         return ''
     
+    # Try to find date in new format after delivered_
+    new_pattern = r'delivered_(\d{6})'
+    match = re.search(new_pattern, str(batch_code))
+    if match:
+        date_str = match.group(1)
+        # Keep as MMDDYY format
+        return date_str
+    
     # Try to find date in format MM/DD/YY
     date_pattern = r'delivered__(\d{2}/\d{2}/\d{2})'
     match = re.search(date_pattern, str(batch_code))
