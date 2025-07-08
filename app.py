@@ -15,6 +15,7 @@ from utils.ui_components import (
     render_sku_mapping_editor,
     render_staging_tab,
     render_workflow_status,
+    render_summary_dashboard,
 )
 
 # Load environment variables
@@ -249,8 +250,8 @@ def main():
     # Main content area
     if st.session_state.orders_df is not None and st.session_state.inventory_df is not None:
         # Create tabs for different sections
-        orders_tab, staging_tab, inventory_tab, mapping_tab = st.tabs(
-            ["📜 Orders", "📋 Staging", "📦 Inventory", "⚙️ SKU Mapping"]
+        orders_tab, staging_tab, inventory_tab, mapping_tab, dashboard_tab = st.tabs(
+            ["📜 Orders", "📋 Staging", "📦 Inventory", "⚙️ SKU Mapping", "📊 Dashboard"]
         )
 
         # Orders Tab
@@ -285,11 +286,46 @@ def main():
 
         # Inventory Tab
         with inventory_tab:
-            render_inventory_tab(st.session_state.inventory_summary)
+            render_inventory_tab(
+                st.session_state.shortage_summary,
+                st.session_state.grouped_shortage_summary,
+                st.session_state.initial_inventory
+                if "initial_inventory" in st.session_state
+                else None,
+                st.session_state.inventory_comparison
+                if "inventory_comparison" in st.session_state
+                else None,
+                st.session_state.processed_orders
+                if "processed_orders" in st.session_state
+                else None,
+            )
 
         # SKU Mapping Tab
         with mapping_tab:
-            render_sku_mapping_editor()
+            # Load SKU mappings only when accessing this tab
+            if (
+                st.session_state.sku_mappings is None
+                and st.session_state.staging_processor is not None
+            ):
+                with st.spinner("Loading SKU mappings..."):
+                    st.session_state.staging_processor.load_sku_mappings()
+                    st.session_state.sku_mappings = st.session_state.staging_processor.sku_mappings
+                    if st.session_state.sku_mappings is None:
+                        st.session_state.sku_mappings = {
+                            "Oxnard": {"singles": {}, "bundles": {}},
+                            "Wheeling": {"singles": {}, "bundles": {}},
+                        }
+
+            render_sku_mapping_editor(st.session_state.sku_mappings, st.session_state.data_processor)
+
+        # Dashboard Tab
+        with dashboard_tab:
+            render_summary_dashboard(
+                st.session_state.processed_orders,
+                st.session_state.inventory_df,
+                st.session_state.processing_stats if "processing_stats" in st.session_state else None,
+                st.session_state.warehouse_performance if "warehouse_performance" in st.session_state else None,
+            )
     else:
         # Show minimal welcome message for faster loading
         st.info("👋 **Welcome to the AI-Powered Fulfillment Assistant!**")

@@ -704,6 +704,12 @@ def render_orders_tab(processed_orders, shortage_summary=None):
     # Always use the most up-to-date processed_orders from session state if available
     if "processed_orders" in st.session_state:
         processed_orders = st.session_state.processed_orders
+    
+    # Get the most up-to-date shortage summaries from session state
+    if "shortage_summary" in st.session_state:
+        shortage_summary = st.session_state.shortage_summary
+    if "grouped_shortage_summary" in st.session_state:
+        grouped_shortage_summary = st.session_state.grouped_shortage_summary
 
     if processed_orders is not None and not processed_orders.empty:
         # First, ensure the staged column exists
@@ -768,6 +774,36 @@ def render_orders_tab(processed_orders, shortage_summary=None):
                 f"{staged_orders:,}",
                 delta=f"of {total_orders:,} total" if total_orders > 0 else "",
             )
+
+        # Add shortages section in an expander
+        if shortage_summary is not None and not shortage_summary.empty:
+            with st.expander("⚠️ View Current Shortages", expanded=False):
+                # Create tabs for different shortage views
+                grouped_tab, individual_tab = st.tabs(["Shortages by SKU", "Individual Shortage Items"])
+                
+                with grouped_tab:
+                    if "grouped_shortage_summary" in st.session_state and not st.session_state.grouped_shortage_summary.empty:
+                        # Create a copy of grouped shortages without related_bundles
+                        display_grouped_shortages = st.session_state.grouped_shortage_summary.copy()
+                        if 'related_bundles' in display_grouped_shortages.columns:
+                            display_grouped_shortages = display_grouped_shortages.drop(columns=['related_bundles'])
+                        
+                        st.dataframe(
+                            display_grouped_shortages,
+                            height=400,
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+                    else:
+                        st.info("No grouped shortage data available")
+                
+                with individual_tab:
+                    create_aggrid_table(
+                        shortage_summary,
+                        height=400,
+                        selection_mode="multiple",
+                        key="orders_shortage_table",
+                    )
 
         # Add filters for orders with/without issues
         st.markdown("---")
