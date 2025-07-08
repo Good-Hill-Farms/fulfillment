@@ -245,7 +245,7 @@ def main():
                         st.error(f"Error processing files: {str(e)}")
 
     # Always show workflow status
-    render_workflow_status()
+    # render_workflow_status()
 
     # Main content area
     if st.session_state.orders_df is not None and st.session_state.inventory_df is not None:
