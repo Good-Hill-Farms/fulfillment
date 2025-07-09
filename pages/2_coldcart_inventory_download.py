@@ -120,9 +120,14 @@ def main():
         ascending=(sort_order == 'Ascending')
     )
     
+    # Format ItemId as regular number without commas
+    display_df = filtered_df.copy()
+    if 'ItemId' in display_df.columns:
+        display_df['ItemId'] = display_df['ItemId'].astype(str).str.replace(',', '')
+    
     # Display the data
     st.dataframe(
-        filtered_df,
+        display_df,
         use_container_width=True,
         hide_index=True
     )

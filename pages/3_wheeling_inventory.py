@@ -17,9 +17,12 @@ def extract_date_from_batch(batch_code):
     if pd.isna(batch_code):
         return ''
     
-    # Try to find date in new format after delivered_
+    # Convert to string and trim
+    batch_str = str(batch_code).strip()
+    
+    # Format 1: standard 'delivered_MMDDYY'
     new_pattern = r'delivered_(\d{6})'
-    match = re.search(new_pattern, str(batch_code))
+    match = re.search(new_pattern, batch_str)
     if match:
         date_str = match.group(1)
         try:
@@ -27,29 +30,43 @@ def extract_date_from_batch(batch_code):
             date = datetime.strptime(date_str, '%m%d%y')
             return date.strftime('%B %d, %Y')
         except ValueError:
-            return date_str
+            pass
+    
+    # Format 2: fallback 5 or 6 digit formats (like #110424 or 83024)
+    fallback_str = re.sub(r'^#', '', batch_str).strip()
+    fallback_pattern = r'^(\d{5,6})$'
+    fallback_match = re.search(fallback_pattern, fallback_str)
+    if fallback_match:
+        raw = fallback_match.group(1)
+        padded = f"0{raw}" if len(raw) == 5 else raw
+        try:
+            # Convert MMDDYY to Month DD, YY format
+            date = datetime.strptime(padded, '%m%d%y')
+            return date.strftime('%B %d, %Y')
+        except ValueError:
+            pass
     
     # Try to find date in format MM/DD/YY
     date_pattern = r'delivered__(\d{2}/\d{2}/\d{2})'
-    match = re.search(date_pattern, str(batch_code))
+    match = re.search(date_pattern, batch_str)
     if match:
         date_str = match.group(1)
         try:
             date = datetime.strptime(date_str, '%m/%d/%y')
             return date.strftime('%B %d, %Y')
         except ValueError:
-            return date_str
+            pass
     
     # Try to find date after #
     hash_pattern = r'#.*?(\d{2}/\d{2}/\d{2})'
-    match = re.search(hash_pattern, str(batch_code))
+    match = re.search(hash_pattern, batch_str)
     if match:
         date_str = match.group(1)
         try:
             date = datetime.strptime(date_str, '%m/%d/%y')
             return date.strftime('%B %d, %Y')
         except ValueError:
-            return date_str
+            pass
     
     return ''
 
@@ -162,7 +179,7 @@ def main():
         name_search = st.text_input('Search by Name')
         
         # Show only items with stock
-        show_in_stock = st.checkbox('Show Only Items in Stock', value=False)
+        show_in_stock = st.checkbox('Show Only Items in Stock', value=True)
     
     # Apply filters
     filtered_df = df.copy()
