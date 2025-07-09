@@ -90,28 +90,28 @@ def save_as_excel(df, filename, colorful=False):
             'font_color': 'white',
             'bg_color': '#0066cc',
             'align': 'center',
-            'valign': 'top',
+            'valign': 'vcenter',  # Changed from 'top' to 'vcenter'
             'border': 1
         })
         
         input_format = workbook.add_format({
             'bg_color': '#e6ffe6',  # Light green background
             'align': 'center',
-            'valign': 'top',
+            'valign': 'vcenter',  # Changed from 'top' to 'vcenter'
             'border': 1
         })
         
         lot_format = workbook.add_format({
             'bg_color': '#cce6ff',
             'align': 'center',
-            'valign': 'top',
+            'valign': 'vcenter',  # Changed from 'top' to 'vcenter'
             'border': 1
         })
         
         notes_format = workbook.add_format({
             'bg_color': '#e6ffe6',  # Light green background
             'align': 'left',
-            'valign': 'top',
+            'valign': 'vcenter',  # Changed from 'top' to 'vcenter'
             'text_wrap': True,
             'border': 1
         })
@@ -119,14 +119,14 @@ def save_as_excel(df, filename, colorful=False):
         batch_format = workbook.add_format({
             'text_wrap': True,
             'align': 'left',
-            'valign': 'top',
+            'valign': 'vcenter',  # Changed from 'top' to 'vcenter'
             'border': 1
         })
         
         # Default format for other columns
         default_format = workbook.add_format({
-            'align': 'left',
-            'valign': 'top',
+            'align': 'center',  # Changed from 'left' to 'center'
+            'valign': 'vcenter',  # Changed from 'top' to 'vcenter'
             'border': 1
         })
         
@@ -142,7 +142,7 @@ def save_as_excel(df, filename, colorful=False):
                 value = df.iloc[row-2][col]
                 
                 # Choose format based on column name
-                if col in ['Counted QTY', 'Unit']:
+                if col in ['Counted QTY', 'Unit (lb, ea, cs)']:  # Updated Unit column name
                     fmt = input_format
                 elif col == 'Notes':
                     fmt = notes_format
@@ -157,15 +157,16 @@ def save_as_excel(df, filename, colorful=False):
         
         # Set column widths
         col_widths = {
-            'ItemId': 10,
-            'Sku': 20,
-            'Name': 30,
-            'BatchCode': 15,
-            'Expected AvailableQty (ea)': 15,
-            'Counted QTY': 10,
-            'LOT': 10,
-            'Notes': 30,
-            'BatchDetails': 50
+            'ItemId': 15,
+            'Name': 50,  # Increased from 30
+            'Sku': 25,   # Increased from 20
+            'LOT': 15,   # Increased from 10
+            'Expected AvailableQty (ea)': 20,  # Increased from 15
+            'Counted QTY': 25,  # Increased from 15
+            'Unit (lb, ea, cs)': 20,  # Increased from 15
+            'Notes': 60,  # Increased from 40
+            'BatchCode': 20,    # Increased from 15
+            'BatchDetails': 60  # Increased from 50
         }
         
         # Apply column widths for existing columns
@@ -173,6 +174,13 @@ def save_as_excel(df, filename, colorful=False):
             if col in df.columns:
                 col_letter = chr(ord('A') + df.columns.get_loc(col))
                 worksheet.set_column(f'{col_letter}:{col_letter}', width)
+        
+        # Set row height for data rows (make them taller)
+        for row in range(2, len(df) + 2):
+            worksheet.set_row(row, 35)  # Increased from 25 to 35
+            
+        # Set header row slightly taller
+        worksheet.set_row(1, 40)  # Increased from 30 to 40
         
         # Freeze the header row (now row 1 instead of 0)
         worksheet.freeze_panes(2, 0)

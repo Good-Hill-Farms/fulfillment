@@ -94,7 +94,7 @@ def main():
                     
                     # Add empty columns for QTY, Unit, and Notes
                     df['Counted QTY'] = ''
-                    df['Unit'] = ''  # Empty unit
+                    df['Unit (lb, ea, cs)'] = ''  # Renamed Unit column
                     df['Notes'] = ''
                     
                     # Extract date from BatchCode to LOT
@@ -108,7 +108,7 @@ def main():
                     df = df.drop(columns=['AvailableQty', 'BatchCode'])  # Remove unused columns
                     
                     # Reorder columns
-                    df = df[['ItemId', 'Sku', 'Name', 'LOT', 'Expected AvailableQty (ea)', 'Counted QTY', 'Unit', 'Notes']]
+                    df = df[['ItemId', 'Name', 'Sku', 'LOT', 'Expected AvailableQty (ea)', 'Counted QTY', 'Unit (lb, ea, cs)', 'Notes']]
                     
                     st.session_state['wheeling_df'] = df
                     st.success("✅ Data fetched successfully!")
@@ -132,7 +132,7 @@ def main():
                     
                     # Add empty columns for QTY, Unit, and Notes
                     df['Counted QTY'] = ''
-                    df['Unit'] = ''  # Empty unit
+                    df['Unit (lb, ea, cs)'] = ''  # Renamed Unit column
                     df['Notes'] = ''
                     
                     # Extract date from BatchCode to LOT
@@ -146,7 +146,7 @@ def main():
                     df = df.drop(columns=['AvailableQty', 'BatchCode'])  # Remove unused columns
                     
                     # Reorder columns
-                    df = df[['ItemId', 'Sku', 'Name', 'LOT', 'Expected AvailableQty (ea)', 'Counted QTY', 'Unit', 'Notes']]
+                    df = df[['ItemId', 'Name', 'Sku', 'LOT', 'Expected AvailableQty (ea)', 'Counted QTY', 'Unit (lb, ea, cs)', 'Notes']]
                     
                     st.session_state['wheeling_df'] = df
                 else:
@@ -201,22 +201,33 @@ def main():
     with sort_col1:
         sort_by = st.selectbox(
             'Sort by',
-            ['ItemId', 'Sku', 'Name', 'LOT', 'Expected AvailableQty (ea)']
+            ['Name/SKU', 'ItemId', 'LOT', 'Expected AvailableQty (ea)']
         )
     with sort_col2:
         sort_order = st.selectbox('Order', ['Ascending', 'Descending'])
     
     # Apply sorting
-    filtered_df = filtered_df.sort_values(
-        by=sort_by,
-        ascending=(sort_order == 'Ascending')
-    )
+    if sort_by == 'Name/SKU':
+        # Sort by Name first, then SKU
+        filtered_df = filtered_df.sort_values(
+            by=['Name', 'Sku'],
+            ascending=(sort_order == 'Ascending')
+        )
+    else:
+        filtered_df = filtered_df.sort_values(
+            by=sort_by,
+            ascending=(sort_order == 'Ascending')
+        )
+    
+    # Add unit selection for each row
+    unit_options = ['', 'ea', 'cs', 'lb']
+    filtered_df['Unit (lb, ea, cs)'] = filtered_df['Unit (lb, ea, cs)'].apply(lambda x: x if x in unit_options else '')
     
     # Apply styling to the dataframe
     def highlight_columns(x):
         df_styled = pd.DataFrame('', index=x.index, columns=x.columns)
         df_styled['Counted QTY'] = 'background-color: #e6ffe6'
-        df_styled['Unit'] = 'background-color: #e6ffe6'
+        df_styled['Unit (lb, ea, cs)'] = 'background-color: #e6ffe6'
         df_styled['Notes'] = 'background-color: #e6ffe6'
         return df_styled
 
@@ -244,21 +255,18 @@ def main():
         mask = (export_df['Expected AvailableQty (ea)'].fillna(-1) <= 0) & (export_df['Expected AvailableQty (ea)'].notna())
         export_df = export_df[~mask]
         
-        # Add 50 empty rows for export
+        # Add 100 empty rows for export
         empty_rows = pd.DataFrame({
-            'ItemId': [''] * 50,
-            'Sku': [''] * 50,
-            'Name': [''] * 50,
-            'LOT': [''] * 50,
-            'Expected AvailableQty (ea)': [np.nan] * 50,
-            'Counted QTY': [''] * 50,
-            'Unit': [''] * 50,
-            'Notes': [''] * 50
+            'ItemId': [''] * 100,
+            'Name': [''] * 100,
+            'Sku': [''] * 100,
+            'LOT': [''] * 100,
+            'Expected AvailableQty (ea)': [np.nan] * 100,
+            'Counted QTY': [''] * 100,
+            'Unit (lb, ea, cs)': [''] * 100,
+            'Notes': [''] * 100
         })
         export_df = pd.concat([export_df, empty_rows], ignore_index=True)
-        
-        # Ensure column order matches display
-        export_df = export_df[['ItemId', 'Sku', 'Name', 'LOT', 'Expected AvailableQty (ea)', 'Counted QTY', 'Unit', 'Notes']]
         
         csv_path = save_as_csv(export_df, csv_filename)
         with open(csv_path, 'rb') as f:
@@ -277,23 +285,20 @@ def main():
         mask = (export_df['Expected AvailableQty (ea)'].fillna(-1) <= 0) & (export_df['Expected AvailableQty (ea)'].notna())
         export_df = export_df[~mask]
         
-        # Add 50 empty rows for export
+        # Add 100 empty rows for export
         empty_rows = pd.DataFrame({
-            'ItemId': [''] * 50,
-            'Sku': [''] * 50,
-            'Name': [''] * 50,
-            'LOT': [''] * 50,
-            'Expected AvailableQty (ea)': [np.nan] * 50,
-            'Counted QTY': [''] * 50,
-            'Unit': [''] * 50,
-            'Notes': [''] * 50
+            'ItemId': [''] * 100,
+            'Name': [''] * 100,
+            'Sku': [''] * 100,
+            'LOT': [''] * 100,
+            'Expected AvailableQty (ea)': [np.nan] * 100,
+            'Counted QTY': [''] * 100,
+            'Unit (lb, ea, cs)': [''] * 100,
+            'Notes': [''] * 100
         })
         export_df = pd.concat([export_df, empty_rows], ignore_index=True)
         
-        # Ensure column order matches display
-        export_df = export_df[['ItemId', 'Sku', 'Name', 'LOT', 'Expected AvailableQty (ea)', 'Counted QTY', 'Unit', 'Notes']]
-        
-        excel_path = save_as_excel(export_df, excel_filename, colorful=True)
+        excel_path = save_as_excel(export_df, excel_filename, colorful=True)  # Removed wide_cells parameter
         with open(excel_path, 'rb') as f:
             st.download_button(
                 label=f"📥 Download Filtered Data as Excel ({len(export_df)} items)",
