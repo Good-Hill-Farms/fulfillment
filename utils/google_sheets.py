@@ -1,7 +1,8 @@
 import json
 import logging
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
+from datetime import datetime, timedelta
 
 import pandas as pd
 from google.auth import default
@@ -71,11 +72,54 @@ BS: WH2: Needs - Required inventory needs for Wheeling 2
 GHF_AGG_FRUIT = "1-lTQJWHutgBM-oN_hYFpgc12WwxxyeZtidvylvSAAWI"
 INVENTORY_OXNARD_SHEET = "Inventory_Oxnard"
 INVENTORY_WHEELING_SHEET = "Inventory_Wheeling"
+WOW_SHEET = "WoW"
+"""
+So we have A column, that starts from A2
+All the next columns contain date range 5/4-5/10, 5/11-5/17
+We should get all columns that have date range, parse date and display data.
+"""
 
 # GHF: Fruit Tracking 
 GHF_FRUIT_TRACKING = "1B_uRcYEqCdR5O3h5BiyvL92Q1v4BlNPxZTsZ-nihNbI"
 ORDERS_NEW_SHEET_NAME = "Orders_new"
 ORDERS_NEW_NEDDED_COLUMNS = ["B", "D", "E", "P", "Q"] # invoice date, Aggregator / Vendor, Product Type, Price per lb, Actual Total Cost
+
+def parse_date_range(date_range_str: str) -> Tuple[datetime, datetime]:
+    """Parse date range string into start and end dates.
+    Example: '5/4-5/10' -> (datetime(2024,5,4), datetime(2024,5,10))
+    """
+    try:
+        # Split the range
+        if not date_range_str or '-' not in date_range_str:
+            return None, None
+            
+        start_str, end_str = date_range_str.split('-')
+        
+        # Parse start date
+        start_month, start_day = map(int, start_str.strip().split('/'))
+        
+        # Parse end date
+        end_month, end_day = map(int, end_str.strip().split('/'))
+        
+        # Determine year (assuming we're in current year, adjust if month indicates previous/next year)
+        current_year = datetime.now().year
+        
+        # Handle year transition (e.g., Dec-Jan)
+        start_year = current_year
+        end_year = current_year
+        
+        # If end month is less than start month, it's a year transition
+        if end_month < start_month:
+            end_year = current_year + 1
+        
+        # Create datetime objects
+        start_date = datetime(start_year, start_month, start_day)
+        end_date = datetime(end_year, end_month, end_day)
+        
+        return start_date, end_date
+    except Exception as e:
+        logger.warning(f"Could not parse date range '{date_range_str}': {str(e)}")
+        return None, None
 
 def get_credentials():
     """Gets service account credentials using the simplest approach that works."""
@@ -774,6 +818,103 @@ def load_orders_new() -> pd.DataFrame | None:
         logger.exception("Full traceback:")
         return None
 
+def load_wow_data():
+    """Load Week over Week data from the GHF AGG/FRUIT Google Sheet."""
+    try:
+        creds = get_credentials()
+        service = build("sheets", "v4", credentials=creds)
+        sheet = service.spreadsheets()
+        
+        # Get all data from the sheet by just specifying the sheet name
+        result = sheet.values().get(
+            spreadsheetId=GHF_AGG_FRUIT,
+            range=WOW_SHEET,
+            valueRenderOption='UNFORMATTED_VALUE'
+        ).execute()
+        
+        values = result.get('values', [])
+        if not values:
+            logger.error("No data found in the sheet")
+            return pd.DataFrame()
+
+        # Get headers (date ranges) from first row
+        headers = values[0]
+        logger.info(f"Found {len(headers)} columns in the sheet")
+        
+        # Initialize lists to store data
+        data = []
+        
+        # Process each row
+        for row_idx, row in enumerate(values[1:], start=1):
+            metric = row[0] if row else ""
+            if not metric or metric.strip().startswith('#'):  # Skip empty rows or comments
+                continue
+                
+            # Extend row with empty values if needed
+            row_extended = row + [''] * (len(headers) - len(row))
+            
+            # Process each column for this metric
+            for col_idx, (header, value) in enumerate(zip(headers[1:], row_extended[1:]), start=1):
+                if not header or not isinstance(header, str):
+                    continue
+                    
+                # Clean and convert the value
+                clean_value = str(value).strip() if value else ""
+                if clean_value.lower() in ['#n/a', '#div/0!', '#div/0', 'n/a', '-', '', '#div/0! (function divide parameter 2 cannot be zero.)', '#div/0! (function divide parameter 2 cannot be zero.)']:
+                    clean_value = '0'
+                
+                try:
+                    # Convert to float if possible
+                    numeric_value = float(clean_value.replace('$', '').replace(',', '').replace('%', ''))
+                    
+                    # Determine if it's a percentage or currency
+                    is_percentage = '%' in str(value) or metric.lower().endswith(('rate', '%', 'percentage', 'left'))
+                    is_currency = '$' in str(value) or metric.lower().endswith(('cost', 'expense', 'invoiced', 'sales'))
+                    
+                    # Parse date range
+                    date_parts = header.split('-')
+                    if len(date_parts) == 2:
+                        try:
+                            # Always use 2025 for all dates
+                            start_date = datetime.strptime(date_parts[0].strip(), '%m/%d').replace(year=2025)
+                            end_date = datetime.strptime(date_parts[1].strip(), '%m/%d').replace(year=2025)
+                            
+                            # Handle year wrap-around (e.g., Dec-Jan dates)
+                            if end_date < start_date:
+                                end_date = end_date.replace(year=2026)
+                            
+                            data.append({
+                                'Metric': metric,
+                                'Date Range': header,
+                                'Start Date': start_date,
+                                'End Date': end_date,
+                                'Value': numeric_value,
+                                'Is Percentage': is_percentage,
+                                'Is Currency': is_currency
+                            })
+                        except ValueError as e:
+                            logger.warning(f"Error parsing date range '{header}': {e}")
+                            continue
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Error processing value for {metric} at {header}: {e}")
+                    continue
+
+        # Convert to DataFrame
+        df = pd.DataFrame(data)
+        if df.empty:
+            logger.warning("No data was processed successfully")
+            return df
+            
+        # Sort by date (newest first) and metric
+        df = df.sort_values(['Start Date', 'Metric'], ascending=[False, True])
+        logger.info(f"Successfully loaded {len(df)} data points across {len(df['Date Range'].unique())} date ranges")
+        
+        return df
+
+    except Exception as e:
+        logger.error(f"Error loading WoW data: {str(e)}")
+        raise
+
 
 if __name__ == "__main__":
     try:
@@ -795,10 +936,10 @@ if __name__ == "__main__":
         #     print(f"✓ Saved {len(agg_orders_df)} rows to {output_dir}/agg_orders.csv")
 
         # 3. Load and save All Picklist V2
-        picklist_df = load_all_picklist_v2()
+        picklist_df = load_wow_data()
         if picklist_df is not None:
-            picklist_df.to_csv(f"{output_dir}/all_picklist_v2.csv", index=False)
-            print(f"✓ Saved {len(picklist_df)} rows to {output_dir}/all_picklist_v2.csv")
+            picklist_df.to_csv(f"{output_dir}/load_wow_data.csv", index=False)
+            print(f"✓ Saved {len(picklist_df)} rows to {output_dir}/load_wow_data.csv")
 
         # # 4. Load and save Pieces vs LB Conversion
         # conversion_df = load_pieces_vs_lb_conversion()

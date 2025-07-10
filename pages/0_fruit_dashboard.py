@@ -9,7 +9,8 @@ from utils.google_sheets import (
     load_pieces_vs_lb_conversion,
     load_all_picklist_v2,
     load_orders_new,
-    get_sku_info
+    get_sku_info,
+    load_wow_data
 )
 from utils.scripts_shopify.shopify_orders_report import update_orders_data, update_unfulfilled_orders
 from utils.inventory_api import get_inventory_data
@@ -151,6 +152,12 @@ def load_shopify_orders(start_date=None, end_date=None, force_refresh=False):
     else:
         return load_shopify_orders(start_date, end_date, force_refresh=True)
 
+def calculate_wow_change(prev_value, current_value):
+    """Calculate week-over-week percentage change"""
+    if pd.isna(prev_value) or pd.isna(current_value) or prev_value == 0:
+        return None
+    return ((current_value - prev_value) / abs(prev_value)) * 100
+
 def main():
     st.title("🍎 Fruit Dashboard")
     
@@ -158,6 +165,168 @@ def main():
     Welcome to the Fruit Dashboard! Use the filters in the sidebar to analyze fruit inventory and orders.
     """)
     
+    # Load all data
+    if 'wow_df' not in st.session_state:
+        message_placeholder = st.empty()
+        with st.spinner("Loading WoW data..."):
+            wow_df = load_wow_data()
+            if wow_df is not None:
+                st.session_state['wow_df'] = wow_df
+                message_placeholder.success("✅ WoW data loaded successfully!")
+                time.sleep(1)  # Show message for 1 second
+                message_placeholder.empty()
+            else:
+                message_placeholder.warning("⚠️ Failed to load WoW data")
+
+    # Display Week over Week Data
+    with st.expander("📊 Week over Week Analysis", expanded=True):
+        wow_df = st.session_state.get('wow_df')
+        if wow_df is not None and not wow_df.empty:
+            st.markdown("""
+            ### How to use Week over Week Analysis:
+            1. Select two date ranges to compare using the dropdown below
+            2. The most recent two weeks are selected by default
+            3. The "Change" column shows the percentage change from the earlier week (left) to the later week (right)
+            4. A positive change (green) means an increase, negative (red) means a decrease
+            """)
+
+            # Add date range filter
+            def parse_date_for_sorting(date_range):
+                try:
+                    # Split and clean the date string
+                    start_date = date_range.split('-')[0].strip()
+                    return pd.to_datetime(start_date, format='%m/%d')
+                except:
+                    # Return a minimum date for any unparseable dates
+                    return pd.Timestamp.min
+
+            def format_date_range(date_range):
+                """Convert '6/29-7/5' to 'June 29/July 5'"""
+                try:
+                    start, end = date_range.split('-')
+                    start = pd.to_datetime(start.strip(), format='%m/%d')
+                    end = pd.to_datetime(end.strip(), format='%m/%d')
+                    return f"{start.strftime('%B')} {start.day}/{end.strftime('%B')} {end.day}"
+                except:
+                    return date_range
+
+            # Sort date ranges chronologically (oldest to newest)
+            date_ranges = sorted(wow_df['Date Range'].unique(), 
+                               key=parse_date_for_sorting)
+            
+            # Create a mapping of formatted dates to original dates
+            date_range_mapping = {format_date_range(dr): dr for dr in date_ranges}
+            formatted_ranges = list(date_range_mapping.keys())
+            
+            # Get the last two weeks for default selection
+            default_ranges = formatted_ranges[-2:] if len(formatted_ranges) > 1 else formatted_ranges
+            
+            selected_formatted_ranges = st.multiselect(
+                "Select Date Ranges to Compare",
+                formatted_ranges,
+                default=default_ranges,
+                placeholder="Choose two weeks to compare...",
+                help="Select two date ranges to compare. Earlier week will be shown on the left, later week on the right."
+            )
+            
+            # Convert back to original date ranges
+            selected_ranges = [date_range_mapping[fr] for fr in selected_formatted_ranges]
+            
+            if selected_ranges:
+                filtered_df = wow_df[wow_df['Date Range'].isin(selected_ranges)]
+                
+                # Sort ranges chronologically (older to newer)
+                sorted_ranges = sorted(selected_ranges, key=parse_date_for_sorting)
+                
+                # Pivot the data for better comparison
+                pivot_df = filtered_df.pivot(
+                    index='Metric',
+                    columns='Date Range',
+                    values='Value'
+                ).reset_index()
+                
+                # Reorder columns to show previous week first
+                column_order = ['Metric'] + sorted_ranges
+                pivot_df = pivot_df[column_order]
+                
+                # Calculate week-over-week changes if we have at least 2 ranges selected
+                if len(sorted_ranges) >= 2:
+                    for i in range(len(sorted_ranges)-1):
+                        prev_range = sorted_ranges[i]
+                        current_range = sorted_ranges[i+1]
+                        formatted_prev = format_date_range(prev_range)
+                        formatted_curr = format_date_range(current_range)
+                        col_name = f"Change ({formatted_prev} → {formatted_curr})"
+                        pivot_df[col_name] = pivot_df.apply(
+                            lambda row: calculate_wow_change(
+                                row[prev_range], 
+                                row[current_range]
+                            ) if pd.notna(row[prev_range]) and pd.notna(row[current_range]) else None,
+                            axis=1
+                        )
+                
+                # Display the data
+                column_config = {
+                    "Metric": st.column_config.TextColumn(
+                        "Metric",
+                        help="Performance metric"
+                    )
+                }
+                
+                # Add range columns with formatted names
+                for range_name in sorted_ranges:
+                    formatted_name = format_date_range(range_name)
+                    column_config[range_name] = st.column_config.NumberColumn(
+                        formatted_name,
+                        format="%.2f"
+                    )
+                
+                # Add change columns if we have multiple ranges
+                if len(sorted_ranges) >= 2:
+                    for i in range(len(sorted_ranges)-1):
+                        prev_range = sorted_ranges[i]
+                        current_range = sorted_ranges[i+1]
+                        formatted_prev = format_date_range(prev_range)
+                        formatted_curr = format_date_range(current_range)
+                        change_col = f"Change ({formatted_prev} → {formatted_curr})"
+                        column_config[f"Change ({prev_range} → {current_range})"] = st.column_config.NumberColumn(
+                            change_col,
+                            format="+%.1f%%"
+                        )
+                
+                st.dataframe(
+                    pivot_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config=column_config
+                )
+
+                # Display summary metrics
+                st.markdown("### Key Insights")
+                if len(selected_ranges) >= 2:
+                    latest_range = sorted_ranges[-1]
+                    prev_range = sorted_ranges[-2]
+                    
+                    col1, col2, col3 = st.columns(3)
+                    metrics_to_show = pivot_df['Metric'].tolist()[:3]  # Show first 3 metrics
+                    
+                    for i, (col, metric) in enumerate(zip([col1, col2, col3], metrics_to_show)):
+                        with col:
+                            current_val = pivot_df[pivot_df['Metric'] == metric][latest_range].iloc[0]
+                            prev_val = pivot_df[pivot_df['Metric'] == metric][prev_range].iloc[0]
+                            delta = calculate_wow_change(prev_val, current_val)
+                            
+                            st.metric(
+                                metric,
+                                f"{current_val:,.2f}",
+                                f"{delta:+.1f}%" if pd.notna(delta) else None,
+                                delta_color="normal"
+                            )
+            else:
+                st.warning("Please select at least one date range to display data.")
+        else:
+            st.warning("No Week over Week data available")
+
     # Load all data
     if 'agg_orders_df' not in st.session_state:
         message_placeholder = st.empty()
