@@ -84,7 +84,7 @@ def main():
                 st.warning("⚠️ Some inventory data could not be loaded")
 
     # Display Picklist Data
-    with st.expander("📋 Picklist Data", expanded=False):
+    with st.expander("📋 Projections Data", expanded=False):
         picklist_df = st.session_state.get('picklist_data')
         if picklist_df is not None and not picklist_df.empty:
             st.dataframe(
