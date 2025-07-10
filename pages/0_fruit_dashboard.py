@@ -16,6 +16,7 @@ from utils.scripts_shopify.shopify_orders_report import update_orders_data, upda
 from utils.inventory_api import get_inventory_data
 import time
 import os
+import numpy as np
 
 st.set_page_config(
     page_title="Fruit Dashboard",
@@ -158,14 +159,301 @@ def calculate_wow_change(prev_value, current_value):
         return None
     return ((current_value - prev_value) / abs(prev_value)) * 100
 
+def apply_global_filters(df, filters):
+    """Apply global filters to the main dataframe"""
+    if df is None or df.empty:
+        return df
+    
+    filtered_df = df.copy()
+    
+    # Apply fruit filter
+    if filters['fruits']:
+        filtered_df = filtered_df[filtered_df['Fruit'].isin(filters['fruits'])]
+    
+    # Apply warehouse filter
+    if filters['warehouse'] != 'All':
+        # Filter based on warehouse status
+        status_col = f"{filters['warehouse']} Status"
+        order_col = f"{filters['warehouse']} Actual Order"
+        if status_col in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df[status_col].notna()]
+            if order_col in filtered_df.columns:
+                filtered_df[order_col] = pd.to_numeric(filtered_df[order_col], errors='coerce').fillna(0)
+                filtered_df = filtered_df[filtered_df[order_col] > 0]
+    
+    # Apply fruit status filter (create synthetic status based on seasonality patterns)
+    if filters['fruit_status']:
+        # Since fruit status doesn't exist, create it based on patterns in the data
+        seasonal_fruits = ['Fruit: Cherry', 'Fruit: Peaches', 'Fruit: Persimmon, Fuyu', 'Fruit: Loquat']
+        if 'Seasonal' in filters['fruit_status'] and 'Abundant' not in filters['fruit_status']:
+            filtered_df = filtered_df[filtered_df['Fruit'].isin(seasonal_fruits)]
+        elif 'Abundant' in filters['fruit_status'] and 'Seasonal' not in filters['fruit_status']:
+            filtered_df = filtered_df[~filtered_df['Fruit'].isin(seasonal_fruits)]
+    
+    # Apply SKU filter
+    if filters['skus']:
+        sku_mask = (
+            filtered_df['Oxnard Picklist SKU'].isin(filters['skus']) |
+            filtered_df['Wheeling Picklist SKU'].isin(filters['skus'])
+        )
+        filtered_df = filtered_df[sku_mask]
+    
+    # Apply date filter
+    if filters['date_range'] and 'Date_1' in filtered_df.columns:
+        start_date, end_date = filters['date_range']
+        filtered_df['Date_1'] = pd.to_datetime(filtered_df['Date_1'], errors='coerce')
+        filtered_df = filtered_df[
+            (filtered_df['Date_1'] >= start_date) &
+            (filtered_df['Date_1'] <= end_date)
+        ]
+    
+    # Apply projection period filter
+    if filters['projection_periods'] and 'Projection Period' in filtered_df.columns:
+        filtered_df = filtered_df[filtered_df['Projection Period'].isin(filters['projection_periods'])]
+    
+    # Apply inventory status filter
+    if filters['inventory_status']:
+        # This would apply to inventory data sections
+        pass  # Handled in individual sections
+    
+    # Apply order status filter
+    if filters['order_status']:
+        if filters['warehouse'] != 'All':
+            status_col = f"{filters['warehouse']} Status"
+            if status_col in filtered_df.columns:
+                filtered_df[status_col] = filtered_df[status_col].replace(['', np.nan], '❌ No Status')
+                filtered_df = filtered_df[filtered_df[status_col].isin(filters['order_status'])]
+        else:
+            # Apply to both warehouses
+            oxnard_mask = filtered_df['Oxnard Status'].isin(filters['order_status'])
+            wheeling_mask = filtered_df['Wheeling Status'].isin(filters['order_status'])
+            filtered_df = filtered_df[oxnard_mask | wheeling_mask]
+    
+    return filtered_df
+
+def load_inventory_and_picklist_data():
+    """Load inventory and picklist data individually with progress messages"""
+    if 'inventory_data' not in st.session_state:
+        message_placeholder = st.empty()
+        with st.spinner("Loading inventory and picklist data..."):
+            oxnard_df = load_oxnard_inventory()
+            wheeling_df = load_wheeling_inventory()
+            pieces_vs_lb_df = load_pieces_vs_lb_conversion()
+            picklist_df = load_all_picklist_v2()
+            
+            st.session_state['inventory_data'] = {
+                'oxnard': oxnard_df,
+                'wheeling': wheeling_df
+            }
+            
+            st.session_state['reference_data'] = {
+                'pieces_vs_lb': pieces_vs_lb_df
+            }
+            
+            st.session_state['picklist_data'] = picklist_df
+            
+            if all(df is not None for df in [oxnard_df, wheeling_df]):
+                message_placeholder.success("✅ Inventory data loaded successfully!")
+                time.sleep(1)  # Show message for 1 second
+                message_placeholder.empty()
+            else:
+                message_placeholder.warning("⚠️ Some inventory data could not be loaded")
+
+def create_sidebar_filters(df):
+    """Create compact filter controls in the sidebar"""
+    with st.sidebar:
+        st.header("🎛️ Filters")
+        
+        # Initialize filters in session state
+        if 'global_filters' not in st.session_state:
+            st.session_state.global_filters = {
+                'fruits': [],
+                'warehouse': 'All',
+                'fruit_status': [],
+                'skus': [],
+                'date_range': None,
+                'projection_periods': [],
+                'inventory_status': [],
+                'order_status': []
+            }
+        
+        # Fruit Filter
+        if df is not None and 'Fruit' in df.columns:
+            available_fruits = sorted(df['Fruit'].dropna().unique())
+            selected_fruits = st.multiselect(
+                "🍊 Fruits",
+                available_fruits,
+                default=st.session_state.global_filters['fruits'],
+                placeholder="All fruits",
+                key="filter_fruits"
+            )
+            st.session_state.global_filters['fruits'] = selected_fruits
+        
+        # Warehouse Filter
+        warehouse_options = ["All", "Oxnard", "Wheeling"]
+        selected_warehouse = st.selectbox(
+            "🏭 Warehouse",
+            warehouse_options,
+            index=warehouse_options.index(st.session_state.global_filters['warehouse']),
+            key="filter_warehouse"
+        )
+        st.session_state.global_filters['warehouse'] = selected_warehouse
+        
+        # Fruit Status Filter (synthetic)
+        fruit_status_options = ["Seasonal", "Abundant"]
+        selected_fruit_status = st.multiselect(
+            "🌱 Fruit Status",
+            fruit_status_options,
+            default=st.session_state.global_filters['fruit_status'],
+            placeholder="All statuses",
+            key="filter_fruit_status"
+        )
+        st.session_state.global_filters['fruit_status'] = selected_fruit_status
+        
+        # SKU Filter
+        if df is not None:
+            all_skus = set()
+            if 'Oxnard Picklist SKU' in df.columns:
+                all_skus.update(df['Oxnard Picklist SKU'].dropna().unique())
+            if 'Wheeling Picklist SKU' in df.columns:
+                all_skus.update(df['Wheeling Picklist SKU'].dropna().unique())
+            
+            selected_skus = st.multiselect(
+                "📦 SKUs",
+                sorted(all_skus),
+                default=st.session_state.global_filters['skus'],
+                placeholder="All SKUs",
+                key="filter_skus"
+            )
+            st.session_state.global_filters['skus'] = selected_skus
+        
+        # Date Period Filter
+        if df is not None and 'Date_1' in df.columns:
+            df['Date_1'] = pd.to_datetime(df['Date_1'], errors='coerce')
+            df_clean = df.dropna(subset=['Date_1'])
+            
+            if not df_clean.empty:
+                min_date = df_clean['Date_1'].min()
+                max_date = df_clean['Date_1'].max()
+                
+                period_type = st.radio(
+                    "📅 Date Period",
+                    ["Current Week", "Previous Week", "Custom"],
+                    key="filter_period_type"
+                )
+                
+                if period_type == "Current Week":
+                    start_date, end_date = get_week_range()
+                elif period_type == "Previous Week":
+                    start_date, end_date = get_week_range(previous=True)
+                else:
+                    default_start = get_safe_date(min_date, max_date).date() - timedelta(days=7)
+                    default_end = get_safe_date(min_date, max_date).date()
+                    
+                    date_range = st.date_input(
+                        "Custom Range",
+                        value=(default_start, default_end),
+                        min_value=min_date.date(),
+                        max_value=max_date.date(),
+                        key="filter_custom_dates"
+                    )
+                    if len(date_range) == 2:
+                        start_date = datetime.combine(date_range[0], datetime.min.time())
+                        end_date = datetime.combine(date_range[1], datetime.max.time())
+                    else:
+                        start_date, end_date = get_week_range()
+                
+                st.session_state.global_filters['date_range'] = (start_date, end_date)
+        
+        # Projection Period Filter
+        if df is not None and 'Projection Period' in df.columns:
+            projection_periods = sorted(df['Projection Period'].dropna().astype(str).unique())
+            selected_periods = st.multiselect(
+                "📊 Projection Periods",
+                projection_periods,
+                default=st.session_state.global_filters['projection_periods'],
+                placeholder="All periods",
+                key="filter_projection_periods"
+            )
+            st.session_state.global_filters['projection_periods'] = selected_periods
+        
+        # Inventory Status Filter
+        inventory_status_options = ["Good", "Bad"]
+        selected_inventory_status = st.multiselect(
+            "📈 Inventory Status",
+            inventory_status_options,
+            default=st.session_state.global_filters['inventory_status'],
+            placeholder="All statuses",
+            key="filter_inventory_status"
+        )
+        st.session_state.global_filters['inventory_status'] = selected_inventory_status
+        
+        # Order Status Filter
+        if df is not None:
+            order_status_options = set()
+            if 'Oxnard Status' in df.columns:
+                order_status_options.update(df['Oxnard Status'].dropna().unique())
+            if 'Wheeling Status' in df.columns:
+                order_status_options.update(df['Wheeling Status'].dropna().unique())
+            
+            # Map status values to more user-friendly names
+            status_mapping = {
+                'Imported': 'Imported',
+                'Confirmed': 'Confirmed', 
+                'N/A': 'Pending',
+                '': 'No Status'
+            }
+            
+            order_status_options = sorted([status_mapping.get(status, status) for status in order_status_options if status])
+            
+            selected_order_status = st.multiselect(
+                "📋 Order Status",
+                order_status_options,
+                default=st.session_state.global_filters['order_status'],
+                placeholder="All statuses",
+                key="filter_order_status"
+            )
+            st.session_state.global_filters['order_status'] = selected_order_status
+        
+        st.divider()
+        
+        # Reset filters button
+        if st.button("🔄 Reset All Filters", use_container_width=True):
+            st.session_state.global_filters = {
+                'fruits': [],
+                'warehouse': 'All',
+                'fruit_status': [],
+                'skus': [],
+                'date_range': None,
+                'projection_periods': [],
+                'inventory_status': [],
+                'order_status': []
+            }
+            st.rerun()
+        
+        # Show active filters summary
+        active_filters = []
+        for key, value in st.session_state.global_filters.items():
+            if value and value != 'All' and value != []:
+                if key == 'date_range' and value:
+                    start, end = value
+                    active_filters.append(f"📅 {start.strftime('%m/%d')}-{end.strftime('%m/%d')}")
+                elif isinstance(value, list) and value:
+                    active_filters.append(f"{len(value)} {key}")
+                elif value != 'All':
+                    active_filters.append(f"{value}")
+        
+        if active_filters:
+            st.info("**Active:** " + " | ".join(active_filters))
+    
+    return st.session_state.global_filters
+
 def main():
     st.title("🍎 Fruit Dashboard")
     
-    st.markdown("""
-    Welcome to the Fruit Dashboard! Use the filters in the sidebar to analyze fruit inventory and orders.
-    """)
+    # Load all data using the original pattern
     
-    # Load all data
+    # Load WoW data
     if 'wow_df' not in st.session_state:
         message_placeholder = st.empty()
         with st.spinner("Loading WoW data..."):
@@ -177,6 +465,54 @@ def main():
                 message_placeholder.empty()
             else:
                 message_placeholder.warning("⚠️ Failed to load WoW data")
+
+    # Load aggregated orders data
+    if 'agg_orders_df' not in st.session_state:
+        message_placeholder = st.empty()
+        with st.spinner("Loading fruit data..."):
+            df_orders = load_agg_orders()
+            if df_orders is not None:
+                # Convert order columns to numeric when loading data
+                if 'Oxnard Actual Order' in df_orders.columns:
+                    df_orders['Oxnard Actual Order'] = pd.to_numeric(df_orders['Oxnard Actual Order'], errors='coerce').fillna(0)
+                if 'Wheeling Actual Order' in df_orders.columns:
+                    df_orders['Wheeling Actual Order'] = pd.to_numeric(df_orders['Wheeling Actual Order'], errors='coerce').fillna(0)
+                st.session_state['agg_orders_df'] = df_orders
+                message_placeholder.success("✅ Fruit data loaded successfully!")
+                time.sleep(1)  # Show message for 1 second
+                message_placeholder.empty()
+            else:
+                message_placeholder.error("❌ Failed to load fruit data")
+                return
+
+    # Load Orders_new data
+    if 'orders_new_df' not in st.session_state:
+        message_placeholder = st.empty()
+        with st.spinner("Loading orders history data..."):
+            orders_new_df = load_orders_new()
+            if orders_new_df is not None:
+                st.session_state['orders_new_df'] = orders_new_df
+                message_placeholder.success("✅ Orders history loaded successfully!")
+                time.sleep(1)  # Show message for 1 second
+                message_placeholder.empty()
+            else:
+                message_placeholder.warning("⚠️ Failed to load orders history")
+
+    # Load inventory and picklist data
+    load_inventory_and_picklist_data()
+    
+    # Get main dataframe
+    df = st.session_state.get('agg_orders_df')
+    
+    if df is None:
+        st.error("❌ Failed to load main fruit data. Please check your data sources.")
+        return
+    
+    # Create sidebar filters
+    filters = create_sidebar_filters(df)
+    
+    # Apply global filters to main dataframe
+    df_filtered = apply_global_filters(df, filters)
 
     # Display Week over Week Data
     with st.expander("📊 Week over Week Analysis", expanded=True):
@@ -326,65 +662,6 @@ def main():
                 st.warning("Please select at least one date range to display data.")
         else:
             st.warning("No Week over Week data available")
-
-    # Load all data
-    if 'agg_orders_df' not in st.session_state:
-        message_placeholder = st.empty()
-        with st.spinner("Loading fruit data..."):
-            df_orders = load_agg_orders()
-            if df_orders is not None:
-                # Convert order columns to numeric when loading data
-                if 'Oxnard Actual Order' in df_orders.columns:
-                    df_orders['Oxnard Actual Order'] = pd.to_numeric(df_orders['Oxnard Actual Order'], errors='coerce').fillna(0)
-                if 'Wheeling Actual Order' in df_orders.columns:
-                    df_orders['Wheeling Actual Order'] = pd.to_numeric(df_orders['Wheeling Actual Order'], errors='coerce').fillna(0)
-                st.session_state['agg_orders_df'] = df_orders
-                message_placeholder.success("✅ Fruit data loaded successfully!")
-                time.sleep(1)  # Show message for 1 second
-                message_placeholder.empty()
-            else:
-                message_placeholder.error("❌ Failed to load fruit data")
-                return
-
-    # Load Orders_new data
-    if 'orders_new_df' not in st.session_state:
-        message_placeholder = st.empty()
-        with st.spinner("Loading orders history data..."):
-            orders_new_df = load_orders_new()
-            if orders_new_df is not None:
-                st.session_state['orders_new_df'] = orders_new_df
-                message_placeholder.success("✅ Orders history loaded successfully!")
-                time.sleep(1)  # Show message for 1 second
-                message_placeholder.empty()
-            else:
-                message_placeholder.warning("⚠️ Failed to load orders history")
-
-    # Load inventory and picklist data
-    if 'inventory_data' not in st.session_state:
-        message_placeholder = st.empty()
-        with st.spinner("Loading inventory and picklist data..."):
-            oxnard_df = load_oxnard_inventory()
-            wheeling_df = load_wheeling_inventory()
-            pieces_vs_lb_df = load_pieces_vs_lb_conversion()
-            picklist_df = load_all_picklist_v2()
-            
-            st.session_state['inventory_data'] = {
-                'oxnard': oxnard_df,
-                'wheeling': wheeling_df
-            }
-            
-            st.session_state['reference_data'] = {
-                'pieces_vs_lb': pieces_vs_lb_df
-            }
-            
-            st.session_state['picklist_data'] = picklist_df
-            
-            if all(df is not None for df in [oxnard_df, wheeling_df]):
-                message_placeholder.success("✅ Inventory data loaded successfully!")
-                time.sleep(1)  # Show message for 1 second
-                message_placeholder.empty()
-            else:
-                message_placeholder.warning("⚠️ Some inventory data could not be loaded")
 
     # Display Picklist Data
     with st.expander("📋 Current Projections Data", expanded=False):
@@ -538,10 +815,27 @@ def main():
                 if not filtered_df.empty:
                     # Remove unnecessary columns
                     columns_to_display = [col for col in filtered_df.columns if col not in ['TRUE', 'test status', 'STATUS_1']]
-                    display_df = filtered_df[columns_to_display]
+                    display_df = filtered_df[columns_to_display].sort_values('INVENTORY DATE', ascending=False)
+                    
+                    # Define styling function for STATUS column
+                    def style_oxnard_status(df):
+                        def color_status(val):
+                            if pd.isna(val):
+                                return ''
+                            val_str = str(val).strip().lower()
+                            if val_str == 'good':
+                                return 'background-color: #d4edda; color: #155724'  # Green background, dark green text
+                            elif val_str == 'bad':
+                                return 'background-color: #f8d7da; color: #721c24'  # Red background, dark red text
+                            return ''
+                        
+                        # Apply styling only if STATUS column exists
+                        if 'STATUS' in df.columns:
+                            return df.style.applymap(color_status, subset=['STATUS'])
+                        return df.style
                     
                     st.dataframe(
-                        display_df.sort_values('INVENTORY DATE', ascending=False),
+                        style_oxnard_status(display_df),
                         use_container_width=True,
                         hide_index=True,
                         column_config={
@@ -559,7 +853,7 @@ def main():
                             ),
                             "STATUS": st.column_config.TextColumn(
                                 "Status",
-                                help="Inventory status (Good/Bad)"
+                                help="Inventory status: Good (Green) / Bad (Red)"
                             )
                         }
                     )
@@ -625,10 +919,27 @@ def main():
                 if not filtered_df.empty:
                     # Remove unnecessary columns
                     columns_to_display = [col for col in filtered_df.columns if col not in ['TRUE', 'test status', 'STATUS_1']]
-                    display_df = filtered_df[columns_to_display]
+                    display_df = filtered_df[columns_to_display].sort_values('INVENTORY DATE', ascending=False)
+                    
+                    # Define styling function for STATUS column
+                    def style_wheeling_status(df):
+                        def color_status(val):
+                            if pd.isna(val):
+                                return ''
+                            val_str = str(val).strip().lower()
+                            if val_str == 'good':
+                                return 'background-color: #d4edda; color: #155724'  # Green background, dark green text
+                            elif val_str == 'bad':
+                                return 'background-color: #f8d7da; color: #721c24'  # Red background, dark red text
+                            return ''
+                        
+                        # Apply styling only if STATUS column exists
+                        if 'STATUS' in df.columns:
+                            return df.style.applymap(color_status, subset=['STATUS'])
+                        return df.style
                     
                     st.dataframe(
-                        display_df.sort_values('INVENTORY DATE', ascending=False),
+                        style_wheeling_status(display_df),
                         use_container_width=True,
                         hide_index=True,
                         column_config={
@@ -646,7 +957,7 @@ def main():
                             ),
                             "STATUS": st.column_config.TextColumn(
                                 "Status",
-                                help="Inventory status (Good/Bad)"
+                                help="Inventory status: Good (Green) / Bad (Red)"
                             )
                         }
                     )
@@ -816,10 +1127,10 @@ def main():
 
     # Display Reference Data
     with st.expander("📚 Pieces vs Lb Conversion", expanded=False):
-        reference_data = st.session_state.get('reference_data', {})
+        reference_data = st.session_state.get('pieces_vs_lb_df')
         
         # Pieces vs Lb Conversion
-        pieces_vs_lb_df = reference_data.get('pieces_vs_lb')
+        pieces_vs_lb_df = reference_data
         if pieces_vs_lb_df is not None and not pieces_vs_lb_df.empty:
             st.dataframe(pieces_vs_lb_df, use_container_width=True, hide_index=True)
         else:
@@ -1269,178 +1580,6 @@ def main():
         else:
             st.warning("No Wheeling orders found!")
 
-    # Initialize filtered dataframe
-    df_filtered = df.copy()
-    
-    # Optional Filters
-    st.sidebar.title("Optional Filters")
-    
-    # Add a checkbox to enable/disable filtering
-    enable_filters = st.sidebar.checkbox("Enable Filters", value=False)
-    
-    if enable_filters:
-        # 1. Fruit Filter
-        st.sidebar.subheader("🍊 Fruit")
-        available_fruits = sorted(df['Fruit'].unique())
-        selected_fruits = st.sidebar.multiselect(
-            "Select Fruits",
-            available_fruits,
-            default=None,
-            placeholder="Choose fruits..."
-        )
-        if selected_fruits:
-            df_filtered = df_filtered[df_filtered['Fruit'].isin(selected_fruits)]
-
-        # 2. Warehouse Filter
-        st.sidebar.subheader("🏭 Warehouse")
-        warehouse_options = ["Oxnard", "Wheeling"]
-        selected_warehouse = st.sidebar.radio(
-            "Select Warehouse",
-            warehouse_options,
-            key="warehouse_selection"
-        )
-
-        # 8. Order Status Filter (based on selected warehouse)
-        st.sidebar.subheader("📋 Order Status")
-        status_column = f'{selected_warehouse} Status'
-        
-        if status_column in df_filtered.columns:
-            # Replace empty status with "❌ No Status" label
-            df_filtered[status_column] = df_filtered[status_column].replace(['', np.nan], '❌ No Status')
-            status_options = sorted(df_filtered[status_column].unique())
-            selected_status = st.sidebar.multiselect(
-                "Select Order Status",
-                status_options,
-                default=None,
-                placeholder=f"Choose {selected_warehouse} status..."
-            )
-            if selected_status:
-                df_filtered = df_filtered[df_filtered[status_column].isin(selected_status)]
-                
-            # Filter by actual orders in selected warehouse
-            order_column = f'{selected_warehouse} Actual Order'
-            if order_column in df_filtered.columns:
-                df_filtered[order_column] = pd.to_numeric(df_filtered[order_column], errors='coerce').fillna(0)
-                df_filtered = df_filtered[df_filtered[order_column] > 0]
-        else:
-            st.sidebar.warning(f"No status information available for {selected_warehouse}")
-            
-        # 3. Fruit Status Filter
-        st.sidebar.subheader("🌱 Fruit Status")
-        if 'Fruit Status' in df_filtered.columns:
-            status_options = sorted(df_filtered['Fruit Status'].unique())
-        else:
-            status_options = ["Seasonal", "Abundant"]  # Default options if column doesn't exist
-        selected_status = st.sidebar.multiselect(
-            "Select Fruit Status",
-            status_options,
-            default=None,
-            placeholder="Choose status..."
-        )
-        if selected_status and 'Fruit Status' in df_filtered.columns:
-            df_filtered = df_filtered[df_filtered['Fruit Status'].isin(selected_status)]
-
-        # 4. SKU Filter
-        st.sidebar.subheader("📦 SKU")
-        all_skus = set()
-        if 'Oxnard Picklist SKU' in df_filtered.columns:
-            all_skus.update(df_filtered['Oxnard Picklist SKU'].dropna().unique())
-        if 'Wheeling Picklist SKU' in df_filtered.columns:
-            all_skus.update(df_filtered['Wheeling Picklist SKU'].dropna().unique())
-        selected_skus = st.sidebar.multiselect(
-            "Select SKUs",
-            sorted(all_skus),
-            default=None,
-            placeholder="Choose SKUs..."
-        )
-        if selected_skus:
-            sku_mask = df_filtered['Oxnard Picklist SKU'].isin(selected_skus) | \
-                       df_filtered['Wheeling Picklist SKU'].isin(selected_skus)
-            df_filtered = df_filtered[sku_mask]
-
-        # 5. Date Period Filter in sidebar
-        st.sidebar.subheader("📅 Date Period")
-        if 'Date_1' in df_filtered.columns:
-            df_filtered['Date_1'] = pd.to_datetime(df_filtered['Date_1'], errors='coerce')
-            df_filtered = df_filtered.dropna(subset=['Date_1'])
-            
-            if not df_filtered.empty:
-                min_date = df_filtered['Date_1'].min()
-                max_date = df_filtered['Date_1'].max()
-                
-                # Period Type Selection
-                period_type = st.sidebar.radio(
-                    "Select Week",
-                    ["Previous Week", "Current Week", "Custom Range"],
-                    key="period_type",
-                    horizontal=True
-                )
-                
-                # Date Range Selection
-                if period_type == "Current Week":
-                    current_start, current_end = get_week_range()
-                    if check_data_availability(df_filtered, 'Date_1', current_start, current_end):
-                        default_date = get_safe_date(min_date, max_date)
-                        start_date, end_date = get_week_range(default_date)
-                    else:
-                        st.sidebar.warning("No data available for current week. Showing previous week instead.")
-                        default_date = get_safe_date(min_date, max_date)
-                        start_date, end_date = get_week_range(default_date, previous=True)
-                elif period_type == "Previous Week":
-                    default_date = get_safe_date(min_date, max_date)
-                    start_date, end_date = get_week_range(default_date, previous=True)
-                else:
-                    default_date = get_safe_date(min_date, max_date)
-                    date_range = st.sidebar.date_input(
-                        "Select Date Range",
-                        value=(default_date.date() - timedelta(days=7), default_date.date()),
-                        min_value=min_date.date(),
-                        max_value=max_date.date()
-                    )
-                    if len(date_range) == 2:
-                        start_date = datetime.combine(date_range[0], datetime.min.time())
-                        end_date = datetime.combine(date_range[1], datetime.max.time())
-                
-                # Apply date filter
-                filtered_df = df_filtered[
-                    (df_filtered['Date_1'] >= start_date) &
-                    (df_filtered['Date_1'] <= end_date)
-                ]
-                
-                if filtered_df.empty:
-                    st.sidebar.warning("No data available for the selected date range.")
-                else:
-                    df_filtered = filtered_df
-
-        # 6. Projection Period Filter
-        st.sidebar.subheader("📊 Projection Period")
-        if 'Projection Period' in df_filtered.columns:
-            projection_periods = sorted(df_filtered['Projection Period'].astype(str).unique())
-            selected_periods = st.sidebar.multiselect(
-                "Select Projection Periods",
-                projection_periods,
-                default=None,
-                placeholder="Choose projection periods..."
-            )
-            if selected_periods:
-                df_filtered = df_filtered[df_filtered['Projection Period'].isin(selected_periods)]
-
-        # 7. Inventory Status Filter
-        st.sidebar.subheader("📈 Inventory Status")
-        inventory_status_options = ["Good", "Bad"]
-        selected_inventory_status = st.sidebar.multiselect(
-            "Select Inventory Status",
-            inventory_status_options,
-            default=None,
-            placeholder="Choose inventory status..."
-        )
-        if selected_inventory_status and 'Inventory Status' in df_filtered.columns:
-            df_filtered = df_filtered[df_filtered['Inventory Status'].isin(selected_inventory_status)]
-
-        # Display filtered data summary
-        st.subheader("Filtered Data Summary")
-        st.write(f"Number of records after filtering: {len(df_filtered):,}")
-    
     # Display Orders History Data
     with st.expander("📜 Fruit Cost (from invoices)", expanded=False):
         orders_new_df = st.session_state.get('orders_new_df')
