@@ -831,7 +831,7 @@ def main():
                         
                         # Apply styling only if STATUS column exists
                         if 'STATUS' in df.columns:
-                            return df.style.applymap(color_status, subset=['STATUS'])
+                            return df.style.map(color_status, subset=['STATUS'])
                         return df.style
                     
                     st.dataframe(
@@ -935,7 +935,7 @@ def main():
                         
                         # Apply styling only if STATUS column exists
                         if 'STATUS' in df.columns:
-                            return df.style.applymap(color_status, subset=['STATUS'])
+                            return df.style.map(color_status, subset=['STATUS'])
                         return df.style
                     
                     st.dataframe(

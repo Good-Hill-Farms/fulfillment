@@ -875,13 +875,14 @@ def load_wow_data():
                     date_parts = header.split('-')
                     if len(date_parts) == 2:
                         try:
-                            # Always use 2025 for all dates
-                            start_date = datetime.strptime(date_parts[0].strip(), '%m/%d').replace(year=2025)
-                            end_date = datetime.strptime(date_parts[1].strip(), '%m/%d').replace(year=2025)
+                            # Use the current year for all dates
+                            current_year = datetime.now().year
+                            start_date = datetime.strptime(date_parts[0].strip(), '%m/%d').replace(year=current_year)
+                            end_date = datetime.strptime(date_parts[1].strip(), '%m/%d').replace(year=current_year)
                             
                             # Handle year wrap-around (e.g., Dec-Jan dates)
                             if end_date < start_date:
-                                end_date = end_date.replace(year=2026)
+                                end_date = end_date.replace(year=current_year + 1)
                             
                             data.append({
                                 'Metric': metric,
