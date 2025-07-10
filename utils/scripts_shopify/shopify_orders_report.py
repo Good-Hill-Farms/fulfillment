@@ -247,5 +247,189 @@ def update_orders_data(start_date=None, end_date=None):
         logger.error(f"\n! Error updating Orders report: {str(e)}")
         return pd.DataFrame(columns=columns)
 
+def update_unfulfilled_orders(start_date=None, end_date=None):
+    """
+    Get unfulfilled orders data
+    
+    Args:
+        start_date (datetime, optional): Start date for orders query. Defaults to 90 days ago.
+        end_date (datetime, optional): End date for orders query. Defaults to current date.
+    Returns:
+        pd.DataFrame: DataFrame with unfulfilled order data or empty DataFrame if error occurs
+    """
+    # Define columns for consistent DataFrame structure
+    columns = [
+        'Order ID', 'Created At', 'Order Name', 'SKU', 'Product Name',
+        'Unfulfilled Quantity', 'Unit Price', 'Total Price',
+        'Delivery Date', 'Shipping Method', 'Tags'
+    ]
+    
+    try:
+        headers = {
+            'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
+            'Content-Type': 'application/json'
+        }
+        
+        # Get date range - default to last 90 days if not specified
+        if end_date is None:
+            end_date = datetime.now()
+        if start_date is None:
+            start_date = end_date - timedelta(days=90)
+            
+        date_query = f"created_at:>='{start_date.strftime('%Y-%m-%d')}' created_at:<='{end_date.strftime('%Y-%m-%d')}' financial_status:paid NOT cancelled:true (fulfillment_status:unfulfilled OR fulfillment_status:partial)"
+        
+        logger.info(f"Fetching unfulfilled orders from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+        
+        all_orders = []
+        has_next_page = True
+        cursor = None
+        
+        while has_next_page:
+            # Build pagination part of the query
+            after_cursor = f', after: "{cursor}"' if cursor else ''
+            
+            query = f'''
+            {{
+                orders(first: 250, query: "{date_query}"{after_cursor}) {{
+                    edges {{
+                        node {{
+                            id
+                            name
+                            createdAt
+                            displayFulfillmentStatus
+                            tags
+                            shippingLine {{
+                                title
+                                carrierIdentifier
+                                source
+                                code
+                            }}
+                            lineItems(first: 50) {{
+                                edges {{
+                                    node {{
+                                        sku
+                                        name
+                                        quantity
+                                        unfulfilledQuantity
+                                        fulfillmentStatus
+                                        originalUnitPriceSet {{
+                                            shopMoney {{
+                                                amount
+                                            }}
+                                        }}
+                                        product {{
+                                            title
+                                        }}
+                                    }}
+                                }}
+                            }}
+                        }}
+                    }}
+                    pageInfo {{
+                        hasNextPage
+                        endCursor
+                    }}
+                }}
+            }}
+            '''
+            
+            try:
+                response = requests.post(
+                    f'https://{SHOP_URL}/admin/api/2024-01/graphql.json',
+                    headers=headers,
+                    json={'query': query}
+                )
+                
+                data = response.json()
+                
+                if not data or 'data' not in data or 'orders' not in data['data']:
+                    logger.warning("Invalid API response structure")
+                    return pd.DataFrame(columns=columns)
+                
+                if 'errors' in data:
+                    logger.warning("\nAPI Errors:", data['errors'])
+                    return pd.DataFrame(columns=columns)
+                
+                orders = data['data']['orders']['edges']
+                if orders:
+                    all_orders.extend(orders)
+                    page_info = data['data']['orders'].get('pageInfo', {})
+                    has_next_page = page_info.get('hasNextPage', False)
+                    cursor = page_info.get('endCursor') if has_next_page else None
+                else:
+                    has_next_page = False
+                    
+            except Exception as e:
+                logger.error(f"Error in API call: {str(e)}")
+                return pd.DataFrame(columns=columns)
+        
+        if not all_orders:
+            logger.warning("No unfulfilled orders found")
+            return pd.DataFrame(columns=columns)
+                    
+        rows = []
+        for order in all_orders:
+            try:
+                node = order.get('node', {})
+                if not node:
+                    continue
+                
+                order_id = node.get('id', '').split('/')[-1]
+                order_name = node.get('name', '')
+                created_at = datetime.fromisoformat(node.get('createdAt', '').replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M:%S')
+                
+                shipping_info = node.get('shippingLine') or {}
+                delivery_date = shipping_info.get('title', '')
+                shipping_method = shipping_info.get('source') or shipping_info.get('code') or shipping_info.get('carrierIdentifier', '')
+                
+                tags = ', '.join(node.get('tags', []))
+                
+                line_items = node.get('lineItems', {}).get('edges', [])
+                for item in line_items:
+                    line_item = item.get('node', {})
+                    if not line_item:
+                        continue
+                    
+                    sku = line_item.get('sku') or 'N/A'
+                    if sku in ['e.ripening_guide', 'monthly-priority-pass', 'N/A']:
+                        continue
+                    
+                    unfulfilled_quantity = line_item.get('unfulfilledQuantity', 0)
+                    if unfulfilled_quantity <= 0:
+                        continue
+                        
+                    unit_price = float(line_item.get('originalUnitPriceSet', {}).get('shopMoney', {}).get('amount', 0))
+                    total_price = unit_price * unfulfilled_quantity
+                    product_name = line_item.get('name', '')
+                    
+                    rows.append([
+                        order_id,
+                        created_at,
+                        order_name,
+                        sku,
+                        product_name,
+                        unfulfilled_quantity,
+                        unit_price,
+                        total_price,
+                        delivery_date,
+                        shipping_method,
+                        tags
+                    ])
+                    
+            except Exception as e:
+                logger.info(f"Error processing order: {str(e)}")
+                continue
+        
+        if not rows:
+            logger.warning("No valid unfulfilled orders to process")
+            return pd.DataFrame(columns=columns)
+            
+        df = pd.DataFrame(rows, columns=columns)
+        return df
+        
+    except Exception as e:
+        logger.error(f"\n! Error updating Unfulfilled Orders report: {str(e)}")
+        return pd.DataFrame(columns=columns)
+
 if __name__ == '__main__':
     update_orders_data(start_date=datetime(2025, 7, 1), end_date=datetime(2025, 7, 9)) 

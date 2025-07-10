@@ -10,7 +10,8 @@ from utils.google_sheets import (
     load_all_picklist_v2,
     load_orders_new  # Add new import
 )
-from utils.scripts_shopify.shopify_orders_report import update_orders_data
+from utils.scripts_shopify.shopify_orders_report import update_orders_data, update_unfulfilled_orders  # Add new import
+import time # Added for temporary message display
 
 st.set_page_config(
     page_title="Fruit Dashboard",
@@ -35,6 +36,7 @@ def main():
     
     # Load all data
     if 'agg_orders_df' not in st.session_state:
+        message_placeholder = st.empty()
         with st.spinner("Loading fruit data..."):
             df_orders = load_agg_orders()
             if df_orders is not None:
@@ -44,23 +46,29 @@ def main():
                 if 'Wheeling Actual Order' in df_orders.columns:
                     df_orders['Wheeling Actual Order'] = pd.to_numeric(df_orders['Wheeling Actual Order'], errors='coerce').fillna(0)
                 st.session_state['agg_orders_df'] = df_orders
-                st.success("✅ Fruit data loaded successfully!")
+                message_placeholder.success("✅ Fruit data loaded successfully!")
+                time.sleep(1)  # Show message for 1 second
+                message_placeholder.empty()
             else:
-                st.error("❌ Failed to load fruit data")
+                message_placeholder.error("❌ Failed to load fruit data")
                 return
 
     # Load Orders_new data
     if 'orders_new_df' not in st.session_state:
+        message_placeholder = st.empty()
         with st.spinner("Loading orders history data..."):
             orders_new_df = load_orders_new()
             if orders_new_df is not None:
                 st.session_state['orders_new_df'] = orders_new_df
-                st.success("✅ Orders history loaded successfully!")
+                message_placeholder.success("✅ Orders history loaded successfully!")
+                time.sleep(1)  # Show message for 1 second
+                message_placeholder.empty()
             else:
-                st.warning("⚠️ Failed to load orders history")
+                message_placeholder.warning("⚠️ Failed to load orders history")
 
     # Load inventory and picklist data
     if 'inventory_data' not in st.session_state:
+        message_placeholder = st.empty()
         with st.spinner("Loading inventory and picklist data..."):
             oxnard_df = load_oxnard_inventory()
             wheeling_df = load_wheeling_inventory()
@@ -79,12 +87,14 @@ def main():
             st.session_state['picklist_data'] = picklist_df
             
             if all(df is not None for df in [oxnard_df, wheeling_df]):
-                st.success("✅ Inventory data loaded successfully!")
+                message_placeholder.success("✅ Inventory data loaded successfully!")
+                time.sleep(1)  # Show message for 1 second
+                message_placeholder.empty()
             else:
-                st.warning("⚠️ Some inventory data could not be loaded")
+                message_placeholder.warning("⚠️ Some inventory data could not be loaded")
 
     # Display Picklist Data
-    with st.expander("📋 Projections Data", expanded=False):
+    with st.expander("📋 Current Projections Data", expanded=False):
         picklist_df = st.session_state.get('picklist_data')
         if picklist_df is not None and not picklist_df.empty:
             st.dataframe(
@@ -96,7 +106,7 @@ def main():
             st.warning("No picklist data available")
 
     # Display Inventory Data
-    with st.expander("📦 Inventory Data", expanded=False):
+    with st.expander("📦 Inventory Hardcounts", expanded=False):
         inventory_data = st.session_state.get('inventory_data', {})
             
         # Oxnard Inventory
@@ -160,11 +170,10 @@ def main():
             st.warning("No Wheeling inventory data available")
 
     # Display Reference Data
-    with st.expander("📚 Reference Data", expanded=False):
+    with st.expander("📚 Pieces vs Lb Conversion", expanded=False):
         reference_data = st.session_state.get('reference_data', {})
         
         # Pieces vs Lb Conversion
-        st.subheader("🔄 Pieces vs Lb Conversion")
         pieces_vs_lb_df = reference_data.get('pieces_vs_lb')
         if pieces_vs_lb_df is not None and not pieces_vs_lb_df.empty:
             st.dataframe(
@@ -472,7 +481,7 @@ def main():
         st.write(f"Number of records after filtering: {len(df_filtered):,}")
     
     # Display Shopify Orders Data in a collapsible section
-    with st.expander("📦 View Shopify Orders", expanded=False):
+    with st.expander("📦 Fulfilled Shopify Orders", expanded=False):
         # Date range selector for Shopify orders
         st.subheader("📅 Select Date Range")
         date_col1, date_col2, refresh_col = st.columns([2, 2, 1])
@@ -679,6 +688,176 @@ def main():
                     format_currency(total_revenue),
                     help="Total revenue across all SKUs"
                 )
+
+    # Display Unfulfilled Orders
+    with st.expander("⏳ Unfulfilled Shopify Orders", expanded=False):
+        # Date range selector for unfulfilled orders
+        st.subheader("📅 Select Date Range")
+        unfulfilled_col1, unfulfilled_col2, unfulfilled_refresh_col = st.columns([2, 2, 1])
+        
+        # Calculate default date range: from last Monday to now (matching fulfilled orders)
+        default_end_date = datetime.now()
+        # Get the most recent Monday (0 = Monday, 1 = Tuesday, etc.)
+        days_since_monday = default_end_date.weekday()
+        default_start_date = default_end_date - timedelta(days=days_since_monday)
+        default_start_date = datetime.combine(default_start_date.date(), datetime.min.time())
+        
+        with unfulfilled_col1:
+            unfulfilled_start_date = st.date_input(
+                "Start Date",
+                value=default_start_date,
+                key="unfulfilled_start_date",
+                max_value=datetime.now()
+            )
+        
+        with unfulfilled_col2:
+            unfulfilled_end_date = st.date_input(
+                "End Date",
+                value=default_end_date,
+                key="unfulfilled_end_date",
+                max_value=datetime.now()
+            )
+        
+        with unfulfilled_refresh_col:
+            st.write("")  # Add spacing
+            st.write("")  # Add spacing
+            if st.button("🔄 Refresh", key="refresh_unfulfilled"):
+                with st.spinner("Fetching unfulfilled orders..."):
+                    try:
+                        unfulfilled_df = update_unfulfilled_orders(
+                            start_date=datetime.combine(unfulfilled_start_date, datetime.min.time()),
+                            end_date=datetime.combine(unfulfilled_end_date, datetime.max.time())
+                        )
+                        if unfulfilled_df is not None:
+                            st.session_state['unfulfilled_orders_df'] = unfulfilled_df
+                            st.success("✅ Unfulfilled orders data refreshed!")
+                        else:
+                            st.error("❌ Failed to fetch unfulfilled orders")
+                    except Exception as e:
+                        st.error(f"❌ Error fetching unfulfilled orders: {str(e)}")
+        
+        # Load or refresh unfulfilled orders data
+        if 'unfulfilled_orders_df' not in st.session_state:
+            with st.spinner("Loading initial unfulfilled orders..."):
+                try:
+                    unfulfilled_df = update_unfulfilled_orders(
+                        start_date=datetime.combine(unfulfilled_start_date, datetime.min.time()),
+                        end_date=datetime.combine(unfulfilled_end_date, datetime.max.time())
+                    )
+                    if unfulfilled_df is not None:
+                        st.session_state['unfulfilled_orders_df'] = unfulfilled_df
+                    else:
+                        st.error("❌ Failed to load unfulfilled orders")
+                except Exception as e:
+                    st.error(f"❌ Error loading unfulfilled orders: {str(e)}")
+        
+        if 'unfulfilled_orders_df' in st.session_state:
+            unfulfilled_df = st.session_state['unfulfilled_orders_df']
+            
+            if not unfulfilled_df.empty:
+                # Calculate metrics
+                total_unfulfilled_orders = len(unfulfilled_df['Order ID'].unique())
+                total_unfulfilled_items = unfulfilled_df['Unfulfilled Quantity'].sum()
+                total_unfulfilled_value = unfulfilled_df['Total Price'].sum()
+                avg_unfulfilled_value = total_unfulfilled_value / total_unfulfilled_orders if total_unfulfilled_orders > 0 else 0
+                
+                # Display metrics in a grid
+                st.subheader("📊 Unfulfilled Orders Metrics")
+                metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
+                
+                with metric_col1:
+                    st.metric(
+                        "Pending Orders",
+                        format_number(total_unfulfilled_orders),
+                        help="Total number of orders with unfulfilled items"
+                    )
+                
+                with metric_col2:
+                    st.metric(
+                        "Pending Items",
+                        format_number(total_unfulfilled_items),
+                        help="Total quantity of unfulfilled items"
+                    )
+                
+                with metric_col3:
+                    st.metric(
+                        "Total Value",
+                        format_currency(total_unfulfilled_value),
+                        help="Total value of unfulfilled items"
+                    )
+                
+                with metric_col4:
+                    st.metric(
+                        "Avg Order Value",
+                        format_currency(avg_unfulfilled_value),
+                        help="Average value per unfulfilled order"
+                    )
+                
+                # Display detailed unfulfilled orders
+                st.subheader("📋 Unfulfilled Orders Details")
+                st.dataframe(
+                    unfulfilled_df.sort_values('Created At', ascending=False),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Created At": st.column_config.DatetimeColumn(
+                            "Created At",
+                            format="D MMM YYYY, HH:mm"
+                        ),
+                        "Order Name": "Order #",
+                        "SKU": "SKU",
+                        "Product Name": "Product",
+                        "Unfulfilled Quantity": st.column_config.NumberColumn(
+                            "Qty",
+                            help="Number of items pending fulfillment"
+                        ),
+                        "Unit Price": st.column_config.NumberColumn(
+                            "Unit Price",
+                            format="$%.2f"
+                        ),
+                        "Total Price": st.column_config.NumberColumn(
+                            "Total",
+                            format="$%.2f"
+                        ),
+                        "Delivery Date": "Delivery Date",
+                        "Shipping Method": "Shipping Method",
+                        "Tags": "Tags"
+                    }
+                )
+                
+                # Display SKU Summary
+                st.subheader("📊 SKU Summary")
+                sku_summary = unfulfilled_df.groupby(['SKU', 'Product Name']).agg({
+                    'Unfulfilled Quantity': 'sum',
+                    'Unit Price': 'first',
+                    'Total Price': 'sum'
+                }).reset_index()
+                
+                sku_summary = sku_summary.sort_values('Total Price', ascending=False)
+                
+                st.dataframe(
+                    sku_summary,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "SKU": "SKU",
+                        "Product Name": "Product",
+                        "Unfulfilled Quantity": st.column_config.NumberColumn(
+                            "Pending Qty",
+                            help="Total quantity pending fulfillment"
+                        ),
+                        "Unit Price": st.column_config.NumberColumn(
+                            "Unit Price",
+                            format="$%.2f"
+                        ),
+                        "Total Price": st.column_config.NumberColumn(
+                            "Total Value",
+                            format="$%.2f"
+                        )
+                    }
+                )
+            else:
+                st.info("🎉 No unfulfilled orders at the moment!")
 
     # Display Orders History Data
     with st.expander("📜 Fruit Cost (from invoices)", expanded=False):
