@@ -17,8 +17,14 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
 # Sheet IDs
 GHF_INVENTORY_ID = "19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY"
+
 AGG_ORDERS_SHEET_NAME = "Agg_Orders"
+
 GHF_AGGREGATION_DASHBOARD_ID = "1CdTTV8pMqq_wS9vu0qa8HMykNkqtOverrIsP0WLSUeM"
+
+GHF_AGG_FRUIT = "1-lTQJWHutgBM-oN_hYFpgc12WwxxyeZtidvylvSAAWI"
+INVENTORY_OXNARD_SHEET = "Inventory_Oxnard"
+INVENTORY_WHEELING_SHEET = "Inventory_Wheeling"
 
 
 def get_credentials():
@@ -347,6 +353,69 @@ def load_sku_mappings_from_sheets(center=None):
     )
 
     return result
+
+
+def get_fruit_inventory_data(sheet_name: str) -> List[List[Any]]:
+    """Fetches data from the fruit inventory Google Sheet."""
+    try:
+        creds = get_credentials()
+        service = build("sheets", "v4", credentials=creds)
+
+        # Call the Sheets API
+        sheet = service.spreadsheets()
+        result = (
+            sheet.values()
+            .get(spreadsheetId=GHF_AGG_FRUIT, range=f"{sheet_name}!A:V")
+            .execute()
+        )
+
+        values = result.get("values", [])
+        if not values:
+            logger.warning(f"No data found in sheet {sheet_name}")
+            return []
+
+        return values
+
+    except Exception as e:
+        logger.error(f"Error fetching data from sheet {sheet_name}: {e}")
+        return []
+
+def load_inventory_data(sheet_name: str) -> pd.DataFrame | None:
+    """Loads inventory data from specified sheet."""
+    logger.info(f"Fetching data from {sheet_name} sheet...")
+    try:
+        values = get_fruit_inventory_data(sheet_name)
+        if not values:
+            return None
+
+        headers = values[0]
+        data = values[1:]
+        df = pd.DataFrame(data, columns=headers)
+        df = deduplicate_columns(df)
+        
+        # Convert numeric columns
+        if 'Total Weight' in df.columns:
+            df['Total Weight'] = pd.to_numeric(df['Total Weight'], errors='coerce').fillna(0)
+        
+        # Convert date columns
+        date_cols = ['INVENTORY DATE', 'FRUIT DATE']
+        for col in date_cols:
+            if col in df.columns:
+                df[col] = pd.to_datetime(df[col], errors='coerce')
+        
+        return df
+
+    except Exception as e:
+        logger.error(f"Failed to load {sheet_name} sheet: {e}")
+        return None
+
+def load_oxnard_inventory() -> pd.DataFrame | None:
+    """Fetches inventory data from the Inventory_Oxnard sheet."""
+    return load_inventory_data(INVENTORY_OXNARD_SHEET)
+
+def load_wheeling_inventory() -> pd.DataFrame | None:
+    """Fetches inventory data from the Inventory_Wheeling sheet."""
+    return load_inventory_data(INVENTORY_WHEELING_SHEET)
 
 
 if __name__ == "__main__":

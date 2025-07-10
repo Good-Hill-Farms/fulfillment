@@ -2,7 +2,11 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from utils.google_sheets import load_agg_orders
+from utils.google_sheets import (
+    load_agg_orders,
+    load_oxnard_inventory,
+    load_wheeling_inventory
+)
 from utils.scripts_shopify.shopify_orders_report import update_orders_data
 
 st.set_page_config(
@@ -26,7 +30,7 @@ def main():
     Welcome to the Fruit Dashboard! Use the filters in the sidebar to analyze fruit inventory and orders.
     """)
     
-    # Load aggregated orders data
+    # Load all data
     if 'agg_orders_df' not in st.session_state:
         with st.spinner("Loading fruit data..."):
             df_orders = load_agg_orders()
@@ -42,6 +46,22 @@ def main():
                 st.error("❌ Failed to load fruit data")
                 return
     
+    # Load inventory data
+    if 'inventory_data' not in st.session_state:
+        with st.spinner("Loading inventory data..."):
+            oxnard_df = load_oxnard_inventory()
+            wheeling_df = load_wheeling_inventory()
+            
+            st.session_state['inventory_data'] = {
+                'oxnard': oxnard_df,
+                'wheeling': wheeling_df
+            }
+            
+            if all(df is not None for df in [oxnard_df, wheeling_df]):
+                st.success("✅ Inventory data loaded successfully!")
+            else:
+                st.warning("⚠️ Some inventory data could not be loaded")
+
     df = st.session_state.get('agg_orders_df')
     
     if df is None:
@@ -183,6 +203,70 @@ def main():
             )
         else:
             st.warning("No Wheeling orders found!")
+
+    # Display Inventory Data in a collapsible section
+    with st.expander("📦 Inventory Data", expanded=False):
+        inventory_data = st.session_state.get('inventory_data', {})
+            
+        # Oxnard Inventory
+        st.subheader("🏭 Oxnard Inventory")
+        oxnard_df = inventory_data.get('oxnard')
+        if oxnard_df is not None and not oxnard_df.empty:
+            st.dataframe(
+                oxnard_df.sort_values('INVENTORY DATE', ascending=False),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "INVENTORY DATE": st.column_config.DatetimeColumn(
+                        "Inventory Date",
+                        format="MMM DD, YYYY"
+                    ),
+                    "FRUIT DATE": st.column_config.DatetimeColumn(
+                        "Fruit Date",
+                        format="MMM DD, YYYY"
+                    ),
+                    "Total Weight": st.column_config.NumberColumn(
+                        "Total Weight",
+                        format="%.2f"
+                    ),
+                    "STATUS": st.column_config.TextColumn(
+                        "Status",
+                        help="Inventory status (Good/Bad)"
+                    )
+                }
+            )
+        else:
+            st.warning("No Oxnard inventory data available")
+            
+        # Wheeling Inventory
+        st.subheader("🏭 Wheeling Inventory")
+        wheeling_df = inventory_data.get('wheeling')
+        if wheeling_df is not None and not wheeling_df.empty:
+            st.dataframe(
+                wheeling_df.sort_values('INVENTORY DATE', ascending=False),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "INVENTORY DATE": st.column_config.DatetimeColumn(
+                        "Inventory Date",
+                        format="MMM DD, YYYY"
+                    ),
+                    "FRUIT DATE": st.column_config.DatetimeColumn(
+                        "Fruit Date",
+                        format="MMM DD, YYYY"
+                    ),
+                    "Total Weight": st.column_config.NumberColumn(
+                        "Total Weight",
+                        format="%.2f"
+                    ),
+                    "STATUS": st.column_config.TextColumn(
+                        "Status",
+                        help="Inventory status (Good/Bad)"
+                    )
+                }
+            )
+        else:
+            st.warning("No Wheeling inventory data available")
 
     # Initialize filtered dataframe
     df_filtered = df.copy()
