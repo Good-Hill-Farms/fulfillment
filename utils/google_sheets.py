@@ -923,54 +923,60 @@ if __name__ == "__main__":
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
             
-        # # 1. Load and save SKU mappings
-        # sku_mappings = load_sku_mappings_from_sheets()
-        # with open(f"{output_dir}/sku_mappings.json", "w") as f:
-        #     json.dump(sku_mappings, f, indent=2)
-        # print(f"✓ Saved SKU mappings to {output_dir}/sku_mappings.json")
+        # 1. Load and save SKU mappings
+        sku_mappings = load_sku_mappings_from_sheets()
+        with open(f"{output_dir}/sku_mappings.json", "w") as f:
+            json.dump(sku_mappings, f, indent=2)
+        print(f"✓ Saved SKU mappings to {output_dir}/sku_mappings.json")
 
-        # # 2. Load and save Agg Orders
-        # agg_orders_df = load_agg_orders()
-        # if agg_orders_df is not None:
-        #     agg_orders_df.to_csv(f"{output_dir}/agg_orders.csv", index=False)
-        #     print(f"✓ Saved {len(agg_orders_df)} rows to {output_dir}/agg_orders.csv")
+        # 2. Load and save Agg Orders
+        agg_orders_df = load_agg_orders()
+        if agg_orders_df is not None:
+            agg_orders_df.to_csv(f"{output_dir}/agg_orders.csv", index=False)
+            print(f"✓ Saved {len(agg_orders_df)} rows to {output_dir}/agg_orders.csv")
 
         # 3. Load and save All Picklist V2
-        picklist_df = load_wow_data()
+        picklist_df = load_all_picklist_v2()
         if picklist_df is not None:
-            picklist_df.to_csv(f"{output_dir}/load_wow_data.csv", index=False)
-            print(f"✓ Saved {len(picklist_df)} rows to {output_dir}/load_wow_data.csv")
+            picklist_df.to_csv(f"{output_dir}/all_picklist_v2.csv", index=False)
+            print(f"✓ Saved {len(picklist_df)} rows to {output_dir}/all_picklist_v2.csv")
 
-        # # 4. Load and save Pieces vs LB Conversion
-        # conversion_df = load_pieces_vs_lb_conversion()
-        # if conversion_df is not None:
-        #     conversion_df.to_csv(f"{output_dir}/pieces_vs_lb_conversion.csv", index=False)
-        #     print(f"✓ Saved {len(conversion_df)} rows to {output_dir}/pieces_vs_lb_conversion.csv")
+        # 4. Load and save Pieces vs LB Conversion
+        conversion_df = load_pieces_vs_lb_conversion()
+        if conversion_df is not None:
+            conversion_df.to_csv(f"{output_dir}/pieces_vs_lb_conversion.csv", index=False)
+            print(f"✓ Saved {len(conversion_df)} rows to {output_dir}/pieces_vs_lb_conversion.csv")
 
-        # # 5. Load and save Oxnard Inventory
-        # oxnard_inv_df = load_oxnard_inventory()
-        # if oxnard_inv_df is not None:
-        #     oxnard_inv_df.to_csv(f"{output_dir}/oxnard_inventory.csv", index=False)
-        #     print(f"✓ Saved {len(oxnard_inv_df)} rows to {output_dir}/oxnard_inventory.csv")
+        # 5. Load and save Oxnard Inventory
+        oxnard_inv_df = load_oxnard_inventory()
+        if oxnard_inv_df is not None:
+            oxnard_inv_df.to_csv(f"{output_dir}/oxnard_inventory.csv", index=False)
+            print(f"✓ Saved {len(oxnard_inv_df)} rows to {output_dir}/oxnard_inventory.csv")
 
-        # # 6. Load and save Wheeling Inventory
-        # wheeling_inv_df = load_wheeling_inventory()
-        # if wheeling_inv_df is not None:
-        #     wheeling_inv_df.to_csv(f"{output_dir}/wheeling_inventory.csv", index=False)
-        #     print(f"✓ Saved {len(wheeling_inv_df)} rows to {output_dir}/wheeling_inventory.csv")
+        # 6. Load and save Wheeling Inventory
+        wheeling_inv_df = load_wheeling_inventory()
+        if wheeling_inv_df is not None:
+            wheeling_inv_df.to_csv(f"{output_dir}/wheeling_inventory.csv", index=False)
+            print(f"✓ Saved {len(wheeling_inv_df)} rows to {output_dir}/wheeling_inventory.csv")
 
-        # # 7. Load and save Orders New from Fruit Tracking
-        # orders_new_df = load_orders_new()
-        # if orders_new_df is not None:
-        #     orders_new_df.to_csv(f"{output_dir}/orders_new.csv", index=False)
-        #     print(f"✓ Saved {len(orders_new_df)} rows to {output_dir}/orders_new.csv")
+        # 7. Load and save Orders New from Fruit Tracking
+        orders_new_df = load_orders_new()
+        if orders_new_df is not None:
+            orders_new_df.to_csv(f"{output_dir}/orders_new.csv", index=False)
+            print(f"✓ Saved {len(orders_new_df)} rows to {output_dir}/orders_new.csv")
 
-        # print("\nAll data has been saved to the 'sheet_data' directory!")
-        # print("Summary of files saved:")
-        # print("------------------------")
-        # for file in os.listdir(output_dir):
-        #     size = os.path.getsize(os.path.join(output_dir, file)) / 1024  # Convert to KB
-        #     print(f"{file:<30} {size:.1f} KB")
+        # 8. Load and save Week over Week data
+        wow_df = load_wow_data()
+        if wow_df is not None:
+            wow_df.to_csv(f"{output_dir}/wow_data.csv", index=False)
+            print(f"✓ Saved {len(wow_df)} rows to {output_dir}/wow_data.csv")
+
+        print("\nAll data has been saved to the 'sheet_data' directory!")
+        print("Summary of files saved:")
+        print("------------------------")
+        for file in os.listdir(output_dir):
+            size = os.path.getsize(os.path.join(output_dir, file)) / 1024  # Convert to KB
+            print(f"{file:<30} {size:.1f} KB")
 
     except Exception as e:
         print(f"Error occurred: {str(e)}")
