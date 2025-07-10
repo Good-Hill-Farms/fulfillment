@@ -15,17 +15,24 @@ logger = logging.getLogger(__name__)
 # If modifying these scopes, delete the file token.pickle.
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
-# Sheet IDs
+# GHF Inventory Table
 GHF_INVENTORY_ID = "19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY"
+PIECES_VS_LB_CONVERSION_SHEET_NAME = "INPUT_picklist_sku"
 
-AGG_ORDERS_SHEET_NAME = "Agg_Orders"
-
+# GHF Aggregation Dashboard Table
 GHF_AGGREGATION_DASHBOARD_ID = "1CdTTV8pMqq_wS9vu0qa8HMykNkqtOverrIsP0WLSUeM"
+AGG_ORDERS_SHEET_NAME = "Agg_Orders"
+ALL_PICKLIST_V2_SHEET_NAME = "ALL_Picklist_V2"  # Fixed capitalization to match actual sheet name
 
+# GHF AGG/FRUIT Table
 GHF_AGG_FRUIT = "1-lTQJWHutgBM-oN_hYFpgc12WwxxyeZtidvylvSAAWI"
 INVENTORY_OXNARD_SHEET = "Inventory_Oxnard"
 INVENTORY_WHEELING_SHEET = "Inventory_Wheeling"
 
+# GHF: Fruit Tracking 
+GHF_FRUIT_TRACKING = "1B_uRcYEqCdR5O3h5BiyvL92Q1v4BlNPxZTsZ-nihNbI"
+ORDERS_NEW_SHEET_NAME = "Orders_new"
+ORDERS_NEW_NEDDED_COLUMNS = ["B", "D", "E", "P", "Q"] # invoice date, Aggregator / Vendor, Product Type, Price per lb, Actual Total Cost
 
 def get_credentials():
     """Gets service account credentials using the simplest approach that works."""
@@ -52,7 +59,7 @@ def get_credentials():
 
 
 def get_sheet_data(sheet_name: str) -> List[List[Any]]:
-    """Fetches data from a Google Sheet."""
+    """Gets data from a sheet in the GHF Inventory spreadsheet."""
     try:
         creds = get_credentials()
         service = build("sheets", "v4", credentials=creds)
@@ -61,7 +68,7 @@ def get_sheet_data(sheet_name: str) -> List[List[Any]]:
         sheet = service.spreadsheets()
         result = (
             sheet.values()
-            .get(spreadsheetId=GHF_INVENTORY_ID, range=f"{sheet_name}")
+            .get(spreadsheetId=GHF_INVENTORY_ID, range=sheet_name)
             .execute()
         )
 
@@ -78,27 +85,28 @@ def get_sheet_data(sheet_name: str) -> List[List[Any]]:
 
 
 def get_agg_order_data(sheet_name: str) -> List[List[Any]]:
-    """Fetches data from the Aggregation Google Sheet."""
+    """Gets data from a sheet in the GHF Aggregation Dashboard spreadsheet."""
     try:
         creds = get_credentials()
         service = build("sheets", "v4", credentials=creds)
+
+        # Call the Sheets API
         sheet = service.spreadsheets()
         result = (
             sheet.values()
-            .get(
-                spreadsheetId=GHF_AGGREGATION_DASHBOARD_ID,
-                range=f"{sheet_name}",
-            )
+            .get(spreadsheetId=GHF_AGGREGATION_DASHBOARD_ID, range=sheet_name)
             .execute()
         )
+
         values = result.get("values", [])
         if not values:
             logger.warning(f"No data found in sheet {sheet_name}")
             return []
-        logger.info(f"Successfully fetched {len(values)} rows from {sheet_name}")
+
         return values
+
     except Exception as e:
-        logger.error(f"Error fetching agg data from sheet {sheet_name}: {e}")
+        logger.error(f"Error fetching data from sheet {sheet_name}: {e}")
         return []
 
 
@@ -164,19 +172,11 @@ def process_sku_data(data: List[List[Any]], center: str) -> Dict[str, Dict[str, 
     headers = data[0]
     rows = data[1:]
     
-    # DEBUG: Print headers and first few rows to see what we're getting from Google Sheets
-    print(f"\n=== DEBUG: Processing {center} ===")
-    print(f"Headers: {headers}")
-    print(f"Total rows: {len(rows)}")
     
     # Print first 5 rows to see the actual data
     for i, row in enumerate(rows[:5]):
         print(f"Row {i+2}: {row}")
     
-    # Look for the specific SKUs you mentioned
-    target_skus = ["f.avocado_hass-2lb", "f.avocado_hass-2lb_3-bab"]
-    print(f"\nLooking for target SKUs: {target_skus}")
-
     # Initialize result structure
     result = {center: {"singles": {}, "bundles": {}}}
 
@@ -190,29 +190,12 @@ def process_sku_data(data: List[List[Any]], center: str) -> Dict[str, Dict[str, 
 
             order_sku = mapping["shopifysku2"]
             
-            # DEBUG: Print info for target SKUs
-            if order_sku in target_skus:
-                print(f"\nFOUND TARGET SKU '{order_sku}' at row {row_idx}:")
-                print(f"  Raw row: {row}")
-                print(f"  Mapping: {mapping}")
-                print(f"  picklist sku: {mapping.get('picklist sku', 'NOT FOUND')}")
-                print(f"  actualqty: {mapping.get('actualqty', 'NOT FOUND')}")
-                print(f"  Total Pick Weight: {mapping.get('Total Pick Weight', 'NOT FOUND')}")
-            
             if order_sku not in sku_groups:
                 sku_groups[order_sku] = []
             sku_groups[order_sku].append((row_idx, mapping))
         except Exception as e:
             logger.error(f"Error grouping row {row_idx}: {e}")
             continue
-
-    # DEBUG: Show what SKU groups we found
-    print(f"\nFound {len(sku_groups)} unique SKUs")
-    for sku in target_skus:
-        if sku in sku_groups:
-            print(f"Target SKU '{sku}' has {len(sku_groups[sku])} rows")
-        else:
-            print(f"Target SKU '{sku}' NOT FOUND in data!")
 
     # Process each SKU group
     for order_sku, group_rows in sku_groups.items():
@@ -266,12 +249,6 @@ def process_sku_data(data: List[List[Any]], center: str) -> Dict[str, Dict[str, 
                         "pick_type_inventory": mapping.get("Product Type", ""),
                     }
                     
-                    # DEBUG: Print result for target SKUs
-                    if order_sku in target_skus:
-                        print(f"\nPROCESSED TARGET SKU '{order_sku}':")
-                        print(f"  Result: {result[center]['singles'][order_sku]}")
-                    
-                    logger.debug(f"Processed single SKU {order_sku}")
                 except Exception as e:
                     logger.warning(f"Error processing single SKU {order_sku} at row {row_idx}: {e}")
 
@@ -365,7 +342,7 @@ def get_fruit_inventory_data(sheet_name: str) -> List[List[Any]]:
         sheet = service.spreadsheets()
         result = (
             sheet.values()
-            .get(spreadsheetId=GHF_AGG_FRUIT, range=f"{sheet_name}!A:V")
+            .get(spreadsheetId=GHF_AGG_FRUIT, range=sheet_name)
             .execute()
         )
 
@@ -417,28 +394,243 @@ def load_wheeling_inventory() -> pd.DataFrame | None:
     """Fetches inventory data from the Inventory_Wheeling sheet."""
     return load_inventory_data(INVENTORY_WHEELING_SHEET)
 
+def load_pieces_vs_lb_conversion() -> pd.DataFrame | None:
+    """Loads the pieces vs lb conversion data."""
+    logger.info("Loading pieces vs lb conversion data...")
+    try:
+        creds = get_credentials()
+        service = build("sheets", "v4", credentials=creds)
+        
+        sheet = service.spreadsheets()
+        result = (
+            sheet.values()
+            .get(spreadsheetId=GHF_INVENTORY_ID, range=PIECES_VS_LB_CONVERSION_SHEET_NAME)
+            .execute()
+        )
+        
+        values = result.get("values", [])
+        if not values:
+            logger.warning("No pieces vs lb conversion data found")
+            return None
+            
+        headers = values[0]
+        data = values[1:]
+        df = pd.DataFrame(data, columns=headers)
+        df = deduplicate_columns(df)
+        
+        return df
+        
+    except Exception as e:
+        logger.error(f"Failed to load pieces vs lb conversion data: {e}")
+        return None
+
+def load_all_picklist_v2() -> pd.DataFrame | None:
+    """Loads the All Picklist V2 data from GHF Aggregation Dashboard."""
+    logger.info(f"Loading All Picklist V2 data from GHF Aggregation Dashboard...")
+    try:
+        creds = get_credentials()
+        service = build("sheets", "v4", credentials=creds)
+        
+        sheet = service.spreadsheets()
+        result = (
+            sheet.values()
+            .get(
+                spreadsheetId=GHF_AGGREGATION_DASHBOARD_ID,
+                range=ALL_PICKLIST_V2_SHEET_NAME
+            )
+            .execute()
+        )
+        
+        values = result.get("values", [])
+        if not values:
+            logger.warning(f"No data found in {ALL_PICKLIST_V2_SHEET_NAME}")
+            return None
+            
+        # Find the first row that has the most columns - that's likely our real header row
+        max_cols = 0
+        header_idx = 0
+        for idx, row in enumerate(values[:10]):  # Check first 10 rows
+            if len(row) > max_cols:
+                max_cols = len(row)
+                header_idx = idx
+        
+        headers = values[header_idx]
+        data = values[header_idx + 1:]  # Take data after the header row
+        
+        # Ensure all data rows have the same number of columns as headers
+        cleaned_data = []
+        for row in data:
+            # Pad short rows with None
+            if len(row) < len(headers):
+                row = row + [None] * (len(headers) - len(row))
+            # Truncate long rows
+            elif len(row) > len(headers):
+                row = row[:len(headers)]
+            cleaned_data.append(row)
+        
+        logger.info(f"Found {len(cleaned_data)} rows with {len(headers)} columns")
+        logger.info(f"Headers: {headers}")
+        
+        df = pd.DataFrame(cleaned_data, columns=headers)
+        df = deduplicate_columns(df)
+        
+        # Remove empty rows and columns
+        df = df.dropna(how='all')  # Drop rows where all values are NA
+        df = df.dropna(axis=1, how='all')  # Drop columns where all values are NA
+        
+        logger.info(f"Successfully loaded {len(df)} rows from {ALL_PICKLIST_V2_SHEET_NAME}")
+        return df
+        
+    except Exception as e:
+        logger.error(f"Failed to load All Picklist V2 data: {str(e)}")
+        logger.exception("Full traceback:")
+        return None
+
+def get_fruit_tracking_data(sheet_name: str) -> List[List[Any]]:
+    """Fetches data from the fruit tracking Google Sheet."""
+    try:
+        creds = get_credentials()
+        service = build("sheets", "v4", credentials=creds)
+
+        # Call the Sheets API
+        sheet = service.spreadsheets()
+        result = (
+            sheet.values()
+            .get(spreadsheetId=GHF_FRUIT_TRACKING, range=sheet_name)
+            .execute()
+        )
+
+        values = result.get("values", [])
+        if not values:
+            logger.warning(f"No data found in sheet {sheet_name}")
+            return []
+
+        return values
+
+    except Exception as e:
+        logger.error(f"Error fetching data from sheet {sheet_name}: {e}")
+        return []
+
+def load_orders_new() -> pd.DataFrame | None:
+    """Loads the Orders_new data from GHF Fruit Tracking sheet."""
+    logger.info(f"Loading Orders_new data from GHF Fruit Tracking...")
+    try:
+        values = get_fruit_tracking_data(ORDERS_NEW_SHEET_NAME)
+        if not values:
+            return None
+
+        # Get all data first
+        headers = values[0]
+        data = values[1:]
+        
+        # Extract only needed columns using their letter indices
+        needed_indices = [ord(col.upper()) - ord('A') for col in ORDERS_NEW_NEDDED_COLUMNS]
+        
+        # Extract only the needed columns from both headers and data
+        selected_headers = [headers[i] for i in needed_indices if i < len(headers)]
+        selected_data = []
+        for row in data:
+            # Pad row if it's shorter than headers
+            if len(row) < len(headers):
+                row = row + [''] * (len(headers) - len(row))
+            # Extract only needed columns
+            selected_row = [row[i] if i < len(row) else '' for i in needed_indices]
+            
+            # Clean price and cost values
+            if len(selected_row) > 3:  # Price column
+                price_str = str(selected_row[3]).strip()
+                # Remove currency symbols and commas
+                price_str = price_str.replace('$', '').replace(',', '')
+                # Convert to float, defaulting to 0 if invalid
+                try:
+                    selected_row[3] = float(price_str) if price_str else 0
+                except ValueError:
+                    selected_row[3] = 0
+                    
+            if len(selected_row) > 4:  # Total cost column
+                cost_str = str(selected_row[4]).strip()
+                # Remove currency symbols and commas
+                cost_str = cost_str.replace('$', '').replace(',', '')
+                # Convert to float, defaulting to 0 if invalid
+                try:
+                    selected_row[4] = float(cost_str) if cost_str else 0
+                except ValueError:
+                    selected_row[4] = 0
+                    
+            selected_data.append(selected_row)
+        
+        # Create DataFrame with only the selected columns
+        df = pd.DataFrame(selected_data, columns=selected_headers)
+        
+        # Convert date column (first column) to datetime
+        if len(df.columns) > 0:
+            df.iloc[:, 0] = pd.to_datetime(df.iloc[:, 0], errors='coerce')
+        
+        logger.info(f"Successfully loaded {len(df)} rows from {ORDERS_NEW_SHEET_NAME}")
+        return df
+        
+    except Exception as e:
+        logger.error(f"Failed to load Orders_new data: {str(e)}")
+        logger.exception("Full traceback:")
+        return None
+
 
 if __name__ == "__main__":
     try:
-        # Load all SKU mappings
-        result = load_sku_mappings_from_sheets()
+        # Create a directory for the output files if it doesn't exist
+        output_dir = "sheet_data"
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+            
+        # 1. Load and save SKU mappings
+        sku_mappings = load_sku_mappings_from_sheets()
+        with open(f"{output_dir}/sku_mappings.json", "w") as f:
+            json.dump(sku_mappings, f, indent=2)
+        print(f"✓ Saved SKU mappings to {output_dir}/sku_mappings.json")
 
-        # Save to JSON for inspection
-        with open("google_sheets_sku_mappings.json", "w") as f:
-            json.dump(result, f, indent=2)
+        # 2. Load and save Agg Orders
+        agg_orders_df = load_agg_orders()
+        if agg_orders_df is not None:
+            agg_orders_df.to_csv(f"{output_dir}/agg_orders.csv", index=False)
+            print(f"✓ Saved {len(agg_orders_df)} rows to {output_dir}/agg_orders.csv")
 
-        print("Data saved to google_sheets_sku_mappings.json")
-        print(
-            f"Loaded {sum(len(result[warehouse]['singles']) for warehouse in result)} singles and {sum(len(result[warehouse]['bundles']) for warehouse in result)} bundles"
-        )
+        # 3. Load and save All Picklist V2
+        picklist_df = load_all_picklist_v2()
+        if picklist_df is not None:
+            picklist_df.to_csv(f"{output_dir}/all_picklist_v2.csv", index=False)
+            print(f"✓ Saved {len(picklist_df)} rows to {output_dir}/all_picklist_v2.csv")
 
-        result = load_agg_orders()
-        if result is not None:
-            with open("agg_orders.json", "w") as f:
-                # Convert DataFrame to a list of dictionaries before dumping to JSON
-                f.write(result.to_json(orient="records", indent=4))
+        # 4. Load and save Pieces vs LB Conversion
+        conversion_df = load_pieces_vs_lb_conversion()
+        if conversion_df is not None:
+            conversion_df.to_csv(f"{output_dir}/pieces_vs_lb_conversion.csv", index=False)
+            print(f"✓ Saved {len(conversion_df)} rows to {output_dir}/pieces_vs_lb_conversion.csv")
 
-        print("Data saved to agg_orders.json")
-        print(f"Loaded {len(result)} rows from Agg_Orders")
+        # 5. Load and save Oxnard Inventory
+        oxnard_inv_df = load_oxnard_inventory()
+        if oxnard_inv_df is not None:
+            oxnard_inv_df.to_csv(f"{output_dir}/oxnard_inventory.csv", index=False)
+            print(f"✓ Saved {len(oxnard_inv_df)} rows to {output_dir}/oxnard_inventory.csv")
+
+        # 6. Load and save Wheeling Inventory
+        wheeling_inv_df = load_wheeling_inventory()
+        if wheeling_inv_df is not None:
+            wheeling_inv_df.to_csv(f"{output_dir}/wheeling_inventory.csv", index=False)
+            print(f"✓ Saved {len(wheeling_inv_df)} rows to {output_dir}/wheeling_inventory.csv")
+
+        # 7. Load and save Orders New from Fruit Tracking
+        orders_new_df = load_orders_new()
+        if orders_new_df is not None:
+            orders_new_df.to_csv(f"{output_dir}/orders_new.csv", index=False)
+            print(f"✓ Saved {len(orders_new_df)} rows to {output_dir}/orders_new.csv")
+
+        print("\nAll data has been saved to the 'sheet_data' directory!")
+        print("Summary of files saved:")
+        print("------------------------")
+        for file in os.listdir(output_dir):
+            size = os.path.getsize(os.path.join(output_dir, file)) / 1024  # Convert to KB
+            print(f"{file:<30} {size:.1f} KB")
+
     except Exception as e:
         print(f"Error occurred: {str(e)}")
+        logger.exception("Full traceback:")

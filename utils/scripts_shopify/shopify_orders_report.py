@@ -3,8 +3,10 @@ from datetime import datetime, timedelta
 import os
 from dotenv import load_dotenv
 import pandas as pd
+import logging
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 # Shopify setup
 SHOPIFY_ACCESS_TOKEN = os.getenv('SHOPIFY_ACCESS_TOKEN')
@@ -27,9 +29,7 @@ def update_orders_data(start_date=None, end_date=None):
         'Quantity', 'SKU', 'Unit Price', 'Tags', 'Customer Type'
     ]
     
-    print(f"Starting Orders report update at {datetime.now()}")
     try:
-        print("\nMaking Shopify API call...")
         headers = {
             'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
             'Content-Type': 'application/json'
@@ -43,7 +43,7 @@ def update_orders_data(start_date=None, end_date=None):
             
         date_query = f'created_at:>={start_date.strftime("%Y-%m-%d")} AND created_at:<={end_date.strftime("%Y-%m-%d")} AND NOT tag:replacement AND total_price:>0'
         
-        print(f"Fetching orders from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+        logger.info(f"Fetching orders from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
         
         all_orders = []
         has_next_page = True
@@ -139,19 +139,14 @@ def update_orders_data(start_date=None, end_date=None):
                     json={'query': query}
                 )
                 
-                # Print raw response for debugging
-                print("\nAPI Response:")
-                print(response.status_code)
-                print(response.text[:500])  # Print first 500 chars of response
-                
                 data = response.json()
                 
                 if not data or 'data' not in data or 'orders' not in data['data']:
-                    print("Invalid API response structure")
+                    logger.warning("Invalid API response structure")
                     return pd.DataFrame(columns=columns)
                 
                 if 'errors' in data:
-                    print("\nAPI Errors:", data['errors'])
+                    logger.warning("\nAPI Errors:", data['errors'])
                     return pd.DataFrame(columns=columns)
                 
                 orders = data['data']['orders']['edges']
@@ -160,22 +155,17 @@ def update_orders_data(start_date=None, end_date=None):
                     page_info = data['data']['orders'].get('pageInfo', {})
                     has_next_page = page_info.get('hasNextPage', False)
                     cursor = page_info.get('endCursor') if has_next_page else None
-                    print(f"✓ Fetched {len(orders)} orders (Total: {len(all_orders)})")
                 else:
                     has_next_page = False
                     
             except Exception as e:
-                print(f"Error in API call: {str(e)}")
+                logger.error(f"Error in API call: {str(e)}")
                 return pd.DataFrame(columns=columns)
         
         if not all_orders:
-            print("No orders found")
+            logger.warning("No orders found")
             return pd.DataFrame(columns=columns)
-            
-        print(f"\n✓ Found {len(all_orders)} total orders")
-        
-        # Process orders
-        print("\nProcessing orders...")
+                    
         rows = []
         for order in all_orders:
             try:
@@ -243,20 +233,18 @@ def update_orders_data(start_date=None, end_date=None):
                         'Returning' if 'Returning Buyer' in node.get('tags', []) else 'New'
                     ])
             except Exception as e:
-                print(f"Error processing order: {str(e)}")
+                logger.info(f"Error processing order: {str(e)}")
                 continue
         
         if not rows:
-            print("No valid orders to process")
+            logger.warning("No valid orders to process")
             return pd.DataFrame(columns=columns)
             
-        print(f"✓ Processed {len(rows)} total line items")
         df = pd.DataFrame(rows, columns=columns)
-        print("\n=== Orders Report Update Complete ===")
         return df
         
     except Exception as e:
-        print(f"\n! Error updating Orders report: {str(e)}")
+        logger.error(f"\n! Error updating Orders report: {str(e)}")
         return pd.DataFrame(columns=columns)
 
 if __name__ == '__main__':
