@@ -82,6 +82,51 @@ def create_order_units_by_vendor_chart(df):
     )
     return fig
 
+def get_week_range(date=None, previous=False):
+    """Get the Monday-Sunday range for a given date or previous week."""
+    if date is None:
+        date = datetime.now()
+    
+    # If previous week requested, subtract 7 days from the current date
+    if previous:
+        date = date - timedelta(days=7)
+    
+    # Calculate the Monday of the week (weekday() returns 0 for Monday)
+    monday = date - timedelta(days=date.weekday())
+    monday = datetime.combine(monday.date(), datetime.min.time())
+    
+    # Calculate the Sunday of the week
+    sunday = monday + timedelta(days=6)
+    sunday = datetime.combine(sunday.date(), datetime.max.time())
+    
+    return monday, sunday
+
+def get_safe_date(min_date, max_date, default_date=None):
+    """Get a date that's guaranteed to be within the min-max range."""
+    if default_date is None:
+        default_date = datetime.now()
+    
+    default_date = pd.to_datetime(default_date)
+    min_date = pd.to_datetime(min_date)
+    max_date = pd.to_datetime(max_date)
+    
+    if default_date < min_date:
+        return min_date
+    elif default_date > max_date:
+        return max_date
+    return default_date
+
+def check_data_availability(df, date_col, start_date, end_date):
+    """Check if there is data available for the selected date range."""
+    if df is None or df.empty:
+        return False
+    
+    filtered_df = df[
+        (df[date_col] >= start_date) &
+        (df[date_col] <= end_date)
+    ]
+    return not filtered_df.empty
+
 def main():
     st.title("📦 Inventory Overview")
 
@@ -173,22 +218,55 @@ def main():
                 min_date = df_filtered['Date_1'].min()
                 max_date = df_filtered['Date_1'].max()
 
-                default_start_date = max_date - pd.Timedelta(days=6)
-                if default_start_date < min_date:
-                    default_start_date = min_date
-
-                selected_date_range = date_col.date_input(
-                    "Filter by Order Date",
-                    value=(default_start_date.date(), max_date.date()),
-                    min_value=min_date.date(),
-                    max_value=max_date.date(),
-                    key="date_filter"
+                # Add radio to choose between current week, previous week and custom range
+                week_option = date_col.radio(
+                    "Select Week",
+                    ["Previous Week", "Current Week", "Custom Range"],
+                    key="date_filter_type",
+                    horizontal=True
                 )
-                if len(selected_date_range) == 2:
-                    start_date, end_date = selected_date_range
-                    start_date = pd.to_datetime(start_date)
-                    end_date = pd.to_datetime(end_date) + pd.Timedelta(days=1, seconds=-1)
-                    df_filtered = df_filtered[(df_filtered['Date_1'] >= start_date) & (df_filtered['Date_1'] <= end_date)]
+
+                # Initialize date variables
+                start_date = None
+                end_date = None
+
+                if week_option == "Current Week":
+                    current_start, current_end = get_week_range()
+                    if check_data_availability(df_filtered, 'Date_1', current_start, current_end):
+                        start_date, end_date = current_start, current_end
+                    else:
+                        date_col.warning("No data available for current week.")
+                elif week_option == "Previous Week":
+                    prev_start, prev_end = get_week_range(previous=True)
+                    if check_data_availability(df_filtered, 'Date_1', prev_start, prev_end):
+                        start_date, end_date = prev_start, prev_end
+                    else:
+                        date_col.warning("No data available for previous week.")
+                else:
+                    default_date = get_safe_date(min_date, max_date)
+                    date_range = date_col.date_input(
+                        "Select Date Range",
+                        value=(default_date.date() - timedelta(days=7), default_date.date()),
+                        min_value=min_date.date(),
+                        max_value=max_date.date(),
+                        key="date_filter"
+                    )
+                    if len(date_range) == 2:
+                        start_date = datetime.combine(date_range[0], datetime.min.time())
+                        end_date = datetime.combine(date_range[1], datetime.max.time())
+
+                # Apply date filter only if we have valid dates
+                if start_date and end_date:
+                    filtered_df = df_filtered[
+                        (df_filtered['Date_1'] >= start_date) &
+                        (df_filtered['Date_1'] <= end_date)
+                    ]
+                    
+                    if not filtered_df.empty:
+                        # Remove unnecessary columns
+                        columns_to_display = [col for col in filtered_df.columns if col not in ['TRUE', 'test status', 'STATUS_1']]
+                        display_df = filtered_df[columns_to_display]
+                        df_filtered = display_df
             else:
                 date_col.warning("No valid dates found in 'Date_1' column to filter.")
         else:

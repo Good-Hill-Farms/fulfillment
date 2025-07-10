@@ -32,9 +32,9 @@ ALL_PICKLIST_V2_NEEDED_COLUMNS = [
     # Wheeling 1 (WH1)
     "AT", "AU", "AV", "AW",  # Projection, Weight, Inventory + Confirmed Agg, Needs
     # Oxnard 2 (OX2)
-    "BC", "BE", "BF", "BH",  # Weight, Inventory + Confirmed Agg, Inventory, Needs
+    "BC", "BG", "BF", "BH",  # Weight, Inventory + Confirmed Agg, Inventory, Needs
     # Wheeling 2 (WH2)
-    "BM", "BO", "BP", "BR"   # Weight, Inventory + Confirmed Agg, Inventory, Needs
+    "BM", "BO", "BR", "BS"   # Weight, Inventory + Confirmed Agg, Inventory, Needs
 ]
 
 """
@@ -56,15 +56,15 @@ AW: WH1: Needs - Required inventory needs for Wheeling 1
 
 Oxnard 2 (OX2) - Second Projection Period:
 BC: OX2: Weight - Weight measurements for Oxnard 2
-BE: OX2: Inventory + Confirmed Agg - Combined inventory and confirmed aggregation for Oxnard 2
+BG: OX2: Inventory + Confirmed Agg - Combined inventory and confirmed aggregation for Oxnard 2
 BF: OX2: Inventory - Current inventory levels for Oxnard 2
 BH: OX2: Needs - Required inventory needs for Oxnard 2
 
 Wheeling 2 (WH2) - Second Projection Period:
 BM: WH2: Weight - Weight measurements for Wheeling 2
 BO: WH2: Inventory + Confirmed Agg - Combined inventory and confirmed aggregation for Wheeling 2
-BP: WH2: Inventory - Current inventory levels for Wheeling 2
-BR: WH2: Needs - Required inventory needs for Wheeling 2
+BR: WH2: Inventory - Current inventory levels for Wheeling 2
+BS: WH2: Needs - Required inventory needs for Wheeling 2
 """
 
 # GHF AGG/FRUIT Table
@@ -531,14 +531,17 @@ def load_all_picklist_v2() -> pd.DataFrame | None:
             for i in selected_indices:
                 value = row[i] if i < len(row) else None
                 # Clean up special values
-                if value in ['#DIV/0!', '#N/A', '#VALUE!', '']:
+                if value in ['#DIV/0!', '#N/A', '#VALUE!', '', None]:
                     value = '0'
-                elif isinstance(value, str) and '%' in value:
-                    # Convert percentage to decimal
-                    try:
-                        value = str(float(value.replace('%', '')) / 100)
-                    except ValueError:
-                        value = '0'
+                elif isinstance(value, str):
+                    # Remove any currency symbols, commas and extra spaces
+                    value = value.replace('$', '').replace(',', '').strip()
+                    # Handle percentage values
+                    if '%' in value:
+                        try:
+                            value = str(float(value.replace('%', '')) / 100)
+                        except ValueError:
+                            value = '0'
                 selected_row.append(value)
             selected_data.append(selected_row)
         
@@ -548,8 +551,16 @@ def load_all_picklist_v2() -> pd.DataFrame | None:
         
         # Convert numeric columns to float
         numeric_columns = df.columns.difference(['Product Type'])  # All columns except Product Type should be numeric
-        for col in numeric_columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        
+        # First handle inventory adjustment columns
+        adjustment_cols = [col for col in numeric_columns if 'Inventory Adjustment' in col]
+        for col in adjustment_cols:
+            df[col] = df[col].apply(lambda x: float(1) if str(x).strip() == '1' else float(0.2))
+        
+        # Then handle all other numeric columns
+        other_cols = [col for col in numeric_columns if col not in adjustment_cols]
+        for col in other_cols:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).round(2)
         
         # Remove empty rows and columns
         df = df.dropna(how='all')  # Drop rows where all values are NA

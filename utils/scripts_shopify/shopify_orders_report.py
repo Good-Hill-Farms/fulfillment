@@ -146,9 +146,6 @@ def update_orders_data(start_date=None, end_date=None):
                 
                 data = response.json()
                 
-                # Add debug logging
-                logger.info(f"API Response: {data}")
-                
                 if not data or 'data' not in data:
                     logger.warning(f"Invalid API response structure. Response: {data}")
                     return pd.DataFrame(columns=columns)
@@ -395,9 +392,6 @@ def update_unfulfilled_orders(start_date=None, end_date=None):
                 )
                 
                 data = response.json()
-                
-                # Add debug logging
-                logger.info(f"API Response: {data}")
                 
                 if not data or 'data' not in data:
                     logger.warning(f"Invalid API response structure. Response: {data}")
