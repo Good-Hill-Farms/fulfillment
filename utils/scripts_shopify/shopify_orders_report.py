@@ -24,9 +24,9 @@ def update_orders_data(start_date=None, end_date=None):
     """
     # Define columns for consistent DataFrame structure
     columns = [
-        'Order ID', 'Created At', 'Subtotal', 'Shipping', 'Total',
+        'Order ID', 'Created At', 'Fulfillment Status', 'Subtotal', 'Shipping', 'Total',
         'Discount Code', 'Discount Amount', 'Delivery Date', 'Shipping Method',
-        'Quantity', 'SKU', 'Unit Price', 'Tags', 'Customer Type'
+        'Quantity', 'SKU', 'Unit Price', 'Tags', 'Customer Type', 'Fulfilled At', 'Fulfillment Duration'
     ]
     
     try:
@@ -53,16 +53,27 @@ def update_orders_data(start_date=None, end_date=None):
             # Build pagination part of the query
             after_cursor = f', after: "{cursor}"' if cursor else ''
             
+            # Escape quotes in the date query
+            date_query = date_query.replace('"', '\\"')
+            
             query = f'''
-            {{
+            query getOrders {{
                 orders(first: 250, sortKey: CREATED_AT, reverse: true, query: "{date_query}"{after_cursor}) {{
                     edges {{
-                        cursor
                         node {{
                             id
                             name
                             createdAt
+                            displayFulfillmentStatus
                             tags
+                            fulfillments(first: 5) {{
+                                createdAt
+                                status
+                                trackingInfo {{
+                                    company
+                                    number
+                                }}
+                            }}
                             subtotalPriceSet {{
                                 shopMoney {{
                                     amount
@@ -103,12 +114,6 @@ def update_orders_data(start_date=None, end_date=None):
                                 source
                                 code
                             }}
-                            customer {{
-                                firstName
-                                lastName
-                                email
-                                tags
-                            }}
                             lineItems(first: 50) {{
                                 edges {{
                                     node {{
@@ -141,12 +146,19 @@ def update_orders_data(start_date=None, end_date=None):
                 
                 data = response.json()
                 
-                if not data or 'data' not in data or 'orders' not in data['data']:
-                    logger.warning("Invalid API response structure")
+                # Add debug logging
+                logger.info(f"API Response: {data}")
+                
+                if not data or 'data' not in data:
+                    logger.warning(f"Invalid API response structure. Response: {data}")
                     return pd.DataFrame(columns=columns)
                 
                 if 'errors' in data:
-                    logger.warning("\nAPI Errors:", data['errors'])
+                    logger.warning(f"\nAPI Errors: {data['errors']}")
+                    return pd.DataFrame(columns=columns)
+                
+                if 'data' not in data or 'orders' not in data['data']:
+                    logger.warning(f"Missing orders data. Response structure: {data}")
                     return pd.DataFrame(columns=columns)
                 
                 orders = data['data']['orders']['edges']
@@ -184,6 +196,45 @@ def update_orders_data(start_date=None, end_date=None):
                 order_id = node.get('id', '').split('/')[-1]
                 created_at = datetime.fromisoformat(node.get('createdAt', '').replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M:%S')
                 
+                # Get fulfillment information
+                fulfilled_at = None
+                fulfillment_duration = None
+                fulfillments = node.get('fulfillments', [])
+                display_status = node.get('displayFulfillmentStatus')
+                
+                if fulfillments:
+                    # Sort fulfillments by creation date to get the first one
+                    fulfillments.sort(key=lambda x: x.get('createdAt', ''))
+                    first_fulfillment = fulfillments[0]
+                    
+                    if first_fulfillment and first_fulfillment.get('status') == 'SUCCESS':
+                        fulfilled_at = datetime.fromisoformat(first_fulfillment.get('createdAt', '').replace('Z', '+00:00'))
+                        created_dt = datetime.fromisoformat(node.get('createdAt', '').replace('Z', '+00:00'))
+                        
+                        # Calculate duration
+                        duration = fulfilled_at - created_dt
+                        duration_minutes = duration.total_seconds() / 60
+                        
+                        # Format the fulfillment time and duration
+                        fulfilled_at = fulfilled_at.strftime('%Y-%m-%d %H:%M:%S')
+                        
+                        # Format duration based on length
+                        if duration_minutes < 60:  # Less than an hour
+                            fulfillment_duration = f"{int(duration_minutes)} min"
+                        elif duration_minutes < 24 * 60:  # Less than a day
+                            hours = duration_minutes / 60
+                            fulfillment_duration = f"{int(hours)} hours"
+                        else:  # Days
+                            days = duration_minutes / (24 * 60)
+                            fulfillment_duration = f"{int(days)} days"
+                            
+                        
+                        # Get tracking info if available
+                        tracking_info = first_fulfillment.get('trackingInfo', [])
+                        if tracking_info:
+                            tracking = tracking_info[0]
+                            logger.info(f"Tracking: {tracking.get('company')} - {tracking.get('number')}")
+                
                 subtotal = float(node.get('subtotalPriceSet', {}).get('shopMoney', {}).get('amount', 0))
                 shipping = float(node.get('totalShippingPriceSet', {}).get('shopMoney', {}).get('amount', 0))
                 
@@ -219,6 +270,7 @@ def update_orders_data(start_date=None, end_date=None):
                     rows.append([
                         order_id,
                         created_at,
+                        node.get('displayFulfillmentStatus', ''),
                         subtotal,
                         shipping,
                         total_price,
@@ -230,7 +282,9 @@ def update_orders_data(start_date=None, end_date=None):
                         sku,
                         float(line_item.get('originalUnitPriceSet', {}).get('shopMoney', {}).get('amount', 0)),
                         ', '.join(node.get('tags', [])),
-                        'Returning' if 'Returning Buyer' in node.get('tags', []) else 'New'
+                        'Returning' if 'Returning Buyer' in node.get('tags', []) else 'New',
+                        fulfilled_at if fulfilled_at else '',
+                        str(fulfillment_duration) if fulfillment_duration is not None else ''
                     ])
             except Exception as e:
                 logger.info(f"Error processing order: {str(e)}")
@@ -342,12 +396,19 @@ def update_unfulfilled_orders(start_date=None, end_date=None):
                 
                 data = response.json()
                 
-                if not data or 'data' not in data or 'orders' not in data['data']:
-                    logger.warning("Invalid API response structure")
+                # Add debug logging
+                logger.info(f"API Response: {data}")
+                
+                if not data or 'data' not in data:
+                    logger.warning(f"Invalid API response structure. Response: {data}")
                     return pd.DataFrame(columns=columns)
                 
                 if 'errors' in data:
-                    logger.warning("\nAPI Errors:", data['errors'])
+                    logger.warning(f"\nAPI Errors: {data['errors']}")
+                    return pd.DataFrame(columns=columns)
+                
+                if 'data' not in data or 'orders' not in data['data']:
+                    logger.warning(f"Missing orders data. Response structure: {data}")
                     return pd.DataFrame(columns=columns)
                 
                 orders = data['data']['orders']['edges']
@@ -432,4 +493,40 @@ def update_unfulfilled_orders(start_date=None, end_date=None):
         return pd.DataFrame(columns=columns)
 
 if __name__ == '__main__':
-    update_orders_data(start_date=datetime(2025, 7, 1), end_date=datetime(2025, 7, 9)) 
+    # Calculate date range from Monday to today
+    today = datetime.now()
+    monday = today - timedelta(days=today.weekday())
+    monday = monday.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    # Format dates for filename
+    date_str = f"{monday.strftime('%Y%m%d')}-{today.strftime('%Y%m%d')}"
+    
+    # Create sheet_data directory if it doesn't exist
+    output_dir = "sheet_data"
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
+    # Get orders data
+    orders_df = update_orders_data(start_date=monday, end_date=today)
+    unfulfilled_df = update_unfulfilled_orders(start_date=monday, end_date=today)
+    
+    # Save to CSV files in sheet_data directory
+    if not orders_df.empty:
+        orders_filename = os.path.join(output_dir, f"orders_report_{date_str}.csv")
+        orders_df.to_csv(orders_filename, index=False)
+        logger.info(f"Orders report saved to {orders_filename}")
+    
+    if not unfulfilled_df.empty:
+        unfulfilled_filename = os.path.join(output_dir, f"unfulfilled_orders_{date_str}.csv")
+        unfulfilled_df.to_csv(unfulfilled_filename, index=False)
+        logger.info(f"Unfulfilled orders report saved to {unfulfilled_filename}")
+        
+    # Print summary of saved files
+    print("\nShopify Orders Reports saved to the 'sheet_data' directory!")
+    print("Summary of files saved:")
+    print("------------------------")
+    for filename in [f"orders_report_{date_str}.csv", f"unfulfilled_orders_{date_str}.csv"]:
+        filepath = os.path.join(output_dir, filename)
+        if os.path.exists(filepath):
+            size = os.path.getsize(filepath) / 1024  # Convert to KB
+            print(f"{filename:<30} {size:.1f} KB") 

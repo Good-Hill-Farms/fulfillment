@@ -8,10 +8,12 @@ from utils.google_sheets import (
     load_wheeling_inventory,
     load_pieces_vs_lb_conversion,
     load_all_picklist_v2,
-    load_orders_new  # Add new import
+    load_orders_new,
+    get_sku_info
 )
-from utils.scripts_shopify.shopify_orders_report import update_orders_data, update_unfulfilled_orders  # Add new import
-import time # Added for temporary message display
+from utils.scripts_shopify.shopify_orders_report import update_orders_data, update_unfulfilled_orders
+import time
+import os
 
 st.set_page_config(
     page_title="Fruit Dashboard",
@@ -26,6 +28,76 @@ def format_currency(value):
 def format_number(value):
     """Format a number with thousand separators"""
     return f"{value:,}"
+
+def convert_duration_to_minutes(duration_str):
+    """Convert duration string to minutes"""
+    if not duration_str or pd.isna(duration_str):
+        return None
+    
+    try:
+        if 'min' in duration_str:
+            return float(duration_str.split(' min')[0])
+        elif 'hours' in duration_str:
+            return float(duration_str.split(' hours')[0]) * 60
+        elif 'days' in duration_str:
+            return float(duration_str.split(' days')[0]) * 24 * 60
+        return None
+    except:
+        return None
+
+def format_duration(minutes):
+    """Format minutes into a readable duration string"""
+    if minutes is None or pd.isna(minutes):
+        return ""
+    
+    if minutes < 60:
+        return f"{int(minutes)} min"
+    elif minutes < 24 * 60:
+        hours = minutes / 60
+        return f"{int(hours)} hours"
+    else:
+        days = minutes / (24 * 60)
+        return f"{int(days)} days"
+
+def load_shopify_orders(start_date=None, end_date=None, force_refresh=False):
+    """Load Shopify orders data and store in session state"""
+    if start_date is None:
+        # Default to last Monday
+        end_date = datetime.now()
+        days_since_monday = end_date.weekday()
+        start_date = end_date - timedelta(days=days_since_monday)
+        start_date = datetime.combine(start_date.date(), datetime.min.time())
+        end_date = datetime.combine(end_date.date(), datetime.max.time())
+    
+    # Check if we need to refresh the data
+    if force_refresh or 'shopify_orders_df' not in st.session_state:
+        with st.spinner("Loading orders data..."):
+            try:
+                orders_df = update_orders_data(start_date=start_date, end_date=end_date)
+                unfulfilled_df = update_unfulfilled_orders(start_date=start_date, end_date=end_date)
+                
+                if orders_df is not None:
+                    st.session_state['shopify_orders_df'] = orders_df
+                    st.session_state['shopify_orders_start_date'] = start_date
+                    st.session_state['shopify_orders_end_date'] = end_date
+                
+                if unfulfilled_df is not None:
+                    st.session_state['unfulfilled_orders_df'] = unfulfilled_df
+                
+                return orders_df, unfulfilled_df
+            except Exception as e:
+                st.error(f"Error loading orders: {str(e)}")
+                return None, None
+    
+    # Return cached data if dates match
+    elif (st.session_state.get('shopify_orders_start_date') == start_date and 
+          st.session_state.get('shopify_orders_end_date') == end_date):
+        return (st.session_state.get('shopify_orders_df'), 
+                st.session_state.get('unfulfilled_orders_df'))
+    
+    # Dates changed, need to refresh
+    else:
+        return load_shopify_orders(start_date, end_date, force_refresh=True)
 
 def main():
     st.title("🍎 Fruit Dashboard")
@@ -97,10 +169,45 @@ def main():
     with st.expander("📋 Current Projections Data", expanded=False):
         picklist_df = st.session_state.get('picklist_data')
         if picklist_df is not None and not picklist_df.empty:
+            # Create a copy for styling
+            display_df = picklist_df.copy()
+            
+            # Apply styling to needs columns
+            needs_cols = [col for col in display_df.columns if 'Needs' in col]
+            
+            def color_needs(val):
+                try:
+                    val = float(val)
+                    if pd.isna(val):
+                        return ''
+                    if val < 0:
+                        return 'background-color: #e8f5e9'  # Light green background
+                    elif val > 0:
+                        return 'background-color: #fff3e0'  # Light orange background
+                except:
+                    return ''
+                return ''
+            
+            styled_df = display_df.style.map(color_needs, subset=needs_cols)
+            
+            # Create column configuration for all numeric columns
+            column_config = {
+                'Product Type': st.column_config.TextColumn('Product Type')
+            }
+            
+            # Add number formatting for all numeric columns - always show 2 decimal places
+            numeric_cols = display_df.columns.difference(['Product Type'])
+            for col in numeric_cols:
+                column_config[col] = st.column_config.NumberColumn(
+                    col,
+                    format="%.2f"
+                )
+            
             st.dataframe(
-                picklist_df,
+                styled_df,
                 use_container_width=True,
-                hide_index=True
+                hide_index=True,
+                column_config=column_config
             )
         else:
             st.warning("No picklist data available")
@@ -176,13 +283,189 @@ def main():
         # Pieces vs Lb Conversion
         pieces_vs_lb_df = reference_data.get('pieces_vs_lb')
         if pieces_vs_lb_df is not None and not pieces_vs_lb_df.empty:
-            st.dataframe(
-                pieces_vs_lb_df,
-                use_container_width=True,
-                hide_index=True
-            )
+            st.dataframe(pieces_vs_lb_df, use_container_width=True, hide_index=True)
         else:
             st.warning("No pieces vs lb conversion data available")
+
+    # Display Orders with Fulfillment Status
+    with st.expander("📦 Orders by Fulfillment Status", expanded=True):
+        st.subheader("🛍️ Recent Orders")
+        
+        # Add date range controls
+        col1, col2, refresh_col = st.columns([2, 2, 1])
+        with col1:
+            start_date = st.date_input(
+                "Start Date",
+                value=datetime.now() - timedelta(days=datetime.now().weekday()),  # Last Monday
+                max_value=datetime.now()
+            )
+        with col2:
+            end_date = st.date_input(
+                "End Date",
+                value=datetime.now(),
+                max_value=datetime.now()
+            )
+        with refresh_col:
+            st.write("")  # Add spacing
+            st.write("")  # Add spacing
+            refresh = st.button("🔄 Refresh")
+            
+        if start_date > end_date:
+            st.error("Error: Start date must be before end date")
+            return
+            
+        # Get orders data directly from Shopify API with selected date range
+        orders_df, _ = load_shopify_orders(
+            start_date=datetime.combine(start_date, datetime.min.time()),
+            end_date=datetime.combine(end_date, datetime.max.time()),
+            force_refresh=refresh
+        )
+        
+        if orders_df is not None and not orders_df.empty:
+            # Get all unique statuses from the data
+            all_statuses = sorted(orders_df['Fulfillment Status'].unique())
+            
+            # Add fulfillment status filter
+            status_filter = st.multiselect(
+                "Filter by Fulfillment Status",
+                options=all_statuses,
+                default=None,  # Show all by default
+                help="Select one or more fulfillment statuses to display"
+            )
+            
+            if status_filter:
+                filtered_df = orders_df[orders_df['Fulfillment Status'].isin(status_filter)]
+            else:
+                filtered_df = orders_df
+            
+            if not filtered_df.empty:
+                # Show summary statistics
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Total Orders", len(filtered_df))
+                with col2:
+                    total_value = filtered_df['Total'].sum()
+                    st.metric("Total Value", f"${total_value:,.2f}")
+                with col3:
+                    # Convert duration strings to minutes for calculation
+                    duration_minutes = filtered_df['Fulfillment Duration'].apply(convert_duration_to_minutes)
+                    avg_minutes = duration_minutes[duration_minutes.notna()].mean()
+                    if not pd.isna(avg_minutes):
+                        st.metric("Avg Fulfillment Time", format_duration(avg_minutes))
+                with col4:
+                    # Count orders by status
+                    status_counts = filtered_df['Fulfillment Status'].value_counts()
+                    status_text = ", ".join([f"{k}: {v}" for k, v in status_counts.items()])
+                    st.metric("Status Breakdown", status_text)
+
+                # Add Top SKUs Summary
+                st.subheader("📊 Top SKUs")
+                
+                # Calculate SKU summary
+                sku_summary = filtered_df.groupby('SKU').agg({
+                    'Quantity': 'sum',
+                    'Total': 'sum'
+                }).reset_index()
+                
+                # Sort by quantity and get top 10
+                top_skus_qty = sku_summary.nlargest(10, 'Quantity')
+                
+                # Sort by total value and get top 10
+                top_skus_value = sku_summary.nlargest(10, 'Total')
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("**Top SKUs by Quantity**")
+                    st.dataframe(
+                        top_skus_qty,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "SKU": "SKU",
+                            "Quantity": st.column_config.NumberColumn(
+                                "Total Quantity",
+                                format="%d"
+                            ),
+                            "Total": st.column_config.NumberColumn(
+                                "Total Value",
+                                format="$%.2f"
+                            )
+                        }
+                    )
+                
+                with col2:
+                    st.markdown("**Top SKUs by Value**")
+                    st.dataframe(
+                        top_skus_value,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "SKU": "SKU",
+                            "Quantity": st.column_config.NumberColumn(
+                                "Total Quantity",
+                                format="%d"
+                            ),
+                            "Total": st.column_config.NumberColumn(
+                                "Total Value",
+                                format="$%.2f"
+                            )
+                        }
+                    )
+
+                # Display full orders table
+                st.subheader("📋 All Orders")
+                st.dataframe(
+                    filtered_df.sort_values('Created At', ascending=False),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Created At": st.column_config.DatetimeColumn(
+                            "Order Date",
+                            format="MMM DD, YYYY HH:mm"
+                        ),
+                        "Fulfilled At": st.column_config.DatetimeColumn(
+                            "Fulfilled Date",
+                            format="MMM DD, YYYY HH:mm"
+                        ),
+                        "Subtotal": st.column_config.NumberColumn(
+                            "Subtotal",
+                            format="$%.2f"
+                        ),
+                        "Shipping": st.column_config.NumberColumn(
+                            "Shipping",
+                            format="$%.2f"
+                        ),
+                        "Total": st.column_config.NumberColumn(
+                            "Total",
+                            format="$%.2f"
+                        ),
+                        "Fulfillment Status": st.column_config.TextColumn(
+                            "Status",
+                            help="Current fulfillment status of the order"
+                        ),
+                        "Delivery Date": st.column_config.TextColumn(
+                            "Delivery Date",
+                            help="Scheduled delivery date"
+                        ),
+                        "Shipping Method": st.column_config.TextColumn(
+                            "Shipping Method",
+                            help="Method used to ship the order"
+                        ),
+                        "Customer Type": st.column_config.TextColumn(
+                            "Customer Type",
+                            help="New or Returning customer"
+                        ),
+                        "Tags": st.column_config.TextColumn(
+                            "Tags",
+                            help="Order tags"
+                        )
+                    }
+                )
+            else:
+                st.warning("No orders found with selected fulfillment status")
+        else:
+            st.warning("No orders data available")
 
     df = st.session_state.get('agg_orders_df')
     
@@ -488,61 +771,38 @@ def main():
         
         # Calculate default date range: from last Monday to now
         default_end_date = datetime.now()
-        # Get the most recent Monday (0 = Monday, 1 = Tuesday, etc.)
         days_since_monday = default_end_date.weekday()
         default_start_date = default_end_date - timedelta(days=days_since_monday)
-        default_start_date = datetime.combine(default_start_date.date(), datetime.min.time())
         
         with date_col1:
             shopify_start_date = st.date_input(
                 "Start Date",
                 value=default_start_date,
-                max_value=datetime.now()
+                max_value=datetime.now(),
+                key="fulfilled_start_date"
             )
         
         with date_col2:
             shopify_end_date = st.date_input(
                 "End Date",
                 value=default_end_date,
-                max_value=datetime.now()
+                max_value=datetime.now(),
+                key="fulfilled_end_date"
             )
         
         with refresh_col:
             st.write("")  # Add spacing
             st.write("")  # Add spacing
-            if st.button("🔄 Refresh"):
-                with st.spinner("Fetching orders data..."):
-                    try:
-                        orders_df = update_orders_data(
-                            start_date=datetime.combine(shopify_start_date, datetime.min.time()),
-                            end_date=datetime.combine(shopify_end_date, datetime.max.time())
-                        )
-                        if orders_df is not None:
-                            st.session_state['shopify_orders_df'] = orders_df
-                            st.success("✅ Orders data refreshed!")
-                        else:
-                            st.error("❌ Failed to fetch orders data")
-                    except Exception as e:
-                        st.error(f"❌ Error fetching orders: {str(e)}")
+            refresh = st.button("🔄 Refresh", key="refresh_fulfilled")
         
-        # Load or refresh Shopify orders data
-        if 'shopify_orders_df' not in st.session_state:
-            with st.spinner("Loading initial orders data..."):
-                try:
-                    orders_df = update_orders_data(
-                        start_date=datetime.combine(shopify_start_date, datetime.min.time()),
-                        end_date=datetime.combine(shopify_end_date, datetime.max.time())
-                    )
-                    if orders_df is not None:
-                        st.session_state['shopify_orders_df'] = orders_df
-                    else:
-                        st.error("❌ Failed to load orders data")
-                except Exception as e:
-                    st.error(f"❌ Error loading orders: {str(e)}")
+        # Load Shopify orders data
+        orders_df, _ = load_shopify_orders(
+            start_date=datetime.combine(shopify_start_date, datetime.min.time()),
+            end_date=datetime.combine(shopify_end_date, datetime.max.time()),
+            force_refresh=refresh
+        )
         
-        if 'shopify_orders_df' in st.session_state:
-            orders_df = st.session_state['shopify_orders_df']
-            
+        if orders_df is not None and not orders_df.empty:
             # Filter data based on selected date range
             orders_df['Created At'] = pd.to_datetime(orders_df['Created At'])
             mask = (orders_df['Created At'].dt.date >= shopify_start_date) & (orders_df['Created At'].dt.date <= shopify_end_date)
@@ -688,176 +948,6 @@ def main():
                     format_currency(total_revenue),
                     help="Total revenue across all SKUs"
                 )
-
-    # Display Unfulfilled Orders
-    with st.expander("⏳ Unfulfilled Shopify Orders", expanded=False):
-        # Date range selector for unfulfilled orders
-        st.subheader("📅 Select Date Range")
-        unfulfilled_col1, unfulfilled_col2, unfulfilled_refresh_col = st.columns([2, 2, 1])
-        
-        # Calculate default date range: from last Monday to now (matching fulfilled orders)
-        default_end_date = datetime.now()
-        # Get the most recent Monday (0 = Monday, 1 = Tuesday, etc.)
-        days_since_monday = default_end_date.weekday()
-        default_start_date = default_end_date - timedelta(days=days_since_monday)
-        default_start_date = datetime.combine(default_start_date.date(), datetime.min.time())
-        
-        with unfulfilled_col1:
-            unfulfilled_start_date = st.date_input(
-                "Start Date",
-                value=default_start_date,
-                key="unfulfilled_start_date",
-                max_value=datetime.now()
-            )
-        
-        with unfulfilled_col2:
-            unfulfilled_end_date = st.date_input(
-                "End Date",
-                value=default_end_date,
-                key="unfulfilled_end_date",
-                max_value=datetime.now()
-            )
-        
-        with unfulfilled_refresh_col:
-            st.write("")  # Add spacing
-            st.write("")  # Add spacing
-            if st.button("🔄 Refresh", key="refresh_unfulfilled"):
-                with st.spinner("Fetching unfulfilled orders..."):
-                    try:
-                        unfulfilled_df = update_unfulfilled_orders(
-                            start_date=datetime.combine(unfulfilled_start_date, datetime.min.time()),
-                            end_date=datetime.combine(unfulfilled_end_date, datetime.max.time())
-                        )
-                        if unfulfilled_df is not None:
-                            st.session_state['unfulfilled_orders_df'] = unfulfilled_df
-                            st.success("✅ Unfulfilled orders data refreshed!")
-                        else:
-                            st.error("❌ Failed to fetch unfulfilled orders")
-                    except Exception as e:
-                        st.error(f"❌ Error fetching unfulfilled orders: {str(e)}")
-        
-        # Load or refresh unfulfilled orders data
-        if 'unfulfilled_orders_df' not in st.session_state:
-            with st.spinner("Loading initial unfulfilled orders..."):
-                try:
-                    unfulfilled_df = update_unfulfilled_orders(
-                        start_date=datetime.combine(unfulfilled_start_date, datetime.min.time()),
-                        end_date=datetime.combine(unfulfilled_end_date, datetime.max.time())
-                    )
-                    if unfulfilled_df is not None:
-                        st.session_state['unfulfilled_orders_df'] = unfulfilled_df
-                    else:
-                        st.error("❌ Failed to load unfulfilled orders")
-                except Exception as e:
-                    st.error(f"❌ Error loading unfulfilled orders: {str(e)}")
-        
-        if 'unfulfilled_orders_df' in st.session_state:
-            unfulfilled_df = st.session_state['unfulfilled_orders_df']
-            
-            if not unfulfilled_df.empty:
-                # Calculate metrics
-                total_unfulfilled_orders = len(unfulfilled_df['Order ID'].unique())
-                total_unfulfilled_items = unfulfilled_df['Unfulfilled Quantity'].sum()
-                total_unfulfilled_value = unfulfilled_df['Total Price'].sum()
-                avg_unfulfilled_value = total_unfulfilled_value / total_unfulfilled_orders if total_unfulfilled_orders > 0 else 0
-                
-                # Display metrics in a grid
-                st.subheader("📊 Unfulfilled Orders Metrics")
-                metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
-                
-                with metric_col1:
-                    st.metric(
-                        "Pending Orders",
-                        format_number(total_unfulfilled_orders),
-                        help="Total number of orders with unfulfilled items"
-                    )
-                
-                with metric_col2:
-                    st.metric(
-                        "Pending Items",
-                        format_number(total_unfulfilled_items),
-                        help="Total quantity of unfulfilled items"
-                    )
-                
-                with metric_col3:
-                    st.metric(
-                        "Total Value",
-                        format_currency(total_unfulfilled_value),
-                        help="Total value of unfulfilled items"
-                    )
-                
-                with metric_col4:
-                    st.metric(
-                        "Avg Order Value",
-                        format_currency(avg_unfulfilled_value),
-                        help="Average value per unfulfilled order"
-                    )
-                
-                # Display detailed unfulfilled orders
-                st.subheader("📋 Unfulfilled Orders Details")
-                st.dataframe(
-                    unfulfilled_df.sort_values('Created At', ascending=False),
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Created At": st.column_config.DatetimeColumn(
-                            "Created At",
-                            format="D MMM YYYY, HH:mm"
-                        ),
-                        "Order Name": "Order #",
-                        "SKU": "SKU",
-                        "Product Name": "Product",
-                        "Unfulfilled Quantity": st.column_config.NumberColumn(
-                            "Qty",
-                            help="Number of items pending fulfillment"
-                        ),
-                        "Unit Price": st.column_config.NumberColumn(
-                            "Unit Price",
-                            format="$%.2f"
-                        ),
-                        "Total Price": st.column_config.NumberColumn(
-                            "Total",
-                            format="$%.2f"
-                        ),
-                        "Delivery Date": "Delivery Date",
-                        "Shipping Method": "Shipping Method",
-                        "Tags": "Tags"
-                    }
-                )
-                
-                # Display SKU Summary
-                st.subheader("📊 SKU Summary")
-                sku_summary = unfulfilled_df.groupby(['SKU', 'Product Name']).agg({
-                    'Unfulfilled Quantity': 'sum',
-                    'Unit Price': 'first',
-                    'Total Price': 'sum'
-                }).reset_index()
-                
-                sku_summary = sku_summary.sort_values('Total Price', ascending=False)
-                
-                st.dataframe(
-                    sku_summary,
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "SKU": "SKU",
-                        "Product Name": "Product",
-                        "Unfulfilled Quantity": st.column_config.NumberColumn(
-                            "Pending Qty",
-                            help="Total quantity pending fulfillment"
-                        ),
-                        "Unit Price": st.column_config.NumberColumn(
-                            "Unit Price",
-                            format="$%.2f"
-                        ),
-                        "Total Price": st.column_config.NumberColumn(
-                            "Total Value",
-                            format="$%.2f"
-                        )
-                    }
-                )
-            else:
-                st.info("🎉 No unfulfilled orders at the moment!")
 
     # Display Orders History Data
     with st.expander("📜 Fruit Cost (from invoices)", expanded=False):

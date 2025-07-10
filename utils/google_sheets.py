@@ -23,6 +23,49 @@ PIECES_VS_LB_CONVERSION_SHEET_NAME = "INPUT_picklist_sku"
 GHF_AGGREGATION_DASHBOARD_ID = "1CdTTV8pMqq_wS9vu0qa8HMykNkqtOverrIsP0WLSUeM"
 AGG_ORDERS_SHEET_NAME = "Agg_Orders"
 ALL_PICKLIST_V2_SHEET_NAME = "ALL_Picklist_V2"  # Fixed capitalization to match actual sheet name
+ALL_PICKLIST_V2_NEEDED_COLUMNS = [
+    "A",  # Product Type
+    "N", "Q", "T",  # Weight related metrics
+    "W", "Z",  # Inventory and Confirmed Aggregation
+    # Oxnard 1 (OX1)
+    "AL", "AM", "AN", "AO",  # Projection, Weight, Inventory + Confirmed Agg, Needs
+    # Wheeling 1 (WH1)
+    "AT", "AU", "AV", "AW",  # Projection, Weight, Inventory + Confirmed Agg, Needs
+    # Oxnard 2 (OX2)
+    "BC", "BE", "BF", "BH",  # Weight, Inventory + Confirmed Agg, Inventory, Needs
+    # Wheeling 2 (WH2)
+    "BM", "BO", "BP", "BR"   # Weight, Inventory + Confirmed Agg, Inventory, Needs
+]
+
+"""
+A: Product Type - Type of product being tracked
+N, Q, T: Weight related metrics - Product weight measurements
+W, Z: Inventory and Confirmed Aggregation - Current inventory levels and confirmed aggregated amounts
+
+Oxnard 1 (OX1) - First Projection Period:
+AL: OX1: Projection - Projected values for Oxnard 1
+AM: OX1: Weight - Weight measurements for Oxnard 1
+AN: OX1: Inventory + Confirmed Agg - Combined inventory and confirmed aggregation for Oxnard 1
+AO: OX1: Needs - Required inventory needs for Oxnard 1
+
+Wheeling 1 (WH1) - First Projection Period:
+AT: WH1: Projection 1 - Projected values for Wheeling 1
+AU: WH1: Weight - Weight measurements for Wheeling 1
+AV: WH1: Inventory + Confirmed Agg - Combined inventory and confirmed aggregation for Wheeling 1
+AW: WH1: Needs - Required inventory needs for Wheeling 1
+
+Oxnard 2 (OX2) - Second Projection Period:
+BC: OX2: Weight - Weight measurements for Oxnard 2
+BE: OX2: Inventory + Confirmed Agg - Combined inventory and confirmed aggregation for Oxnard 2
+BF: OX2: Inventory - Current inventory levels for Oxnard 2
+BH: OX2: Needs - Required inventory needs for Oxnard 2
+
+Wheeling 2 (WH2) - Second Projection Period:
+BM: WH2: Weight - Weight measurements for Wheeling 2
+BO: WH2: Inventory + Confirmed Agg - Combined inventory and confirmed aggregation for Wheeling 2
+BP: WH2: Inventory - Current inventory levels for Wheeling 2
+BR: WH2: Needs - Required inventory needs for Wheeling 2
+"""
 
 # GHF AGG/FRUIT Table
 GHF_AGG_FRUIT = "1-lTQJWHutgBM-oN_hYFpgc12WwxxyeZtidvylvSAAWI"
@@ -432,11 +475,16 @@ def load_all_picklist_v2() -> pd.DataFrame | None:
         service = build("sheets", "v4", credentials=creds)
         
         sheet = service.spreadsheets()
+        
+        # Create range string like "A:BR" to get all needed columns
+        last_column = max(ALL_PICKLIST_V2_NEEDED_COLUMNS, key=lambda x: ord(x[0]) if len(x) == 1 else ord(x[0]) * 26 + ord(x[1]))
+        range_string = f"{ALL_PICKLIST_V2_SHEET_NAME}!A:{last_column}"
+        
         result = (
             sheet.values()
             .get(
                 spreadsheetId=GHF_AGGREGATION_DASHBOARD_ID,
-                range=ALL_PICKLIST_V2_SHEET_NAME
+                range=range_string
             )
             .execute()
         )
@@ -455,28 +503,64 @@ def load_all_picklist_v2() -> pd.DataFrame | None:
                 header_idx = idx
         
         headers = values[header_idx]
-        data = values[header_idx + 1:]  # Take data after the header row
+        data = values[header_idx + 2:]  # Skip one more row after the header row
         
-        # Ensure all data rows have the same number of columns as headers
-        cleaned_data = []
+        # Create a mapping of column letter to index
+        col_to_idx = {}
+        for i in range(len(headers)):
+            letter = chr(65 + i) if i < 26 else chr(64 + i//26) + chr(65 + i%26)
+            col_to_idx[letter] = i
+            
+        # Get indices for the columns we want
+        selected_indices = []
+        for col in ALL_PICKLIST_V2_NEEDED_COLUMNS:
+            if col in col_to_idx:
+                selected_indices.append(col_to_idx[col])
+            else:
+                logger.warning(f"Column {col} not found in the sheet")
+        
+        # Select only the columns we want
+        selected_headers = [headers[i] for i in selected_indices if i < len(headers)]
+        selected_data = []
         for row in data:
             # Pad short rows with None
             if len(row) < len(headers):
                 row = row + [None] * (len(headers) - len(row))
-            # Truncate long rows
-            elif len(row) > len(headers):
-                row = row[:len(headers)]
-            cleaned_data.append(row)
+            # Select only the columns we want
+            selected_row = []
+            for i in selected_indices:
+                value = row[i] if i < len(row) else None
+                # Clean up special values
+                if value in ['#DIV/0!', '#N/A', '#VALUE!', '']:
+                    value = '0'
+                elif isinstance(value, str) and '%' in value:
+                    # Convert percentage to decimal
+                    try:
+                        value = str(float(value.replace('%', '')) / 100)
+                    except ValueError:
+                        value = '0'
+                selected_row.append(value)
+            selected_data.append(selected_row)
         
-        logger.info(f"Found {len(cleaned_data)} rows with {len(headers)} columns")
-        logger.info(f"Headers: {headers}")
+        logger.info(f"Found {len(selected_data)} rows with {len(selected_headers)} columns")
         
-        df = pd.DataFrame(cleaned_data, columns=headers)
-        df = deduplicate_columns(df)
+        df = pd.DataFrame(selected_data, columns=selected_headers)
+        
+        # Convert numeric columns to float
+        numeric_columns = df.columns.difference(['Product Type'])  # All columns except Product Type should be numeric
+        for col in numeric_columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
         
         # Remove empty rows and columns
         df = df.dropna(how='all')  # Drop rows where all values are NA
         df = df.dropna(axis=1, how='all')  # Drop columns where all values are NA
+        
+        # Filter out rows where Product Type is empty, null, or just whitespace
+        df = df[df['Product Type'].notna() & (df['Product Type'].str.strip() != '')]
+        
+        # Filter out rows where all numeric columns are 0
+        numeric_mask = df[numeric_columns].ne(0).any(axis=1)
+        df = df[numeric_mask]
         
         logger.info(f"Successfully loaded {len(df)} rows from {ALL_PICKLIST_V2_SHEET_NAME}")
         return df
@@ -485,6 +569,111 @@ def load_all_picklist_v2() -> pd.DataFrame | None:
         logger.error(f"Failed to load All Picklist V2 data: {str(e)}")
         logger.exception("Full traceback:")
         return None
+
+def get_sku_info(df: pd.DataFrame, product_type: str) -> Dict[str, Any]:
+    """
+    Get detailed information for a specific product type from the All Picklist V2 data.
+    
+    Args:
+        df (pd.DataFrame): The All Picklist V2 dataframe
+        product_type (str): The product type to look up
+        
+    Returns:
+        Dict[str, Any]: Dictionary containing product information with the following structure:
+        {
+            'product_type': str,
+            'weight_metrics': {
+                'weight_1': float,  # Column N
+                'weight_2': float,  # Column Q
+                'weight_3': float   # Column T
+            },
+            'inventory': {
+                'current_level': float,    # Column W
+                'confirmed_agg': float     # Column Z
+            },
+            'oxnard_1': {
+                'projection': float,       # Column AL
+                'weight': float,           # Column AM
+                'inventory_agg': float,    # Column AN
+                'needs': float             # Column AO
+            },
+            'wheeling_1': {
+                'projection': float,       # Column AT
+                'weight': float,           # Column AU
+                'inventory_agg': float,    # Column AV
+                'needs': float             # Column AW
+            }
+        }
+    """
+    # Find the row for the product type
+    product_row = df[df.iloc[:, 0] == product_type]  # Column A is Product Type
+    if product_row.empty:
+        logger.warning(f"Product Type {product_type} not found in All Picklist V2 data")
+        return None
+        
+    # Helper function to safely convert values to float
+    def safe_float(value) -> float:
+        try:
+            if pd.isna(value) or value == '':
+                return 0.0
+            if isinstance(value, str):
+                # Remove any currency symbols and commas
+                value = value.replace('$', '').replace(',', '').strip()
+            return float(value)
+        except (ValueError, TypeError):
+            return 0.0
+    
+    # Extract data from the row
+    row = product_row.iloc[0]
+    
+    # Column mapping for reference:
+    # A: Product Type
+    # N, Q, T: Weight metrics
+    # W: Inventory, Z: Confirmed Agg
+    # AL-AO: Oxnard 1 data
+    # AT-AW: Wheeling 1 data
+    
+    # Get column indices (0-based)
+    col_indices = {
+        'N': 13,  # N is the 14th column (0-based)
+        'Q': 16,  # Q is the 17th column
+        'T': 19,  # T is the 20th column
+        'W': 22,  # W is the 23rd column
+        'Z': 25,  # Z is the 26th column
+        'AL': 37, # AL is the 38th column
+        'AM': 38, # AM is the 39th column
+        'AN': 39, # AN is the 40th column
+        'AO': 40, # AO is the 41st column
+        'AT': 45, # AT is the 46th column
+        'AU': 46, # AU is the 47th column
+        'AV': 47, # AV is the 48th column
+        'AW': 48  # AW is the 49th column
+    }
+    
+    return {
+        'product_type': str(row.iloc[0]),  # Column A
+        'weight_metrics': {
+            'weight_1': safe_float(row.iloc[col_indices['N']]),
+            'weight_2': safe_float(row.iloc[col_indices['Q']]),
+            'weight_3': safe_float(row.iloc[col_indices['T']])
+        },
+        'inventory': {
+            'current_level': safe_float(row.iloc[col_indices['W']]),
+            'confirmed_agg': safe_float(row.iloc[col_indices['Z']])
+        },
+        'oxnard_1': {
+            'projection': safe_float(row.iloc[col_indices['AL']]),
+            'weight': safe_float(row.iloc[col_indices['AM']]),
+            'inventory_agg': safe_float(row.iloc[col_indices['AN']]),
+            'needs': safe_float(row.iloc[col_indices['AO']])
+        },
+        'wheeling_1': {
+            'projection': safe_float(row.iloc[col_indices['AT']]),
+            'weight': safe_float(row.iloc[col_indices['AU']]),
+            'inventory_agg': safe_float(row.iloc[col_indices['AV']]),
+            'needs': safe_float(row.iloc[col_indices['AW']])
+        }
+    }
 
 def get_fruit_tracking_data(sheet_name: str) -> List[List[Any]]:
     """Fetches data from the fruit tracking Google Sheet."""
@@ -582,17 +771,17 @@ if __name__ == "__main__":
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
             
-        # 1. Load and save SKU mappings
-        sku_mappings = load_sku_mappings_from_sheets()
-        with open(f"{output_dir}/sku_mappings.json", "w") as f:
-            json.dump(sku_mappings, f, indent=2)
-        print(f"✓ Saved SKU mappings to {output_dir}/sku_mappings.json")
+        # # 1. Load and save SKU mappings
+        # sku_mappings = load_sku_mappings_from_sheets()
+        # with open(f"{output_dir}/sku_mappings.json", "w") as f:
+        #     json.dump(sku_mappings, f, indent=2)
+        # print(f"✓ Saved SKU mappings to {output_dir}/sku_mappings.json")
 
-        # 2. Load and save Agg Orders
-        agg_orders_df = load_agg_orders()
-        if agg_orders_df is not None:
-            agg_orders_df.to_csv(f"{output_dir}/agg_orders.csv", index=False)
-            print(f"✓ Saved {len(agg_orders_df)} rows to {output_dir}/agg_orders.csv")
+        # # 2. Load and save Agg Orders
+        # agg_orders_df = load_agg_orders()
+        # if agg_orders_df is not None:
+        #     agg_orders_df.to_csv(f"{output_dir}/agg_orders.csv", index=False)
+        #     print(f"✓ Saved {len(agg_orders_df)} rows to {output_dir}/agg_orders.csv")
 
         # 3. Load and save All Picklist V2
         picklist_df = load_all_picklist_v2()
@@ -600,36 +789,36 @@ if __name__ == "__main__":
             picklist_df.to_csv(f"{output_dir}/all_picklist_v2.csv", index=False)
             print(f"✓ Saved {len(picklist_df)} rows to {output_dir}/all_picklist_v2.csv")
 
-        # 4. Load and save Pieces vs LB Conversion
-        conversion_df = load_pieces_vs_lb_conversion()
-        if conversion_df is not None:
-            conversion_df.to_csv(f"{output_dir}/pieces_vs_lb_conversion.csv", index=False)
-            print(f"✓ Saved {len(conversion_df)} rows to {output_dir}/pieces_vs_lb_conversion.csv")
+        # # 4. Load and save Pieces vs LB Conversion
+        # conversion_df = load_pieces_vs_lb_conversion()
+        # if conversion_df is not None:
+        #     conversion_df.to_csv(f"{output_dir}/pieces_vs_lb_conversion.csv", index=False)
+        #     print(f"✓ Saved {len(conversion_df)} rows to {output_dir}/pieces_vs_lb_conversion.csv")
 
-        # 5. Load and save Oxnard Inventory
-        oxnard_inv_df = load_oxnard_inventory()
-        if oxnard_inv_df is not None:
-            oxnard_inv_df.to_csv(f"{output_dir}/oxnard_inventory.csv", index=False)
-            print(f"✓ Saved {len(oxnard_inv_df)} rows to {output_dir}/oxnard_inventory.csv")
+        # # 5. Load and save Oxnard Inventory
+        # oxnard_inv_df = load_oxnard_inventory()
+        # if oxnard_inv_df is not None:
+        #     oxnard_inv_df.to_csv(f"{output_dir}/oxnard_inventory.csv", index=False)
+        #     print(f"✓ Saved {len(oxnard_inv_df)} rows to {output_dir}/oxnard_inventory.csv")
 
-        # 6. Load and save Wheeling Inventory
-        wheeling_inv_df = load_wheeling_inventory()
-        if wheeling_inv_df is not None:
-            wheeling_inv_df.to_csv(f"{output_dir}/wheeling_inventory.csv", index=False)
-            print(f"✓ Saved {len(wheeling_inv_df)} rows to {output_dir}/wheeling_inventory.csv")
+        # # 6. Load and save Wheeling Inventory
+        # wheeling_inv_df = load_wheeling_inventory()
+        # if wheeling_inv_df is not None:
+        #     wheeling_inv_df.to_csv(f"{output_dir}/wheeling_inventory.csv", index=False)
+        #     print(f"✓ Saved {len(wheeling_inv_df)} rows to {output_dir}/wheeling_inventory.csv")
 
-        # 7. Load and save Orders New from Fruit Tracking
-        orders_new_df = load_orders_new()
-        if orders_new_df is not None:
-            orders_new_df.to_csv(f"{output_dir}/orders_new.csv", index=False)
-            print(f"✓ Saved {len(orders_new_df)} rows to {output_dir}/orders_new.csv")
+        # # 7. Load and save Orders New from Fruit Tracking
+        # orders_new_df = load_orders_new()
+        # if orders_new_df is not None:
+        #     orders_new_df.to_csv(f"{output_dir}/orders_new.csv", index=False)
+        #     print(f"✓ Saved {len(orders_new_df)} rows to {output_dir}/orders_new.csv")
 
-        print("\nAll data has been saved to the 'sheet_data' directory!")
-        print("Summary of files saved:")
-        print("------------------------")
-        for file in os.listdir(output_dir):
-            size = os.path.getsize(os.path.join(output_dir, file)) / 1024  # Convert to KB
-            print(f"{file:<30} {size:.1f} KB")
+        # print("\nAll data has been saved to the 'sheet_data' directory!")
+        # print("Summary of files saved:")
+        # print("------------------------")
+        # for file in os.listdir(output_dir):
+        #     size = os.path.getsize(os.path.join(output_dir, file)) / 1024  # Convert to KB
+        #     print(f"{file:<30} {size:.1f} KB")
 
     except Exception as e:
         print(f"Error occurred: {str(e)}")
