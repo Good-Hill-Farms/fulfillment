@@ -19,6 +19,12 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 # GHF Inventory Table
 GHF_INVENTORY_ID = "19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY"
 PIECES_VS_LB_CONVERSION_SHEET_NAME = "INPUT_picklist_sku"
+INPUT_SKU_TYPE_SHEET_NAME = "INPUT_SKU_TYPE"
+INPUT_SKU_TYPE_NEEDED_COLUMNS = ["A", "B", "I"]
+# SKU
+# PRODUCT_TYPE
+# SKU Helper
+
 
 # GHF Aggregation Dashboard Table
 GHF_AGGREGATION_DASHBOARD_ID = "1CdTTV8pMqq_wS9vu0qa8HMykNkqtOverrIsP0WLSUeM"
@@ -929,6 +935,81 @@ def load_wow_data():
         logger.error(f"Error loading WoW data: {str(e)}")
         raise
 
+def load_sku_type_data() -> pd.DataFrame | None:
+    """Loads the SKU Type data from INPUT_SKU_TYPE sheet."""
+    logger.info(f"Loading SKU Type data from {INPUT_SKU_TYPE_SHEET_NAME}...")
+    try:
+        creds = get_credentials()
+        service = build("sheets", "v4", credentials=creds)
+        
+        sheet = service.spreadsheets()
+        
+        # Create range string to get only the needed columns (A, B, I)
+        range_string = f"{INPUT_SKU_TYPE_SHEET_NAME}!A:I"
+        
+        result = (
+            sheet.values()
+            .get(
+                spreadsheetId=GHF_INVENTORY_ID,
+                range=range_string
+            )
+            .execute()
+        )
+        
+        values = result.get("values", [])
+        if not values:
+            logger.warning(f"No data found in {INPUT_SKU_TYPE_SHEET_NAME}")
+            return None
+            
+        # Get headers from first row
+        headers = values[0]
+        data = values[1:]
+        
+        # Create column mapping for A, B, I columns
+        needed_indices = [0, 1, 8]  # A=0, B=1, I=8 (0-based indexing)
+        
+        # Extract only the needed columns
+        selected_headers = []
+        for idx in needed_indices:
+            if idx < len(headers):
+                selected_headers.append(headers[idx])
+            else:
+                logger.warning(f"Column index {idx} not found in headers")
+        
+        selected_data = []
+        for row in data:
+            # Pad row if it's shorter than needed
+            if len(row) < max(needed_indices) + 1:
+                row = row + [''] * (max(needed_indices) + 1 - len(row))
+            
+            # Extract only needed columns
+            selected_row = []
+            for idx in needed_indices:
+                value = row[idx] if idx < len(row) else ''
+                # Clean up the value
+                if value is None:
+                    value = ''
+                selected_row.append(str(value).strip())
+            
+            # Only add rows that have at least SKU (first column)
+            if selected_row[0]:
+                selected_data.append(selected_row)
+        
+        # Create DataFrame with proper column names
+        column_names = ['SKU', 'PRODUCT_TYPE', 'SKU_Helper']
+        df = pd.DataFrame(selected_data, columns=column_names)
+        
+        # Remove empty rows
+        df = df[df['SKU'].str.strip() != '']
+        
+        logger.info(f"Successfully loaded {len(df)} rows from {INPUT_SKU_TYPE_SHEET_NAME}")
+        return df
+        
+    except Exception as e:
+        logger.error(f"Failed to load SKU Type data: {str(e)}")
+        logger.exception("Full traceback:")
+        return None
+
 
 if __name__ == "__main__":
     try:
@@ -984,6 +1065,12 @@ if __name__ == "__main__":
         if wow_df is not None:
             wow_df.to_csv(f"{output_dir}/wow_data.csv", index=False)
             print(f"✓ Saved {len(wow_df)} rows to {output_dir}/wow_data.csv")
+
+        # 9. Load and save SKU Type data
+        sku_type_df = load_sku_type_data()
+        if sku_type_df is not None:
+            sku_type_df.to_csv(f"{output_dir}/sku_type.csv", index=False)
+            print(f"✓ Saved {len(sku_type_df)} rows to {output_dir}/sku_type.csv")
 
         print("\nAll data has been saved to the 'sheet_data' directory!")
         print("Summary of files saved:")

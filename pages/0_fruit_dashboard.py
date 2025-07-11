@@ -3,6 +3,13 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import re
+import sys
+import os
+import json
+
+# Add the parent directory to the Python path to fix import issues
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from utils.google_sheets import (
     load_agg_orders,
     load_oxnard_inventory,
@@ -11,13 +18,15 @@ from utils.google_sheets import (
     load_all_picklist_v2,
     load_orders_new,
     get_sku_info,
-    load_wow_data
+    load_wow_data,
+    load_sku_mappings_from_sheets,
+    load_sku_type_data
 )
 from utils.scripts_shopify.shopify_orders_report import update_orders_data, update_unfulfilled_orders
 from utils.inventory_api import get_inventory_data
 import time
 import os
-import numpy as np
+import logging
 
 st.set_page_config(
     page_title="Fruit Dashboard",
@@ -487,7 +496,7 @@ def create_sidebar_filters(df):
     return st.session_state.global_filters
 
 def main():
-    st.title("🍎 Fruit Dashboard")
+    st.title("Fruit Dashboard")
     
     # Load all data using the original pattern
     
@@ -539,6 +548,18 @@ def main():
     # Load inventory and picklist data
     load_inventory_and_picklist_data()
 
+    # Load SKU mappings if not already loaded (needed for unfulfilled orders processing)
+    if 'sku_mappings' not in st.session_state:
+        with st.spinner("Loading SKU mappings..."):
+            try:
+                sku_mappings = load_sku_mappings_from_sheets()
+                st.session_state['sku_mappings'] = sku_mappings
+                if not sku_mappings or not isinstance(sku_mappings, dict):
+                    st.warning("⚠️ SKU mappings loaded but structure is invalid")
+            except Exception as e:
+                st.error(f"❌ Could not load SKU mappings: {e}")
+                st.session_state['sku_mappings'] = None
+
     # Get main dataframe
     df = st.session_state.get('agg_orders_df')
     
@@ -546,136 +567,1103 @@ def main():
         st.error("❌ Failed to load main fruit data. Please check your data sources.")
         return
 
-    # # ------------------- NEW: AT A GLANCE SUMMARY -------------------
-    # st.markdown("---")
-    # with st.container():
-    #     st.subheader("💡 At a Glance")
+    # ------------------- FAST FRUIT SUMMARY -------------------
+    st.markdown("---")
+    
+    # Load SKU mappings if not already loaded (needed for conversions)
+    if 'sku_mappings' not in st.session_state:
+        try:
+            import json
+            with open('sheet_data/sku_mappings.json', 'r') as f:
+                sku_mappings = json.load(f)
+                st.session_state['sku_mappings'] = sku_mappings
+        except Exception as e:
+            st.warning(f"Could not load SKU mappings: {e}")
+            st.session_state['sku_mappings'] = None
 
-    #     # Get data from session state
-    #     agg_orders_df = st.session_state.get('agg_orders_df')
-    #     picklist_df = st.session_state.get('picklist_data')
-    #     inventory_data = st.session_state.get('inventory_data', {})
-    #     oxnard_inventory_df = inventory_data.get('oxnard')
-    #     wheeling_inventory_df = inventory_data.get('wheeling')
-    #     orders_new_df = st.session_state.get('orders_new_df')
-    #     wow_df = st.session_state.get('wow_df')
-    #     unfulfilled_df = st.session_state.get('unfulfilled_orders_df')
-    #     pieces_vs_lb_df = st.session_state.get('reference_data', {}).get('pieces_vs_lb')
+    # Load ColdCart inventory for "What we have" if not already loaded
+    if 'coldcart_inventory' not in st.session_state:
+        with st.spinner("Loading ColdCart inventory..."):
+            try:
+                coldcart_df = get_inventory_data()
+                if coldcart_df is not None:
+                    st.session_state['coldcart_inventory'] = coldcart_df
+                else:
+                    st.session_state['coldcart_inventory'] = pd.DataFrame()
+            except Exception as e:
+                st.session_state['coldcart_inventory'] = pd.DataFrame()
 
-    #     # --- Calculation for unfulfilled weight & pieces ---
-    #     unfulfilled_lbs = 0
-    #     unfulfilled_pcs = 0
-    #     if unfulfilled_df is not None and not unfulfilled_df.empty:
-    #         unfulfilled_df_copy = unfulfilled_df.copy()
-    #         unfulfilled_df_copy['Unfulfilled Quantity'] = pd.to_numeric(unfulfilled_df_copy['Unfulfilled Quantity'], errors='coerce').fillna(0)
-    #         unfulfilled_df_copy['temp_weight'] = 0.0
-
-    #         for index, row in unfulfilled_df_copy.iterrows():
-    #             sku = str(row['SKU'])
-    #             product_name = str(row['Product Name'])
-    #             quantity = row['Unfulfilled Quantity']
-    #             weight = 0.0
-                
-    #             # Heuristic to identify items sold by the piece
-    #             if 'pc' in sku.lower() or 'pcs' in product_name.lower() or 'piece' in product_name.lower():
-    #                 unfulfilled_pcs += quantity
-                
-    #             # Try to extract weight from SKU (e.g., "mango-5lb")
-    #             match = re.search(r'(\d+\.?\d*)\s?lb', sku, re.IGNORECASE)
-    #             if match:
-    #                 try:
-    #                     weight = float(match.group(1))
-    #                 except (ValueError, TypeError):
-    #                     weight = 0.0
-                
-    #             # If no weight from SKU, look up in conversion table
-    #             if weight == 0 and pieces_vs_lb_df is not None:
-    #                 lookup_row = pieces_vs_lb_df[pieces_vs_lb_df['picklist sku'] == sku]
-    #                 if not lookup_row.empty and 'Weight (lbs)' in lookup_row.columns:
-    #                     try:
-    #                         weight = pd.to_numeric(lookup_row['Weight (lbs)'].iloc[0], errors='coerce').fillna(0)
-    #                     except (ValueError, TypeError, IndexError):
-    #                         weight = 0.0
-                
-    #             unfulfilled_df_copy.loc[index, 'temp_weight'] = weight * quantity
-            
-    #         unfulfilled_lbs = unfulfilled_df_copy['temp_weight'].sum()
-
-
-    #     col1, col2, col3, col4, col5 = st.columns(5)
-
-    #     # 1. INCOMING FRUIT
-    #     with col1:
-    #         incoming_statuses = ['Confirmed', 'InTransit', 'Delivered']
-    #         total_incoming_lbs = 0
-    #         if agg_orders_df is not None:
-    #             # Clean up columns to ensure they are numeric
-    #             for col in ['Oxnard Actual Order', 'Weight Per Pick', 'Wheeling Actual Order', 'Wheeling Weight Per Pick']:
-    #                 if col in agg_orders_df.columns:
-    #                     agg_orders_df[col] = pd.to_numeric(agg_orders_df[col], errors='coerce').fillna(0)
-
-    #             # Calculate for Oxnard, stripping whitespace from status column
-    #             oxnard_incoming_mask = agg_orders_df['Oxnard Status'].str.strip().isin(incoming_statuses)
-    #             oxnard_incoming_lbs = (agg_orders_df.loc[oxnard_incoming_mask, 'Oxnard Actual Order'] * agg_orders_df.loc[oxnard_incoming_mask, 'Weight Per Pick']).sum()
-
-    #             # Calculate for Wheeling, stripping whitespace from status column
-    #             wheeling_incoming_mask = agg_orders_df['Wheeling Status'].str.strip().isin(incoming_statuses)
-    #             wheeling_incoming_lbs = (agg_orders_df.loc[wheeling_incoming_mask, 'Wheeling Actual Order'] * agg_orders_df.loc[wheeling_incoming_mask, 'Wheeling Weight Per Pick']).sum()
-                
-    #             total_incoming_lbs = oxnard_incoming_lbs + wheeling_incoming_lbs
-    #         st.metric("Incoming Fruit", f"{total_incoming_lbs:,.0f} LBS", help="Total weight of fruit that is Confirmed, InTransit, or Delivered.")
-
-    #     # 2. UNFULFILLED DEMAND
-    #     with col2:
-    #         st.metric("Unfulfilled Demand", f"{unfulfilled_lbs:,.0f} LBS", f"~ {unfulfilled_pcs:,.0f} Pieces", help="Total weight and approximate piece count of fruit in unfulfilled customer orders.")
-
-    #     # 3. NET POSITION (NEEDS VS HAVES)
-    #     with col3:
-    #         picklist_needs_lbs = 0
-    #         if picklist_df is not None and 'Total Needs (LBS)' in picklist_df.columns:
-    #             picklist_needs_lbs = picklist_df['Total Needs (LBS)'].sum()
-            
-    #         total_needs_lbs = picklist_needs_lbs - unfulfilled_lbs
-
-    #         total_haves_lbs = 0
-    #         if oxnard_inventory_df is not None and 'Total Weight' in oxnard_inventory_df.columns:
-    #             total_haves_lbs += oxnard_inventory_df['Total Weight'].sum()
-    #         if wheeling_inventory_df is not None and 'Total Weight' in wheeling_inventory_df.columns:
-    #             total_haves_lbs += wheeling_inventory_df['Total Weight'].sum()
-            
-    #         diff_lbs = total_haves_lbs + total_needs_lbs
-    #         st.metric("Net Position (Haves - Needs)", f"{diff_lbs:,.0f} LBS", f"Total Needs: {total_needs_lbs:,.0f} LBS", help="Your total inventory ('Haves') minus your total projected and unfulfilled demand ('Needs').")
-
-    #     # 4. TOTAL COST
-    #     with col4:
-    #         total_cost = 0
-    #         if orders_new_df is not None:
-    #             cost_col = orders_new_df.columns[4]
-    #             total_cost = pd.to_numeric(orders_new_df[cost_col], errors='coerce').fillna(0).sum()
-    #         st.metric("Total Cost (Invoiced)", f"${total_cost:,.0f}", help="Total cost from all invoiced orders loaded.")
-
-    #     # 5. WOW SUMMARY (AGG INVOICED)
-    #     with col5:
-    #         if wow_df is not None and not wow_df.empty:
-    #             agg_invoiced = wow_df[wow_df['Metric'] == 'AGG INVOICED'].sort_values('Start Date', ascending=False)
-    #             if len(agg_invoiced) >= 2:
-    #                 latest_val = agg_invoiced.iloc[0]['Value']
-    #                 prev_val = agg_invoiced.iloc[1]['Value']
-    #                 delta = calculate_wow_change(prev_val, latest_val)
-    #                 st.metric("Agg Invoiced (WoW)", f"${latest_val:,.0f}", f"{delta:+.1f}%" if pd.notna(delta) else "N/A")
-    #             elif len(agg_invoiced) == 1:
-    #                 latest_val = agg_invoiced.iloc[0]['Value']
-    #                 st.metric("Agg Invoiced (Latest)", f"${latest_val:,.0f}")
-    #             else:
-    #                 st.metric("Agg Invoiced", "N/A")
+    # FAST PRODUCT TYPE LEVEL CALCULATION FOR SASHA
+    def create_fast_product_type_summary():
+        """Create fast real-time Product Type level summary with automatic lb conversions and cost
         
-    #     st.markdown(
-    #     "<div style='font-size: 0.8em; color: grey;'>Note: Full 'By Piece' conversions across all metrics and 'Inventory by Lot Date' are complex and will be added in a future update.</div>", 
-    #     unsafe_allow_html=True
-    #     )
+        CONVERSION LOGIC:
+        - ColdCart inventory: pieces → lbs (using pieces_df conversion table)
+        - In Transit orders: lbs → pieces (using pieces_df conversion table)
+        - This ensures consistent unit tracking across different data sources
+        """
+        
+        # Load fresh data from Google Sheets (not static files)
+        try:
+            # 1. Get SKU mappings from session state (already loaded in main function)
+            sku_mappings = st.session_state.get('sku_mappings', {})
+            
+            # 2. Load unfulfilled orders from session state (this comes from Shopify API)
+            unfulfilled_df = st.session_state.get('unfulfilled_orders_df')
+            
+            # If not in session state, load fresh data from Shopify API
+            if unfulfilled_df is None or unfulfilled_df.empty:
+                try:
+                    # Use the existing Shopify API functions to get fresh data
+                    from utils.scripts_shopify.shopify_orders_report import update_unfulfilled_orders
+                    
+                    # Load last 7 days of unfulfilled orders
+                    end_date = datetime.now()
+                    start_date = end_date - timedelta(days=7)
+                    
+                    unfulfilled_df = update_unfulfilled_orders(start_date=start_date, end_date=end_date)
+                    
+                    if unfulfilled_df is not None and not unfulfilled_df.empty:
+                        # Store in session state for future use
+                        st.session_state['unfulfilled_orders_df'] = unfulfilled_df
+                    else:
+                        unfulfilled_df = None
+                except Exception as e:
+                    unfulfilled_df = None
+            else:
+                pass  # Using existing unfulfilled orders from session state
+            
+            # 3. Load inventory data from Google Sheets
+            pieces_df = load_pieces_vs_lb_conversion()
+            oxnard_df = load_oxnard_inventory()
+            wheeling_df = load_wheeling_inventory()
+            agg_orders_df = load_agg_orders()
+            orders_new_df = load_orders_new()
+            
+            # 4. Load SKU Type data for helper lookups
+            try:
+                sku_type_df = load_sku_type_data()
+            except Exception as e:
+                sku_type_df = None
+            
+            # 5. Load ColdCart from live API
+            coldcart_df = st.session_state.get('coldcart_inventory')
+            
+        except Exception as e:
+            st.error(f"Error loading Google Sheets data: {e}")
+            return pd.DataFrame()
+        
+        # Helper function to get product type from Shopify SKU
+        def get_product_type_from_shopify_sku(sku):
+            if not sku or pd.isna(sku):
+                return "Unknown"
+            
+            # Check if SKU mappings are available
+            if not sku_mappings or not isinstance(sku_mappings, dict):
+                return "Unknown"
+            
+            # Check SKU mappings for Shopify SKUs
+            for location in ['Oxnard', 'Wheeling']:
+                if location in sku_mappings and 'singles' in sku_mappings[location]:
+                    if sku in sku_mappings[location]['singles']:
+                        return sku_mappings[location]['singles'][sku].get('pick_type_inventory', 'Unknown')
+                if location in sku_mappings and 'bundles' in sku_mappings[location]:
+                    if sku in sku_mappings[location]['bundles']:
+                        # For bundles, use the first component's product type
+                        components = sku_mappings[location]['bundles'][sku]
+                        if components and len(components) > 0:
+                            return components[0].get('pick_type_inventory', 'Unknown')
+            
+            return "Unknown"
+        
+        # Helper function to get product type from inventory SKU (pieces_df)
+        def get_product_type_from_pieces_sku(sku):
+            if pieces_df is None or pd.isna(sku) or not sku:
+                return "Unknown"
+            
+            conversion_row = pieces_df[pieces_df['picklist sku'] == sku]
+            if not conversion_row.empty:
+                return conversion_row.iloc[0].get('Pick Type', 'Unknown')
+            return "Unknown"
+        
+        # Helper function to get weight conversion from pieces_df
+        def get_weight_from_pieces_conversion(sku, quantity):
+            if pieces_df is None or pd.isna(sku) or not sku:
+                return 0
+            
+            conversion_row = pieces_df[pieces_df['picklist sku'] == sku]
+            if not conversion_row.empty:
+                weight_per_unit = pd.to_numeric(conversion_row.iloc[0].get('Weight (lbs)', 0), errors='coerce')
+                calculated_weight = float(quantity) * float(weight_per_unit) if not pd.isna(weight_per_unit) else 0
+                return calculated_weight
+            return 0
+        
+        # Helper function to get weight conversion from SKU mappings
+        def get_weight_from_sku_mapping(sku, quantity):
+            if not sku or pd.isna(sku) or not sku_mappings or not isinstance(sku_mappings, dict):
+                return 0
+            
+            for location in ['Oxnard', 'Wheeling']:
+                if location in sku_mappings and 'singles' in sku_mappings[location]:
+                    if sku in sku_mappings[location]['singles']:
+                        total_weight = sku_mappings[location]['singles'][sku].get('total_pick_weight', 0)
+                        return float(quantity) * float(total_weight) if total_weight else 0
+                if location in sku_mappings and 'bundles' in sku_mappings[location]:
+                    if sku in sku_mappings[location]['bundles']:
+                        # For bundles, sum up all component weights
+                        total_weight = 0
+                        for component in sku_mappings[location]['bundles'][sku]:
+                            comp_weight = component.get('weight', 0)
+                            comp_qty = component.get('actualqty', 1)
+                            total_weight += float(comp_weight) * float(comp_qty)
+                        return float(quantity) * total_weight
+            return 0
 
-    # st.markdown("---")
-    # # ------------------- END: AT A GLANCE SUMMARY -------------------
+        # Helper function to get picklist SKU from Shopify SKU
+        def get_picklist_sku_from_shopify_sku(sku):
+            if not sku or pd.isna(sku) or not sku_mappings or not isinstance(sku_mappings, dict):
+                return sku  # fallback to original SKU
+            
+            for location in ['Oxnard', 'Wheeling']:
+                if location in sku_mappings and 'singles' in sku_mappings[location]:
+                    if sku in sku_mappings[location]['singles']:
+                        return sku_mappings[location]['singles'][sku].get('picklist_sku', sku)
+            return sku
+        
+        # Helper function to convert lbs to pieces using the conversion table
+        def get_pieces_from_weight_conversion(sku, weight_lbs):
+            """Convert weight in lbs to pieces/units using the pieces vs lb conversion table"""
+            if pieces_df is None or pd.isna(sku) or not sku or weight_lbs <= 0:
+                return 0
+            
+            conversion_row = pieces_df[pieces_df['picklist sku'] == sku]
+            if not conversion_row.empty:
+                weight_per_unit = pd.to_numeric(conversion_row.iloc[0].get('Weight (lbs)', 0), errors='coerce')
+                if not pd.isna(weight_per_unit) and weight_per_unit > 0:
+                    calculated_pieces = float(weight_lbs) / float(weight_per_unit)
+                    return calculated_pieces
+            return 0
+        
+        # Helper function to convert lbs to pieces using product type (for in-transit orders)
+        def get_pieces_from_product_type_weight(product_type, weight_lbs):
+            """Convert weight in lbs to pieces based on product type by finding a representative SKU"""
+            if pieces_df is None or not product_type or weight_lbs <= 0:
+                return 0
+            
+            # Find a representative SKU for this product type
+            product_type_rows = pieces_df[pieces_df['Pick Type'] == product_type]
+            if product_type_rows.empty:
+                # Try without "Fruit: " prefix if it exists
+                simplified_type = product_type.replace('Fruit: ', '') if 'Fruit: ' in product_type else product_type
+                product_type_rows = pieces_df[pieces_df['Pick Type'].str.contains(simplified_type, case=False, na=False)]
+            
+            if not product_type_rows.empty:
+                # Use the first matching row as representative
+                weight_per_unit = pd.to_numeric(product_type_rows.iloc[0].get('Weight (lbs)', 0), errors='coerce')
+                if not pd.isna(weight_per_unit) and weight_per_unit > 0:
+                    calculated_pieces = float(weight_lbs) / float(weight_per_unit)
+                    return calculated_pieces
+            return 0
+
+        # Initialize product summary
+        product_summary = {}
+        processed_count = 0  # Initialize counter  
+        honey_debug_count = 0  # Initialize honey debug counter
+
+        # Process NEEDS: Unfulfilled orders from Shopify
+        if unfulfilled_df is not None and not unfulfilled_df.empty:
+            # Filter out gift items ($0 unit price)
+            needs_df = unfulfilled_df[unfulfilled_df['Unit Price'] > 0].copy()
+            
+            # Check if we have SKU mappings
+            if sku_mappings is None:
+                pass  # No SKU mappings, removed warning message
+            else:
+                pass  # SKU mappings loaded, removed info message
+            
+            for _, row in needs_df.iterrows():
+                sku = row.get('SKU', '')  # Use correct column name
+                quantity = row.get('Unfulfilled Quantity', 0)  # Use correct column name
+                unit_price = row.get('Unit Price', 0)
+                fulfillment_center = row.get('Fulfillment Center', 'Oxnard')
+                
+                # Convert to numeric
+                quantity = pd.to_numeric(quantity, errors='coerce')
+                unit_price = pd.to_numeric(unit_price, errors='coerce')
+                
+                if pd.isna(quantity) or quantity == 0:
+                    continue
+                
+                # Normalize warehouse key
+                warehouse_key = 'Oxnard' if 'oxnard' in fulfillment_center.lower() or 'moorpark' in fulfillment_center.lower() else 'Wheeling'
+                
+                # Check if this is a bundle first
+                is_bundle = False
+                if (sku_mappings and isinstance(sku_mappings, dict) and 
+                    warehouse_key in sku_mappings and 'bundles' in sku_mappings[warehouse_key]):
+                    is_bundle = sku in sku_mappings[warehouse_key]['bundles']
+                
+                if is_bundle:
+                    # Process bundle components
+                    bundle_components = sku_mappings[warehouse_key]['bundles'][sku]
+                    for component in bundle_components:
+                        component_sku = component.get('component_sku', '')
+                        base_component_qty = float(component.get('actualqty', 1.0))
+                        component_qty = base_component_qty * quantity
+                        
+                        # Get component weight from singles mapping
+                        component_weight = 0.0
+                        if ('singles' in sku_mappings[warehouse_key] and 
+                            component_sku in sku_mappings[warehouse_key]['singles']):
+                            singles_data = sku_mappings[warehouse_key]['singles'][component_sku]
+                            unit_weight = float(singles_data.get('total_pick_weight', 0.0))
+                            component_weight = unit_weight * component_qty
+                        else:
+                            # Fallback to bundle component weight
+                            component_weight = float(component.get('weight', 0.0)) * quantity
+                        
+                        # Get component product type - with SKU Type helper fallback
+                        component_product_type = component.get('pick_type', '') or get_product_type_from_shopify_sku(component_sku)
+                        
+                        # If component doesn't have a pickup SKU mapping, try to resolve it using helper
+                        resolved_component_sku = component_sku
+                        if ('singles' not in sku_mappings[warehouse_key] or 
+                            component_sku not in sku_mappings[warehouse_key]['singles']) and sku_type_df is not None:
+                            # Try to find helper SKU for this component
+                            helper_row = sku_type_df[sku_type_df['SKU'] == component_sku]
+                            if not helper_row.empty:
+                                sku_helper = helper_row.iloc[0].get('SKU_Helper', '')
+                                if (sku_helper and sku_helper != component_sku and
+                                    'singles' in sku_mappings[warehouse_key] and 
+                                    sku_helper in sku_mappings[warehouse_key]['singles']):
+                                    resolved_component_sku = sku_helper
+                                    # Get weight from the helper SKU mapping
+                                    singles_data = sku_mappings[warehouse_key]['singles'][sku_helper]
+                                    unit_weight = float(singles_data.get('total_pick_weight', 0.0))
+                                    component_weight = unit_weight * component_qty
+                                    # Get product type from helper mapping
+                                    component_product_type = singles_data.get('pick_type', '') or component_product_type
+                        
+                        # If still unknown and we have SKU type data, try the helper
+                        if component_product_type == "Unknown" and sku_type_df is not None and component_sku:
+                            # Try to find component SKU using the helper
+                                helper_row = sku_type_df[sku_type_df['SKU'] == component_sku]
+                                if not helper_row.empty:
+                                    component_product_type = helper_row.iloc[0].get('PRODUCT_TYPE', 'Unknown')
+                            
+                        if component_product_type == "Unknown":
+                            component_product_type = f"Bundle Component: {component_sku}"
+                        
+                        if component_product_type not in product_summary:
+                            product_summary[component_product_type] = {
+                                'Needs (lbs)': 0,
+                                'Needs (ea)': 0,  # Changed from 'units' to 'ea'
+                                'Inventory (lbs)': 0,
+                                'Inventory Coldcart (ea)': 0,
+                                'In Transit (lbs)': 0,
+                                'In Transit (ea)': 0,  # Changed from 'units' to 'ea'
+                                'Total Inventory (lbs)': 0,
+                                'Total Inventory (ea)': 0,  # Changed from 'units' to 'ea'
+                                'Difference (lbs)': 0,
+                                'Difference (ea)': 0,  # Changed from 'units' to 'ea'
+                                'Cost ($)': 0,
+                                'Weight per Unit (lbs)': 0,
+                                'Picklist SKUs': set(),
+                                'Shopify SKUs': set()
+                            }
+                        
+                        product_summary[component_product_type]['Needs (lbs)'] += component_weight
+                        product_summary[component_product_type]['Needs (ea)'] += component_qty
+                        product_summary[component_product_type]['Shopify SKUs'].add(sku)  # Original bundle SKU
+                        product_summary[component_product_type]['Picklist SKUs'].add(resolved_component_sku)
+                        
+                        processed_count += 1
+                        
+                        # Calculate average weight per unit
+                        if product_summary[component_product_type]['Needs (ea)'] > 0:
+                            product_summary[component_product_type]['Weight per Unit (lbs)'] = product_summary[component_product_type]['Needs (lbs)'] / product_summary[component_product_type]['Needs (ea)']
+                else:
+                    # Process single SKU
+                    # Get mapping data for weight and product type
+                    actualqty = quantity
+                    weight_lbs = quantity * 1.0  # Default fallback
+                    product_type = get_product_type_from_shopify_sku(sku)
+                    picklist_sku = sku  # Default fallback
+                    
+                    if (sku_mappings and isinstance(sku_mappings, dict) and 
+                        warehouse_key in sku_mappings and 
+                        'singles' in sku_mappings[warehouse_key] and
+                        sku in sku_mappings[warehouse_key]['singles']):
+                        singles_data = sku_mappings[warehouse_key]['singles'][sku]
+                        base_actualqty = float(singles_data.get('actualqty', 1.0))
+                        base_weight = float(singles_data.get('total_pick_weight', 0.0))
+                        
+                        # Calculate actual quantities based on order quantity
+                        actualqty = base_actualqty * quantity
+                        weight_lbs = base_weight * quantity
+                        
+                        # Get product type and picklist SKU from mapping
+                        product_type = singles_data.get('pick_type', '') or product_type
+                        picklist_sku = singles_data.get('picklist_sku', '') or sku
+                    else:
+                        # Fallback to existing weight calculation method
+                        weight_lbs = get_weight_from_sku_mapping(sku, quantity)
+                        picklist_sku = get_picklist_sku_from_shopify_sku(sku)
+                    
+                    # Try SKU Type helper if product type is still unknown
+                    if product_type == "Unknown" and sku_type_df is not None:
+                        helper_row = sku_type_df[sku_type_df['SKU'] == sku]
+                        if not helper_row.empty:
+                            product_type = helper_row.iloc[0].get('PRODUCT_TYPE', 'Unknown')
+                    
+                    if product_type == "Unknown":
+                        continue
+                    
+                    if product_type not in product_summary:
+                        product_summary[product_type] = {
+                            'Needs (lbs)': 0,
+                            'Needs (ea)': 0,  # Changed from 'units' to 'ea'
+                            'Inventory (lbs)': 0,
+                            'Inventory Coldcart (ea)': 0,
+                            'In Transit (lbs)': 0,
+                            'In Transit (ea)': 0,  # Changed from 'units' to 'ea'
+                            'Total Inventory (lbs)': 0,
+                            'Total Inventory (ea)': 0,  # Changed from 'units' to 'ea'
+                            'Difference (lbs)': 0,
+                            'Difference (ea)': 0,  # Changed from 'units' to 'ea'
+                            'Cost ($)': 0,
+                            'Weight per Unit (lbs)': 0,
+                            'Picklist SKUs': set(),
+                            'Shopify SKUs': set()
+                        }
+                    
+                    product_summary[product_type]['Needs (lbs)'] += weight_lbs
+                    product_summary[product_type]['Needs (ea)'] += actualqty  # Use calculated actualqty instead of quantity
+                    product_summary[product_type]['Shopify SKUs'].add(sku)
+                    product_summary[product_type]['Picklist SKUs'].add(picklist_sku)
+                    
+                    processed_count += 1
+                    
+                    # Calculate average weight per unit
+                    if product_summary[product_type]['Needs (ea)'] > 0:
+                        product_summary[product_type]['Weight per Unit (lbs)'] = product_summary[product_type]['Needs (lbs)'] / product_summary[product_type]['Needs (ea)']
+
+            # Processing complete - removed notification messages
+            
+            # Debug final product summary for honey
+            for product_type, data in product_summary.items():
+                if 'honey' in product_type.lower():
+                    pass  # Removed debug messages
+        else:
+            pass  # No unfulfilled orders data available for needs calculation
+
+        # Process IN TRANSIT: Vendor orders with transit statuses
+        if agg_orders_df is not None and not agg_orders_df.empty:
+            # Define in-transit statuses (not yet in inventory but confirmed/shipped)
+            in_transit_statuses = ['Confirmed', 'InTransit', 'Delivered']
+            
+            # Filter for recent orders (last 2 weeks instead of just this week)
+            if 'Date_1' in agg_orders_df.columns:
+                # Get current week range and extend to last 2 weeks
+                current_week_start, current_week_end = get_week_range()
+                # Extend to 2 weeks back
+                extended_start = current_week_start - timedelta(weeks=1)
+                
+                agg_orders_df['Date_1'] = pd.to_datetime(agg_orders_df['Date_1'], errors='coerce')
+                
+                # Filter for recent orders (last 2 weeks)
+                recent_orders = agg_orders_df[
+                    (agg_orders_df['Date_1'] >= extended_start) & 
+                    (agg_orders_df['Date_1'] <= current_week_end)
+                ]
+            else:
+                recent_orders = agg_orders_df
+            
+            in_transit_processed = 0
+            for _, row in recent_orders.iterrows():
+                fruit_type = row.get('Fruit', '')
+                
+                # Process Oxnard orders
+                oxnard_status = row.get('Oxnard Status', '')
+                oxnard_order = row.get('Oxnard Order', 0)  # Use Oxnard Order instead of Weight Needed
+                oxnard_sku = row.get('Oxnard Picklist SKU', '')
+                
+                # Better order quantity conversion
+                try:
+                    if pd.notna(oxnard_order) and str(oxnard_order).strip() not in ['', '_', 'nan']:
+                        # Extract numeric value from strings like "17 cs", "33 cs", "1179 lb"
+                        order_str = str(oxnard_order).replace(',', '').strip()
+                        # Extract number using regex (handles "17 cs", "33", "1179 lb", etc.)
+                        import re
+                        match = re.search(r'(\d+\.?\d*)', order_str)
+                        oxnard_order_qty = float(match.group(1)) if match else 0
+                    else:
+                        oxnard_order_qty = 0
+                except (ValueError, TypeError):
+                    oxnard_order_qty = 0
+                
+                # Oxnard Order is already in pounds, no conversion needed
+                oxnard_weight = oxnard_order_qty  # Already in pounds
+                
+                # Check if this is an in-transit order with valid data
+                status_match = pd.notna(oxnard_status) and oxnard_status in in_transit_statuses
+                has_valid_data = oxnard_order_qty > 0
+                has_fruit = pd.notna(fruit_type) and fruit_type.strip()
+                
+                if has_fruit and status_match and has_valid_data:
+                    product_type = fruit_type  # Use fruit type directly as it's already formatted
+                    
+                    if product_type not in product_summary:
+                        product_summary[product_type] = {
+                            'Needs (lbs)': 0,
+                            'Needs (ea)': 0,
+                            'Inventory (lbs)': 0,
+                            'Inventory Coldcart (ea)': 0,
+                            'In Transit (lbs)': 0,
+                            'In Transit (ea)': 0,
+                            'Total Inventory (lbs)': 0,
+                            'Total Inventory (ea)': 0,
+                            'Difference (lbs)': 0,
+                            'Difference (ea)': 0,
+                            'Cost ($)': 0,
+                            'Weight per Unit (lbs)': 0,
+                            'Picklist SKUs': set(),
+                            'Shopify SKUs': set()
+                        }
+                    
+                    # Convert lbs to pieces for proper unit tracking
+                    oxnard_pieces = 0
+                    if oxnard_sku:
+                        # Try to convert using the specific SKU
+                        oxnard_pieces = get_pieces_from_weight_conversion(oxnard_sku, oxnard_weight)
+                    if oxnard_pieces == 0:
+                        # Fallback to product type conversion
+                        oxnard_pieces = get_pieces_from_product_type_weight(product_type, oxnard_weight)
+                    
+                    product_summary[product_type]['In Transit (lbs)'] += oxnard_weight
+                    product_summary[product_type]['In Transit (ea)'] += oxnard_pieces
+                    product_summary[product_type]['Picklist SKUs'].add(f"OX-{oxnard_sku or fruit_type}")
+                    in_transit_processed += 1
+                
+                # Process Wheeling orders
+                wheeling_status = row.get('Wheeling Status', '')
+                wheeling_order = row.get('Wheeling Order', 0)  # Use Wheeling Order instead of Weight Needed
+                wheeling_sku = row.get('Wheeling Picklist SKU', '')
+                
+                # Better order quantity conversion for Wheeling
+                try:
+                    if pd.notna(wheeling_order) and str(wheeling_order).strip() not in ['', '_', 'nan']:
+                        # Extract numeric value from strings like "70 cs", "34 cs", "1872.0"
+                        order_str = str(wheeling_order).replace(',', '').strip()
+                        # Extract number using regex (handles "70 cs", "34", "1872.0", etc.)
+                        import re
+                        match = re.search(r'(\d+\.?\d*)', order_str)
+                        wheeling_order_qty = float(match.group(1)) if match else 0
+                    else:
+                        wheeling_order_qty = 0
+                except (ValueError, TypeError):
+                    wheeling_order_qty = 0
+                
+                # Wheeling Order is already in pounds, no conversion needed
+                wheeling_weight = wheeling_order_qty  # Already in pounds
+                
+                # Check if this is an in-transit order with valid data
+                status_match = pd.notna(wheeling_status) and wheeling_status in in_transit_statuses
+                has_valid_data = wheeling_order_qty > 0
+                has_fruit = pd.notna(fruit_type) and fruit_type.strip()
+                
+                if has_fruit and status_match and has_valid_data:
+                    product_type = fruit_type  # Use fruit type directly as it's already formatted
+                    
+                    if product_type not in product_summary:
+                        product_summary[product_type] = {
+                            'Needs (lbs)': 0,
+                            'Needs (ea)': 0,
+                            'Inventory (lbs)': 0,
+                            'Inventory Coldcart (ea)': 0,
+                            'In Transit (lbs)': 0,
+                            'In Transit (ea)': 0,
+                            'Total Inventory (lbs)': 0,
+                            'Total Inventory (ea)': 0,
+                            'Difference (lbs)': 0,
+                            'Difference (ea)': 0,
+                            'Cost ($)': 0,
+                            'Weight per Unit (lbs)': 0,
+                            'Picklist SKUs': set(),
+                            'Shopify SKUs': set()
+                        }
+                    
+                    # Convert lbs to pieces for proper unit tracking
+                    wheeling_pieces = 0
+                    if wheeling_sku:
+                        # Try to convert using the specific SKU
+                        wheeling_pieces = get_pieces_from_weight_conversion(wheeling_sku, wheeling_weight)
+                    if wheeling_pieces == 0:
+                        # Fallback to product type conversion
+                        wheeling_pieces = get_pieces_from_product_type_weight(product_type, wheeling_weight)
+                    
+                    product_summary[product_type]['In Transit (lbs)'] += wheeling_weight
+                    product_summary[product_type]['In Transit (ea)'] += wheeling_pieces
+                    product_summary[product_type]['Picklist SKUs'].add(f"WH-{wheeling_sku or fruit_type}")
+                    in_transit_processed += 1
+
+            logging.debug(f"Total in-transit processed: {in_transit_processed}")
+
+        # Process INVENTORY: ColdCart API ONLY (accurate live data)
+        # Process ColdCart inventory (live API) - aggregate by SKU first
+        if coldcart_df is not None and not coldcart_df.empty:
+            # Aggregate ColdCart data by SKU to get total available quantities
+            # This properly handles positive and negative batch quantities
+            coldcart_aggregated = coldcart_df.groupby('Sku')['AvailableQty'].sum().reset_index()
+            
+            for _, row in coldcart_aggregated.iterrows():
+                sku = row.get('Sku', '')
+                total_available_qty = row.get('AvailableQty', 0)
+                
+                # Convert to numeric
+                total_available_qty = pd.to_numeric(total_available_qty, errors='coerce')
+                
+                # Skip items with zero or negative total inventory
+                if pd.isna(total_available_qty) or total_available_qty <= 0:
+                    continue
+                
+                # Get product type from pieces conversion
+                product_type = get_product_type_from_pieces_sku(sku)
+                
+                # Get weight conversion from pieces_df
+                weight_lbs = get_weight_from_pieces_conversion(sku, total_available_qty)
+                
+                if product_type not in product_summary:
+                    product_summary[product_type] = {
+                        'Needs (lbs)': 0,
+                        'Needs (ea)': 0,
+                        'Inventory (lbs)': 0,
+                        'Inventory Coldcart (ea)': 0,
+                        'In Transit (lbs)': 0,
+                        'In Transit (ea)': 0,
+                        'Total Inventory (lbs)': 0,
+                        'Total Inventory (ea)': 0,
+                        'Difference (lbs)': 0,
+                        'Difference (ea)': 0,
+                        'Cost ($)': 0,
+                        'Weight per Unit (lbs)': 0,
+                        'Picklist SKUs': set(),
+                        'Shopify SKUs': set()
+                    }
+                
+                product_summary[product_type]['Inventory (lbs)'] += weight_lbs
+                product_summary[product_type]['Inventory Coldcart (ea)'] += total_available_qty
+                product_summary[product_type]['Picklist SKUs'].add(sku)
+
+        # DISABLED: Process Oxnard static inventory 
+        # Commented out to prevent double-counting since ColdCart API already includes all warehouses
+        # if oxnard_df is not None and not oxnard_df.empty:
+        #     for _, row in oxnard_df.iterrows():
+        #         product_name = row.get('PRODUCT', '')
+        #         total_weight = row.get('Total Weight', 0)
+        #         status = row.get('STATUS', 'Good')
+        #         
+        #         # Convert to numeric
+        #         total_weight = pd.to_numeric(total_weight, errors='coerce')
+        #         
+        #         if pd.isna(total_weight) or total_weight <= 0 or status != 'Good':
+        #             continue
+        #         
+        #         # Use the product name as product type
+        #         if product_name and not pd.isna(product_name):
+        #             product_type = str(product_name).strip()
+        #         
+        #         if product_type not in product_summary:
+        #             product_summary[product_type] = {
+        #                 'Needs (lbs)': 0,
+        #                 'Needs (units)': 0,
+        #                 'Inventory (lbs)': 0,
+        #                 'Inventory Coldcart (ea)': 0,
+        #                 'In Transit (lbs)': 0,
+        #                 'In Transit (units)': 0,
+        #                 'Total Inventory (lbs)': 0,
+        #                 'Total Inventory (units)': 0,
+        #                 'Difference (lbs)': 0,
+        #                 'Difference (units)': 0,
+        #                 'Cost ($)': 0,
+        #                 'Weight per Unit (lbs)': 0,
+        #                 'Picklist SKUs': set(),
+        #                 'Shopify SKUs': set()
+        #             }
+        #         
+        #         product_summary[product_type]['Inventory (lbs)'] += total_weight
+        #         product_summary[product_type]['Inventory Coldcart (ea)'] += 1  # Count as 1 product unit
+        #         product_summary[product_type]['Picklist SKUs'].add(product_name)
+
+        # DISABLED: Process Wheeling static inventory 
+        # Commented out to prevent double-counting since ColdCart API already includes all warehouses
+        # if wheeling_df is not None and not wheeling_df.empty:
+        #     for _, row in wheeling_df.iterrows():
+        #         product_name = row.get('PRODUCT', '')
+        #         total_weight = row.get('Total Weight', 0)
+        #         status = row.get('STATUS', 'Good')
+        #         
+        #         # Convert to numeric
+        #         total_weight = pd.to_numeric(total_weight, errors='coerce')
+        #         
+        #         if pd.isna(total_weight) or total_weight <= 0 or status != 'Good':
+        #             continue
+        #         
+        #         # Use the product name as product type
+        #         if product_name and not pd.isna(product_name):
+        #             product_type = str(product_name).strip()
+        #         
+        #         if product_type not in product_summary:
+        #             product_summary[product_type] = {
+        #                 'Needs (lbs)': 0,
+        #                 'Needs (units)': 0,
+        #                 'Inventory (lbs)': 0,
+        #                 'Inventory Coldcart (ea)': 0,
+        #                 'In Transit (lbs)': 0,
+        #                 'In Transit (units)': 0,
+        #                 'Total Inventory (lbs)': 0,
+        #                 'Total Inventory (units)': 0,
+        #                 'Difference (lbs)': 0,
+        #                 'Difference (units)': 0,
+        #                 'Cost ($)': 0,
+        #                 'Weight per Unit (lbs)': 0,
+        #                 'Picklist SKUs': set(),
+        #                 'Shopify SKUs': set()
+        #             }
+        #         
+        #         product_summary[product_type]['Inventory (lbs)'] += total_weight
+        #         product_summary[product_type]['Inventory Coldcart (ea)'] += 1  # Count as 1 product unit
+        #         product_summary[product_type]['Picklist SKUs'].add(product_name)
+
+        # Process COST from orders_new (get LATEST cost per fruit type, not sum)
+        if orders_new_df is not None and not orders_new_df.empty:
+            # Sort by date to get the most recent entries first
+            orders_new_df_sorted = orders_new_df.copy()
+            
+            # Ensure date column is datetime for proper sorting
+            orders_new_df_sorted.iloc[:, 0] = pd.to_datetime(orders_new_df_sorted.iloc[:, 0], errors='coerce')
+            
+            # Sort by date descending (most recent first)
+            orders_new_df_sorted = orders_new_df_sorted.sort_values(orders_new_df_sorted.columns[0], ascending=False, na_position='last')
+            
+            # Track which product types we've already processed (to get only the latest)
+            processed_product_types = set()
+            
+            for _, row in orders_new_df_sorted.iterrows():
+                # Columns: invoice date, Aggregator/Vendor, Product Type, Price per lb, Actual Total Cost
+                invoice_date = row.iloc[0] if len(row) > 0 else None  # Invoice date
+                product_type = row.iloc[2] if len(row) > 2 else None  # Product Type column
+                price_per_lb = row.iloc[3] if len(row) > 3 else 0     # Price per lb column
+                total_cost = row.iloc[4] if len(row) > 4 else 0       # Actual Total Cost column
+                
+                if pd.isna(product_type) or not product_type:
+                    continue
+                
+                product_type = str(product_type).strip()
+                
+                # Skip if we already processed this product type (we want only the latest)
+                if product_type in processed_product_types:
+                    continue
+                
+                # Convert cost to numeric
+                total_cost = pd.to_numeric(total_cost, errors='coerce')
+                price_per_lb = pd.to_numeric(price_per_lb, errors='coerce')
+                
+                if pd.isna(total_cost):
+                    total_cost = 0
+                if pd.isna(price_per_lb):
+                    price_per_lb = 0
+                
+                # Create product summary entry if it doesn't exist
+                if product_type not in product_summary:
+                    product_summary[product_type] = {
+                        'Needs (lbs)': 0,
+                        'Needs (ea)': 0,
+                        'Inventory (lbs)': 0,
+                        'Inventory Coldcart (ea)': 0,
+                        'In Transit (lbs)': 0,
+                        'In Transit (ea)': 0,
+                        'Total Inventory (lbs)': 0,
+                        'Total Inventory (ea)': 0,
+                        'Difference (lbs)': 0,
+                        'Difference (ea)': 0,
+                        'Cost ($)': 0,
+                        'Latest Price ($/lb)': 0,
+                        'Latest Invoice Date': None,
+                        'Weight per Unit (lbs)': 0,
+                        'Picklist SKUs': set(),
+                        'Shopify SKUs': set()
+                    }
+                
+                # Use the LATEST total cost for this product type (not sum)
+                product_summary[product_type]['Cost ($)'] = total_cost
+                product_summary[product_type]['Latest Price ($/lb)'] = price_per_lb
+                product_summary[product_type]['Latest Invoice Date'] = invoice_date
+                
+                # Mark this product type as processed
+                processed_product_types.add(product_type)
+
+        # Calculate totals and differences for each product type
+        for product_type in product_summary:
+            needs_lbs = product_summary[product_type]['Needs (lbs)']
+            needs_ea = product_summary[product_type]['Needs (ea)']
+            inventory_lbs = product_summary[product_type]['Inventory (lbs)']
+            inventory_ea = product_summary[product_type]['Inventory Coldcart (ea)']
+            in_transit_lbs = product_summary[product_type]['In Transit (lbs)']
+            in_transit_ea = product_summary[product_type]['In Transit (ea)']
+            
+            total_inventory_lbs = inventory_lbs + in_transit_lbs
+            total_inventory_ea = inventory_ea + in_transit_ea
+            
+            # Properly format numbers - integers for ea, clean decimals for weights
+            product_summary[product_type]['Needs (lbs)'] = round(needs_lbs, 1) if needs_lbs % 1 != 0 else int(needs_lbs)
+            product_summary[product_type]['Needs (ea)'] = int(round(needs_ea, 0))
+            product_summary[product_type]['Inventory (lbs)'] = round(inventory_lbs, 1) if inventory_lbs % 1 != 0 else int(inventory_lbs)
+            product_summary[product_type]['Inventory Coldcart (ea)'] = int(round(inventory_ea, 0))
+            product_summary[product_type]['In Transit (lbs)'] = round(in_transit_lbs, 1) if in_transit_lbs % 1 != 0 else int(in_transit_lbs)
+            product_summary[product_type]['In Transit (ea)'] = int(round(in_transit_ea, 0))
+            product_summary[product_type]['Total Inventory (lbs)'] = round(total_inventory_lbs, 1) if total_inventory_lbs % 1 != 0 else int(total_inventory_lbs)
+            product_summary[product_type]['Total Inventory (ea)'] = int(round(total_inventory_ea, 0))
+            
+            difference_lbs = total_inventory_lbs - needs_lbs
+            difference_ea = total_inventory_ea - needs_ea
+            product_summary[product_type]['Difference (lbs)'] = round(difference_lbs, 1) if difference_lbs % 1 != 0 else int(difference_lbs)
+            product_summary[product_type]['Difference (ea)'] = int(round(difference_ea, 0))
+            product_summary[product_type]['Cost ($)'] = round(product_summary[product_type]['Cost ($)'], 2)
+            
+            # Update weight per unit calculation if we have both pounds and ea
+            if total_inventory_ea > 0 and total_inventory_lbs > 0:
+                weight_per_unit = total_inventory_lbs / total_inventory_ea
+                product_summary[product_type]['Weight per Unit (lbs)'] = round(weight_per_unit, 2) if weight_per_unit % 1 != 0 else int(weight_per_unit)
+
+        # Convert to DataFrame
+        if product_summary:
+            # Convert sets to comma-separated strings before creating DataFrame
+            for product_type in product_summary:
+                product_summary[product_type]['Picklist SKUs'] = ', '.join(sorted(product_summary[product_type]['Picklist SKUs'])) if product_summary[product_type]['Picklist SKUs'] else ''
+                product_summary[product_type]['Shopify SKUs'] = ', '.join(sorted(product_summary[product_type]['Shopify SKUs'])) if product_summary[product_type]['Shopify SKUs'] else ''
+            
+            df = pd.DataFrame.from_dict(product_summary, orient='index')
+            df.reset_index(inplace=True)
+            df.rename(columns={'index': 'Product Type'}, inplace=True)
+            
+            # Format the Latest Invoice Date column
+            if 'Latest Invoice Date' in df.columns:
+                df['Latest Invoice Date'] = df['Latest Invoice Date'].apply(
+                    lambda x: x.strftime('%m/%d/%Y') if pd.notna(x) and x is not None else ''
+                )
+            
+            # Convert ALL numeric columns to float for proper formatting and sorting
+            numeric_cols = ['Needs (lbs)', 'Needs (ea)', 'Inventory (lbs)', 'Inventory Coldcart (ea)', 
+                          'In Transit (lbs)', 'In Transit (ea)', 'Total Inventory (lbs)', 
+                          'Total Inventory (ea)', 'Difference (lbs)', 'Difference (ea)', 
+                          'Weight per Unit (lbs)', 'Cost ($)', 'Latest Price ($/lb)']
+            
+            # First convert all to numeric and ensure float type
+            for col in numeric_cols:
+                if col in df.columns:
+                    # Convert to numeric and keep as float (not int) for consistent formatting
+                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0).astype(float)
+            
+            # Calculate Total Latest Cost = Total Inventory (lbs) × Latest Price ($/lb)
+            if 'Total Inventory (lbs)' in df.columns and 'Latest Price ($/lb)' in df.columns:
+                df['Total Latest Cost ($)'] = (df['Total Inventory (lbs)'] * df['Latest Price ($/lb)']).astype(float)
+            
+            # Keep ALL numeric columns as float for consistent formatting - no rounding to int
+            # The formatting will be handled by Streamlit's NumberColumn format parameter
+            for col in numeric_cols + ['Total Latest Cost ($)']:
+                if col in df.columns:
+                    # Convert to float to ensure consistent 2-decimal precision formatting
+                    df[col] = df[col].astype(float)
+            
+            return df
+        else:
+            return pd.DataFrame()
+
+    # Display the FAST Product Type Summary
+    with st.container():
+        st.subheader("🚀 Need/Have Summary")
+        st.markdown("**⚡ Real-time calculation**: Product Type level summary")
+        
+        # Add refresh button for unfulfilled orders
+        if st.button("🔄 Refresh Shopify Unfulfilled Orders", key="refresh_unfulfilled"):
+            with st.spinner("Refreshing unfulfilled orders..."):
+                try:
+                    # Load last 7 days of unfulfilled orders
+                    end_date = datetime.now()
+                    start_date = end_date - timedelta(days=7)
+                    
+                    orders_df, unfulfilled_df = load_shopify_orders(start_date=start_date, end_date=end_date, force_refresh=True)
+                    
+                    if unfulfilled_df is not None and not unfulfilled_df.empty:
+                        pass  # Refreshed successfully
+                    else:
+                        pass  # No unfulfilled orders found
+                except Exception as e:
+                    st.error(f"⚠️ Could not refresh Shopify data: {str(e)}")
+        
+        try:
+            product_summary_df = create_fast_product_type_summary()
+            
+            if not product_summary_df.empty:
+                # Add filters
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    product_search = st.text_input("🔍 Search Product Type", placeholder="Type to search...", key="fast_summary_search")
+                
+                with col2:
+                    show_only_shortages = st.checkbox("Show only shortages", value=False, key="fast_summary_shortages")
+                
+                with col3:
+                    show_all_columns = st.checkbox("Show all columns", value=False, key="fast_summary_all_columns")
+                
+                # Apply filters
+                display_df = product_summary_df.copy()
+                
+                # Helper function to convert values to numbers for calculations (now values are already numeric)
+                def parse_number(val):
+                    if pd.isna(val) or val == '':
+                        return 0
+                    # Values are already numeric, just ensure float conversion
+                    return float(val)
+                
+                if product_search:
+                    mask = display_df['Product Type'].str.contains(product_search, case=False, na=False)
+                    display_df = display_df[mask]
+                
+                if show_only_shortages:
+                    # Values are already numeric for comparison
+                    display_df = display_df[display_df['Difference (lbs)'] < 0]
+                
+                # Sort by Needs (lbs) descending (highest needs first) - values are already numeric
+                display_df = display_df.sort_values('Needs (lbs)', ascending=False)
+                
+                # Style the dataframe - work with numeric values
+                def color_difference(val):
+                    try:
+                        # Values are already numeric
+                        if val < 0:
+                            return 'background-color: #ffcdd2; color: #c62828; font-weight: bold'
+                        elif val == 0:
+                            return 'background-color: #fff3e0; color: #f57c00'
+                        else:
+                            return 'background-color: #c8e6c9; color: #2e7d32'
+                    except:
+                        return ''
+                
+                # Determine which columns to show
+                if show_all_columns:
+                    # Show all columns except SKU columns
+                    all_columns = display_df.columns.tolist()
+                    columns_to_show = [col for col in all_columns if col not in ['Picklist SKUs', 'Shopify SKUs']]
+                    column_config = {
+                        'Product Type': st.column_config.TextColumn('Product Type', width=200),
+                        'Needs (lbs)': st.column_config.NumberColumn('Needs LB'),
+                        'Needs (ea)': st.column_config.NumberColumn('Needs (ea)'),
+                        'Inventory (lbs)': st.column_config.NumberColumn('Inventory Coldcart LB'),
+                        'Inventory Coldcart (ea)': st.column_config.NumberColumn('Inventory Coldcart (ea)'),
+                        'In Transit (lbs)': st.column_config.NumberColumn('Inventory In Transit LB'),
+                        'In Transit (ea)': st.column_config.NumberColumn('In Transit (ea)'),
+                        'Total Inventory (lbs)': st.column_config.NumberColumn('Total Inventory LB'),
+                        'Total Inventory (ea)': st.column_config.NumberColumn('Total Inventory (ea)'),
+                        'Difference (lbs)': st.column_config.NumberColumn('Difference'),
+                        'Difference (ea)': st.column_config.NumberColumn('Difference (ea)'),
+                        'Weight per Unit (lbs)': st.column_config.NumberColumn('Weight per Unit (lbs)'),
+                        'Cost ($)': st.column_config.NumberColumn('Latest Total Cost', format="$%.0f"),
+                        'Latest Price ($/lb)': st.column_config.NumberColumn('Latest Price ($/lb)', format="$%.0f"),
+                        'Total Latest Cost ($)': st.column_config.NumberColumn('Total Latest Cost ($)', format="$%.0f"),
+                        'Latest Invoice Date': st.column_config.TextColumn('Latest Invoice Date')
+                    }
+                else:
+                    # Show only essential columns by default
+                    essential_columns = [
+                        'Product Type',
+                        'Needs (lbs)',
+                        'Inventory (lbs)', 
+                        'In Transit (lbs)',
+                        'Total Inventory (lbs)',
+                        'Difference (lbs)'
+                    ]
+                    columns_to_show = [col for col in essential_columns if col in display_df.columns]
+                    column_config = {
+                        'Product Type': st.column_config.TextColumn('Product Type', width=200),
+                        'Needs (lbs)': st.column_config.NumberColumn('Needs LB'),
+                        'Inventory (lbs)': st.column_config.NumberColumn('Inventory Coldcart LB'),
+                        'In Transit (lbs)': st.column_config.NumberColumn('Inventory In Transit LB'),
+                        'Total Inventory (lbs)': st.column_config.NumberColumn('Total Inventory LB'),
+                        'Difference (lbs)': st.column_config.NumberColumn('Difference')
+                    }
+                
+                # Filter display dataframe to show only selected columns
+                display_df_filtered = display_df[columns_to_show]
+                
+                # Apply styling with precision=0 formatting for all numeric columns
+                numeric_columns = [col for col in display_df_filtered.columns if col != 'Product Type' and col != 'Latest Invoice Date']
+                styled_df = display_df_filtered.style.map(color_difference, subset=['Difference (lbs)']).format(precision=0, subset=numeric_columns)
+                
+                st.dataframe(
+                    styled_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config=column_config
+                )
+                
+                # Summary metrics
+                col1, col2, col3, col4, col5 = st.columns(5)
+                
+                with col1:
+                    total_products = len(display_df)
+                    st.metric("Product Types", f"{total_products:,}")
+                
+                with col2:
+                    # Values are already numeric for comparison
+                    shortage_products = len(display_df[display_df['Difference (lbs)'] < 0])
+                    st.metric("Shortages", f"{shortage_products:,}")
+                
+                with col3:
+                    # Values are already numeric for sum
+                    total_needs = display_df['Needs (lbs)'].sum()
+                    st.metric("Total Needs", f"{total_needs:,.0f} lbs")
+                
+                with col4:
+                    # Values are already numeric for sum
+                    total_inventory = display_df['Total Inventory (lbs)'].sum()
+                    st.metric("Total Available", f"{total_inventory:,.0f} lbs")
+                
+                with col5:
+                    # Use the calculated Total Latest Cost column (Total Inventory × Latest Price)
+                    if 'Total Latest Cost ($)' in display_df.columns:
+                        total_cost = display_df['Total Latest Cost ($)'].sum()
+                    elif 'Cost ($)' in display_df.columns:
+                        # Fallback to old cost column if new one doesn't exist
+                        total_cost = display_df['Cost ($)'].sum()
+                    else:
+                        total_cost = 0
+                    st.metric("Total Value at Latest Prices", f"${total_cost:,.0f}")
+                    
+            else:
+                st.info("No data available for summary. Make sure all data sources are loaded.")
+                
+                # Debug information
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    unfulfilled_df = st.session_state.get('unfulfilled_orders_df')
+                    if unfulfilled_df is not None and not unfulfilled_df.empty:
+                        pass  # Has Shopify data
+                    else:
+                        pass  # No Shopify data
+                
+                with col2:
+                    inventory_count = 0
+                    sources = []
+                    coldcart_df = st.session_state.get('coldcart_inventory')
+                    if coldcart_df is not None and not coldcart_df.empty:
+                        inventory_count += len(coldcart_df)
+                        sources.append("ColdCart")
+                    
+                    oxnard_df = st.session_state.get('inventory_data', {}).get('oxnard')
+                    if oxnard_df is not None and not oxnard_df.empty:
+                        inventory_count += len(oxnard_df)
+                        sources.append("Oxnard")
+                    
+                    wheeling_df = st.session_state.get('inventory_data', {}).get('wheeling')
+                    if wheeling_df is not None and not wheeling_df.empty:
+                        inventory_count += len(wheeling_df)
+                        sources.append("Wheeling")
+                    
+                    if inventory_count > 0:
+                        pass  # Has inventory data
+                    else:
+                        pass  # No inventory data
+                
+                with col3:
+                    agg_orders_df = st.session_state.get('agg_orders_df')
+                    if agg_orders_df is not None and not agg_orders_df.empty:
+                        pass  # Has vendor orders
+                    else:
+                        pass  # No vendor orders
+                
+                with col4:
+                    sku_mappings_file = 'airtable_sku_mappings.json'
+                    total_skus = 0
+                    if os.path.exists(sku_mappings_file):
+                        try:
+                            with open(sku_mappings_file, 'r') as f:
+                                sku_mappings = json.load(f)
+                                
+                            if isinstance(sku_mappings, dict):
+                                for warehouse in ['Oxnard', 'Wheeling']:
+                                    if warehouse in sku_mappings:
+                                        if 'singles' in sku_mappings[warehouse]:
+                                            total_skus += len(sku_mappings[warehouse]['singles'])
+                                        if 'bundles' in sku_mappings[warehouse]:
+                                            total_skus += len(sku_mappings[warehouse]['bundles'])
+                        except Exception:
+                            pass
+                    
+                    if total_skus > 0:
+                        pass  # Has SKU mappings
+                    else:
+                        pass  # No SKU mappings
+                        
+        except Exception as e:
+            st.error(f"Error creating summary: {str(e)}")
+            logging.error(f"Error in create_fast_product_type_summary: {e}")
+
+    with st.expander("📋 Data Sources & Descriptions", expanded=False):
+        st.markdown("""
+        ### Data Sources Overview
+        
+        **📦 Needs (Customer Orders)**
+        - **Source**: Shopify Admin API (Unfulfilled Orders)
+        - **Content**: Customer orders awaiting fulfillment
+        - **Period**: Last 7 days from today (unfulfilled orders created within this period)
+        - **Date Range**: {datetime.now().strftime('%m/%d/%Y')} back to {(datetime.now() - timedelta(days=7)).strftime('%m/%d/%Y')}
+        - **Units**: Both pounds (lbs) and pieces (ea)
+        - **Filter**: Excludes gift items ($0 unit price)
+        - **Processing**: Bundles are decomposed into individual components
+        
+        **🏪 Current Inventory**
+        - **Source**: ColdCart Live API + Google Sheets inventory data
+        - **Content**: Available inventory in warehouses (real-time)
+        - **Period**: Current moment (live data as of {datetime.now().strftime('%m/%d/%Y %I:%M %p')})
+        - **Conversion**: ColdCart pieces → lbs using conversion tables
+        - **Locations**: Oxnard & Wheeling facilities
+        - **Frequency**: Real-time data when available
+        
+        **🚛 In Transit Inventory**
+        - **Source**: Google Sheets (Aggregation Orders from vendors)
+        - **Content**: Confirmed/shipped orders from vendors
+        - **Statuses**: Confirmed, InTransit, Delivered
+        - **Period**: Last 2 weeks of vendor orders (fixed lookback)
+        - **Date Range**: {(datetime.now() - timedelta(weeks=2)).strftime('%m/%d/%Y')} to {datetime.now().strftime('%m/%d/%Y')}
+        - **Conversion**: lbs → pieces for consistent unit tracking
+        
+        **💰 Cost Data**
+        - **Source**: Google Sheets (orders_new - Latest Invoices)
+        - **Content**: Most recent price per lb by product type
+        - **Period**: Latest available invoice per product type (no time limit)
+        - **Method**: Latest invoice date takes precedence (not averaged)
+        - **Display**: Shows latest total cost and price per lb
+        
+        **🔄 Unit Conversions & Mappings**
+        - **ColdCart**: pieces → lbs (using INPUT_picklist_sku table)
+        - **In Transit**: lbs → pieces (for consistent tracking)
+        - **SKU Mappings**: Shopify SKUs ↔ Warehouse Pick SKUs
+        - **Bundles**: Automatic decomposition using bundle mappings
+        - **Product Types**: SKU → Product Type classification
+        
+        ### Key Metrics Explained
+        - **Difference**: Total Inventory - Needs (negative = shortage)
+        - **Total Inventory**: Current + In Transit inventory
+        - **Weight per Unit**: Calculated average from mappings
+        - **Related SKUs**: Both Shopify and warehouse SKUs tracked
+        """)
+    
+
+    st.markdown("---")
+    # ------------------- END: FAST FRUIT SUMMARY -------------------
 
     # Create sidebar filters
     filters = create_sidebar_filters(df)
@@ -735,16 +1723,26 @@ def main():
             
             styled_df = display_df.style.map(color_needs, subset=needs_cols)
             
-            # Create column configuration for all numeric columns
+            # Create column configuration for all numeric columns with renamed labels
             column_config = {
                 'Product Type': st.column_config.TextColumn('Product Type')
+            }
+            
+            # Define column name mappings for display
+            column_name_mappings = {
+                'Total Weight': 'Needed for Shopify orders',
+                'Inventory': 'Coldcard inventory', 
+                'Total': 'Total Needed inventory',
+                'Total Needs (LBS)': 'GHF NEEDS'
             }
             
             # Add number formatting for all numeric columns
             numeric_cols = display_df.columns.difference(['Product Type'])
             for col in numeric_cols:
+                # Use renamed label if available, otherwise use original column name
+                display_name = column_name_mappings.get(col, col)
                 column_config[col] = st.column_config.NumberColumn(
-                    col,
+                    display_name,
                     format="%.2g"  # Use general format which will remove unnecessary zeros
                 )
             

@@ -17,7 +17,7 @@ from utils.data_parser import DataParser
 
 # Optional Google Sheets import - make it conditional
 try:
-    from utils.google_sheets import load_sku_mappings_from_sheets
+    from utils.google_sheets import load_sku_mappings_from_sheets, load_sku_type_data
 
     GOOGLE_SHEETS_AVAILABLE = True
 except ImportError as e:
@@ -1651,6 +1651,42 @@ class DataProcessor:
 
         return order_data
 
+    def _resolve_component_sku(self, component_sku, sku_mappings, warehouse_key, sku_type_df=None):
+        """
+        Resolve a component SKU that might be missing from the mapping by using the SKU type helper.
+        
+        Args:
+            component_sku: The component SKU from the bundle
+            sku_mappings: The SKU mappings dictionary
+            warehouse_key: The warehouse key (Oxnard/Wheeling)
+            sku_type_df: DataFrame from load_sku_type_data() containing SKU helpers
+            
+        Returns:
+            tuple: (resolved_sku, found_in_singles)
+        """
+        # First check if the component SKU exists directly in singles mapping
+        if (sku_mappings and warehouse_key in sku_mappings and 
+            "singles" in sku_mappings[warehouse_key] and
+            component_sku in sku_mappings[warehouse_key]["singles"]):
+            return component_sku, True
+        
+        # If not found and we have SKU type data, try to find using helper
+        if sku_type_df is not None and not sku_type_df.empty:
+            # Look for the component SKU in the SKU type data
+            helper_row = sku_type_df[sku_type_df['SKU'] == component_sku]
+            if not helper_row.empty:
+                sku_helper = helper_row.iloc[0].get('SKU_Helper', '')
+                if sku_helper and sku_helper != component_sku:
+                    # Check if the helper SKU exists in singles mapping
+                    if (sku_mappings and warehouse_key in sku_mappings and 
+                        "singles" in sku_mappings[warehouse_key] and
+                        sku_helper in sku_mappings[warehouse_key]["singles"]):
+                        logger.info(f"Resolved component SKU {component_sku} to {sku_helper} using SKU type helper")
+                        return sku_helper, True
+        
+        # Return original SKU if no resolution found
+        return component_sku, False
+
     def _process_bundle_order(
         self,
         order_data,
@@ -1670,6 +1706,14 @@ class DataProcessor:
         if not sku_column:
             return output_df
 
+        # Load SKU type data for component resolution if needed
+        sku_type_df = None
+        try:
+            from utils.google_sheets import load_sku_type_data
+            sku_type_df = load_sku_type_data()
+        except Exception as e:
+            logger.warning(f"Could not load SKU type data for component resolution: {e}")
+
         for component in bundle_components:
             component_order_data = order_data.copy()
             component_sku = component["sku"]
@@ -1681,27 +1725,32 @@ class DataProcessor:
             total_component_weight = 0.0
             warehouse_key = self.normalize_warehouse_name(fc_key)
 
+            # Try to resolve the component SKU if it's missing from mappings
+            resolved_sku, found_in_singles = self._resolve_component_sku(
+                component_sku, sku_mappings, warehouse_key, sku_type_df
+            )
+
             # Try to find the component in SKU mappings to get its total_pick_weight
             if sku_mappings and warehouse_key in sku_mappings:
                 warehouse_mappings = sku_mappings[warehouse_key]
 
-                # Check in singles first
+                # Check in singles first using the resolved SKU
                 if (
                     "singles" in warehouse_mappings
-                    and component_sku in warehouse_mappings["singles"]
+                    and resolved_sku in warehouse_mappings["singles"]
                 ):
-                    sku_data = warehouse_mappings["singles"][component_sku]
+                    sku_data = warehouse_mappings["singles"][resolved_sku]
                     unit_weight = float(sku_data.get("total_pick_weight", 0.0))
                     total_component_weight = unit_weight * component_qty
                     logger.debug(
-                        f"Found component {component_sku} weight: {unit_weight} per unit, total: {total_component_weight}"
+                        f"Found component {resolved_sku} weight: {unit_weight} per unit, total: {total_component_weight}"
                     )
                 else:
                     # Component not found in singles mappings - this is a data integrity issue
                     component_weight = component.get("weight")
                     if component_weight is None or component_weight == 0.0:
                         logger.error(
-                            f"Component {component_sku} has no weight data in singles mappings or bundle definition - cannot proceed"
+                            f"Component {component_sku} (resolved: {resolved_sku}) has no weight data in singles mappings or bundle definition - cannot proceed"
                         )
                         continue  # Skip this component
                     total_component_weight = float(component_weight) * shop_quantity
@@ -1718,15 +1767,15 @@ class DataProcessor:
                     f"No SKU mappings available for {warehouse_key}, using bundle weight: {component_weight} - this indicates missing warehouse data"
                 )
 
-            # Set component data
-            component_order_data["sku"] = component_sku
+            # Set component data - use resolved SKU for mapping
+            component_order_data["sku"] = resolved_sku
             component_order_data["actualqty"] = component_qty
             component_order_data["Total Pick Weight"] = total_component_weight
             component_order_data["quantity"] = component_qty
 
-            # Map component SKU to inventory SKU
+            # Map component SKU to inventory SKU using resolved SKU
             component_inventory_sku = self.map_shopify_to_inventory_sku(
-                shopify_sku=component_sku, fulfillment_center=fc_key, sku_mappings=sku_mappings
+                shopify_sku=resolved_sku, fulfillment_center=fc_key, sku_mappings=sku_mappings
             )
 
             # Update the sku field to use the mapped inventory SKU

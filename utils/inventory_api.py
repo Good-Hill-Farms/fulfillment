@@ -299,25 +299,10 @@ def extract_delivery_date(batch_code):
 
 if __name__ == "__main__":
     summary_df, detailed_df = get_formatted_inventory()
-    
-    if summary_df is not None:
-        print("\n=== Total Inventory by SKU ===")
-        print(summary_df)
-        
-        if detailed_df is not None:
-            print("\n=== Detailed Inventory with Batch Codes ===")
-            print("\nOlder than 2 weeks (PST):")
-            old_items = detailed_df[detailed_df['IsOld']]
-            if not old_items.empty:
-                print(old_items[['Fruit', 'Sku', 'AvailableQty', 'DeliveryDate', 'WarehouseName']])
-            else:
-                print("No items older than 2 weeks")
-                
-            print("\nNewer items:")
-            new_items = detailed_df[~detailed_df['IsOld']]
-            if not new_items.empty:
-                print(new_items[['Fruit', 'Sku', 'AvailableQty', 'DeliveryDate', 'WarehouseName']])
-            else:
-                print("No items newer than 2 weeks")
-    else:
-        print("No inventory data available") 
+    #save to sheet data directory
+    sheet_data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sheet_data")
+    if not os.path.exists(sheet_data_dir):
+        os.makedirs(sheet_data_dir)
+
+    save_as_csv(summary_df, os.path.join(sheet_data_dir, "inventory_summary.csv"))
+    save_as_csv(detailed_df, os.path.join(sheet_data_dir, "inventory_detailed.csv"))
