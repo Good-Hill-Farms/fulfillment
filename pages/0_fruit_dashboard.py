@@ -774,13 +774,6 @@ def main():
     with st.expander("📊 Week over Week Analysis", expanded=False):
         wow_df = st.session_state.get('wow_df')
         if wow_df is not None and not wow_df.empty:
-            st.markdown("""
-            ### How to use Week over Week Analysis:
-            1. Select two date ranges to compare using the dropdown below
-            2. The most recent two weeks are selected by default
-            3. The "Change" column shows the percentage change from the earlier week (left) to the later week (right)
-            4. A positive change (green) means an increase, negative (red) means a decrease
-            """)
 
             # Add date range filter
             def parse_date_for_sorting(date_range):
@@ -874,6 +867,13 @@ def main():
                     "AGG INVOICED %"
                 ]
                 
+                # Search box for metrics
+                search_term = st.text_input(
+                    "🔍 Search Metrics",
+                    placeholder="Type to search metrics (e.g., 'cull', 'inventory', 'rate')...",
+                    help="Search through metric names to quickly find what you need"
+                )
+                
                 # Quick action buttons for metric selection
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
@@ -893,27 +893,44 @@ def main():
                         st.session_state['metric_action'] = 'weights_only'
                         st.rerun()
                 
+                # Apply search filter first
+                if search_term:
+                    # Filter metrics based on search term
+                    search_filtered_metrics = [
+                        m for m in preferred_metric_order 
+                        if m in all_metrics and search_term.lower() in m.lower()
+                    ]
+                else:
+                    # No search, use all available metrics
+                    search_filtered_metrics = [m for m in preferred_metric_order if m in all_metrics]
+                
                 # Handle quick actions and determine selected metrics
                 action = st.session_state.get('metric_action', None)
                 
                 if action == 'select_all':
-                    selected_metrics = [m for m in preferred_metric_order if m in all_metrics]
+                    selected_metrics = search_filtered_metrics
                 elif action == 'rates_only':
-                    selected_metrics = [m for m in preferred_metric_order if m in all_metrics and any(word in m.lower() for word in ['rate', '%', 'left'])]
+                    selected_metrics = [m for m in search_filtered_metrics if any(word in m.lower() for word in ['rate', '%', 'left'])]
                 elif action == 'costs_only':
-                    selected_metrics = [m for m in preferred_metric_order if m in all_metrics and any(word in m.lower() for word in ['cost', 'expense', 'invoiced', 'sales'])]
+                    selected_metrics = [m for m in search_filtered_metrics if any(word in m.lower() for word in ['cost', 'expense', 'invoiced', 'sales'])]
                 elif action == 'weights_only':
-                    selected_metrics = [m for m in preferred_metric_order if m in all_metrics and any(word in m.lower() for word in ['weight', 'inventory', 'delivered', 'fulfilled', 'culls', 'pack'])]
+                    selected_metrics = [m for m in search_filtered_metrics if any(word in m.lower() for word in ['weight', 'inventory', 'delivered', 'fulfilled', 'culls', 'pack'])]
                 else:
-                    # Default to all metrics in preferred order
-                    selected_metrics = [m for m in preferred_metric_order if m in all_metrics]
+                    # Default to search filtered metrics (or all if no search)
+                    selected_metrics = search_filtered_metrics
                 
                 # Clear the action after use
                 if action:
                     del st.session_state['metric_action']
                 
                 # Show selection summary
-                st.info(f"📈 **{len(selected_metrics)} metrics selected** | Click buttons above to filter metrics")
+                if search_term:
+                    if selected_metrics:
+                        st.info(f"🔍 **{len(selected_metrics)} metrics found** for '{search_term}' | Click buttons above to filter further")
+                    else:
+                        st.warning(f"🔍 No metrics found for '{search_term}'. Try a different search term.")
+                else:
+                    st.info(f"📈 **{len(selected_metrics)} metrics selected** | Use search box or buttons above to filter")
                 
             if selected_ranges and selected_metrics:
                 filtered_df = wow_df[
@@ -1008,22 +1025,32 @@ def main():
                 # Make metric names more visual with icons
                 def add_metric_icon(metric):
                     metric = metric.replace('**', '')  # Remove any existing markdown
-                    if 'weight' in metric.lower() or 'delivered' in metric.lower():
-                        return f"📦 {metric}"
+                    
+                    # Replace "EOW Inventory" with "This week inventory" for clearer naming
+                    if 'EOW Inventory' in metric:
+                        metric = metric.replace('EOW Inventory', 'This week inventory')
+                    
+                    # Prioritize rate/percentage icon for anything with % or rate
+                    if 'rate' in metric.lower() or '%' in metric.lower() or 'left' in metric.lower():
+                        return f"📊 {metric}"
+                    # Cost icon for anything with cost, expense, sales, invoiced
                     elif 'cost' in metric.lower() or 'expense' in metric.lower() or 'sales' in metric.lower() or 'invoiced' in metric.lower():
                         return f"💰 {metric}"
+                    # Weight icon for weight, delivered, fulfilled weight, pack
+                    elif 'weight' in metric.lower() or 'delivered' in metric.lower() or ('fulfilled' in metric.lower() and 'weight' in metric.lower()) or 'pack' in metric.lower():
+                        return f"📦 {metric}"
+                    # Inventory icon for inventory (but not costs)
                     elif 'inventory' in metric.lower():
-                        return f"📋 {metric}"
+                        return f"📦 {metric}"
+                    # Waste icon for culls
                     elif 'cull' in metric.lower():
                         return f"🗑️ {metric}"
-                    elif 'rate' in metric.lower() or '%' in metric.lower():
-                        return f"📊 {metric}"
+                    # Transport icon
                     elif 'transport' in metric.lower():
                         return f"🚛 {metric}"
+                    # Fulfilled (non-weight) gets checkmark
                     elif 'fulfilled' in metric.lower():
                         return f"✅ {metric}"
-                    elif 'pack' in metric.lower():
-                        return f"📦 {metric}"
                     else:
                         return f"📈 {metric}"
                 
@@ -1223,13 +1250,16 @@ def main():
                                         delta_display = None
                                         delta_color = "normal"
                                 
+                                # Display metric without Streamlit's automatic delta arrows
                                 st.metric(
                                     f"📊 {clean_metric}",
                                     formatted_val,
-                                    delta_display,
-                                    delta_color=delta_color,
                                     help=f"Change from {format_date_range(prev_range)} to {format_date_range(latest_range)}"
                                 )
+                                
+                                # Show our custom change indicator below
+                                if delta_display:
+                                    st.markdown(f"<div style='margin-top: -10px; font-size: 14px;'>{delta_display}</div>", unsafe_allow_html=True)
                     else:
                         st.info("No rate metrics found in the selected data.")
             elif selected_ranges and not selected_metrics:
