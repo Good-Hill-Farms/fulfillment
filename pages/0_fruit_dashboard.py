@@ -69,6 +69,34 @@ def format_duration(minutes):
         days = minutes / (24 * 60)
         return f"{int(days)} days"
 
+def filter_physical_items(df):
+    """
+    Filter out digital/free items to get only physical fruit items.
+    
+    This excludes:
+    - Items with $0 unit price (free items like ripening guides)
+    - SKUs containing '-gift' or '-bab' (gift box items and free gift items)
+    - Any other patterns indicating digital/free items
+    
+    This ensures fulfillment time calculations only include actual fruit products
+    that require physical picking, packing, and shipping.
+    """
+    if df is None or df.empty:
+        return df
+    
+    # Check if the expected columns exist
+    price_col = 'Unit Price' if 'Unit Price' in df.columns else None
+    sku_col = 'SKU' if 'SKU' in df.columns else None
+    
+    if price_col is None or sku_col is None:
+        # If we don't have the necessary columns, return the original dataframe
+        return df
+        
+    return df[
+        (df[price_col] > 0) &  # Exclude free items
+        (~df[sku_col].str.contains('-gift|-bab', case=False, na=False, regex=True))  # Exclude gift items and free gift boxes
+    ]
+
 def get_week_range(date=None, previous=False):
     """Get the Monday-Sunday range for a given date or previous week."""
     if date is None:
@@ -1330,94 +1358,116 @@ def main():
                     total_value = filtered_df[total_column].sum()
                     st.metric("Total Line Items Value", f"${total_value:,.2f}")
                 with col3:
-                    # Convert duration strings to minutes for calculation
-                    duration_minutes = filtered_df['Fulfillment Duration'].apply(convert_duration_to_minutes)
-                    avg_minutes = duration_minutes[duration_minutes.notna()].mean()
-                    if not pd.isna(avg_minutes):
-                        st.metric("Avg Fulfillment Time", format_duration(avg_minutes))
+                    # Filter out digital/free items for fulfillment time calculation
+                    physical_items = filter_physical_items(filtered_df)
+                    
+                    if not physical_items.empty:
+                        # Convert duration strings to minutes for calculation (only physical items)
+                        duration_minutes = physical_items['Fulfillment Duration'].apply(convert_duration_to_minutes)
+                        avg_minutes = duration_minutes[duration_minutes.notna()].mean()
+                        if not pd.isna(avg_minutes):
+                            st.metric("Avg Fulfillment Time (Physical Items)", format_duration(avg_minutes))
+                        else:
+                            st.metric("Avg Fulfillment Time (Physical Items)", "No data")
+                    else:
+                        st.metric("Avg Fulfillment Time (Physical Items)", "No physical items")
                 with col4:
-                    # Count orders by status with cleaner display
+                    # Count orders by status with detailed breakdown
                     status_counts = filtered_df['Fulfillment Status'].value_counts()
                     
-                    # Create a more readable status breakdown
                     if len(status_counts) > 0:
-                        # Get the most common status
-                        top_status = status_counts.index[0]
-                        top_count = status_counts.iloc[0]
-                        
-                        # Create a summary of other statuses
-                        if len(status_counts) > 1:
-                            other_count = status_counts.iloc[1:].sum()
-                            delta_text = f"{other_count} other status"
-                        else:
-                            delta_text = None
+                        # Create bullet points for each status
+                        status_bullets = []
+                        for status, count in status_counts.items():
+                            # Clean up status names for display
+                            if 'PARTIALLY' in status:
+                                clean_status = 'Partial Fulfilled'
+                            elif 'UNFULFILLED' in status:
+                                clean_status = 'Pending'
+                            elif 'FULFILLED' in status and 'PARTIALLY' not in status:
+                                clean_status = 'Fulfilled'
+                            elif 'HOLD' in status:
+                                clean_status = 'On Hold'
+                            else:
+                                # Fallback for any other status
+                                clean_status = status.replace('_', ' ').title()
                             
+                            status_bullets.append(f"• {clean_status}: {count}")
+                        
                         st.metric(
-                            f"{top_status}",
-                            f"{top_count} orders",
-                            delta_text
+                            label="Status Breakdown",
+                            value=""
                         )
+                        
+                        # Show bullet points in small text below
+                        for bullet in status_bullets:
+                            st.caption(bullet)
                     else:
-                        st.metric("Orders", "0")
+                        st.metric("Status Breakdown", "0 orders")
 
                 # Add Top SKUs Summary
-                st.subheader("📊 Top SKUs")
+                st.subheader("📊 Top SKUs (Physical Items Only)")
                 
-                # Calculate SKU summary
-                total_column = 'Line Item Total' if 'Line Item Total' in filtered_df.columns else 'Total'
-                sku_summary = filtered_df.groupby('SKU').agg({
-                    'Quantity': 'sum',
-                    total_column: 'sum'
-                }).reset_index()
+                # Calculate SKU summary for physical items only
+                physical_items = filter_physical_items(filtered_df)
                 
-                # Rename the total column for consistency
-                sku_summary = sku_summary.rename(columns={total_column: 'Total Value'})
-                
-                # Sort by quantity and get top 10
-                top_skus_qty = sku_summary.nlargest(10, 'Quantity')
-                
-                # Sort by total value and get top 10
-                top_skus_value = sku_summary.nlargest(10, 'Total Value')
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown("**Top SKUs by Quantity**")
-                    st.dataframe(
-                        top_skus_qty,
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config={
-                            "SKU": "SKU",
-                            "Quantity": st.column_config.NumberColumn(
-                                "Total Quantity",
-                                format="%d"
-                            ),
-                            "Total Value": st.column_config.NumberColumn(
-                                "Total Value",
-                                format="$%.2f"
-                            )
-                        }
-                    )
-                
-                with col2:
-                    st.markdown("**Top SKUs by Value**")
-                    st.dataframe(
-                        top_skus_value,
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config={
-                            "SKU": "SKU",
-                            "Quantity": st.column_config.NumberColumn(
-                                "Total Quantity",
-                                format="%d"
-                            ),
-                            "Total Value": st.column_config.NumberColumn(
-                                "Total Value",
-                                format="$%.2f"
-                            )
-                        }
-                    )
+                if not physical_items.empty:
+                    total_column = 'Line Item Total' if 'Line Item Total' in physical_items.columns else 'Total'
+                    sku_summary = physical_items.groupby('SKU').agg({
+                        'Quantity': 'sum',
+                        total_column: 'sum'
+                    }).reset_index()
+                    
+                    # Rename the total column for consistency
+                    sku_summary = sku_summary.rename(columns={total_column: 'Total Value'})
+                    
+                    # Sort by quantity and get top 10
+                    top_skus_qty = sku_summary.nlargest(10, 'Quantity')
+                    
+                    # Sort by total value and get top 10
+                    top_skus_value = sku_summary.nlargest(10, 'Total Value')
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("**Top SKUs by Quantity**")
+                        st.dataframe(
+                            top_skus_qty,
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "SKU": "SKU",
+                                "Quantity": st.column_config.NumberColumn(
+                                    "Total Quantity",
+                                    format="%d"
+                                ),
+                                "Total Value": st.column_config.NumberColumn(
+                                    "Total Value",
+                                    format="$%.2f"
+                                )
+                            }
+                        )
+                    
+                    with col2:
+                        st.markdown("**Top SKUs by Value**")
+                        st.dataframe(
+                            top_skus_value,
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "SKU": "SKU",
+                                "Quantity": st.column_config.NumberColumn(
+                                    "Total Quantity",
+                                    format="%d"
+                                ),
+                                "Total Value": st.column_config.NumberColumn(
+                                    "Total Value",
+                                    format="$%.2f"
+                                )
+                            }
+                        )
+                else:
+                    st.info("No physical items found in the selected orders. Only digital/free items are present.")
 
                 # Display full orders table
                 st.subheader("📋 All Orders")
