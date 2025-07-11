@@ -1287,10 +1287,10 @@ def main():
 
     # Display Reference Data
     with st.expander("📚 Pieces vs Lb Conversion", expanded=False):
-        reference_data = st.session_state.get('pieces_vs_lb_df')
+        reference_data = st.session_state.get('reference_data', {})
         
         # Pieces vs Lb Conversion
-        pieces_vs_lb_df = reference_data
+        pieces_vs_lb_df = reference_data.get('pieces_vs_lb')
         if pieces_vs_lb_df is not None and not pieces_vs_lb_df.empty:
             st.dataframe(pieces_vs_lb_df, use_container_width=True, hide_index=True)
         else:
