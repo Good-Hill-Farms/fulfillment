@@ -501,16 +501,6 @@ def main():
 
     # Load inventory and picklist data
     load_inventory_and_picklist_data()
-    
-    # NEW: Load Shopify order data earlier to get unfulfilled orders for summary
-    # This now defaults to the current week (Mon-Today) to match the default
-    # view in the "Orders by Fulfillment Status" expander, preventing a double-load on startup.
-    if 'unfulfilled_orders_df' not in st.session_state:
-        with st.spinner("Loading recent Shopify orders for summary..."):
-            end_date = datetime.now()
-            # Default to the Monday of the current week
-            start_date = end_date - timedelta(days=end_date.weekday())
-            load_shopify_orders(start_date=start_date, end_date=end_date)
 
     # Get main dataframe
     df = st.session_state.get('agg_orders_df')
@@ -1346,10 +1336,29 @@ def main():
                     if not pd.isna(avg_minutes):
                         st.metric("Avg Fulfillment Time", format_duration(avg_minutes))
                 with col4:
-                    # Count orders by status
+                    # Count orders by status with cleaner display
                     status_counts = filtered_df['Fulfillment Status'].value_counts()
-                    status_text = ", ".join([f"{k}: {v}" for k, v in status_counts.items()])
-                    st.metric("Status Breakdown", status_text)
+                    
+                    # Create a more readable status breakdown
+                    if len(status_counts) > 0:
+                        # Get the most common status
+                        top_status = status_counts.index[0]
+                        top_count = status_counts.iloc[0]
+                        
+                        # Create a summary of other statuses
+                        if len(status_counts) > 1:
+                            other_count = status_counts.iloc[1:].sum()
+                            delta_text = f"{other_count} other status"
+                        else:
+                            delta_text = None
+                            
+                        st.metric(
+                            f"{top_status}",
+                            f"{top_count} orders",
+                            delta_text
+                        )
+                    else:
+                        st.metric("Orders", "0")
 
                 # Add Top SKUs Summary
                 st.subheader("📊 Top SKUs")
