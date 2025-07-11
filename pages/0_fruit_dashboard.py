@@ -78,6 +78,36 @@ def format_duration(minutes):
         days = minutes / (24 * 60)
         return f"{int(days)} days"
 
+def is_digital_item(row):
+    """
+    Check if an item is digital/virtual and should be excluded from inventory needs.
+    
+    This function distinguishes between:
+    - Digital items (ripening guides, instructions) - EXCLUDED
+    - Physical gift items (fruit gifts, spoons) - INCLUDED
+    - Free promotional physical items - EXCLUDED (to be conservative)
+    """
+    sku = str(row.get('SKU', '')).lower()
+    product_title = str(row.get('Product Title', '')).lower()
+    unit_price = row.get('Unit Price', 0)
+    
+    # Exclude free items that are likely digital
+    if unit_price <= 0:
+        # Check if this is a digital item based on SKU patterns
+        digital_patterns = [
+            'ripening_guide', 'guide', 'e.ripening', 'digital:', 
+            'instruction', 'pdf', 'ebook', 'video'
+        ]
+        for pattern in digital_patterns:
+            if pattern in sku or pattern in product_title:
+                return True
+        # If it's free but doesn't match digital patterns, still exclude it
+        # This catches generic free items that aren't clearly digital
+        return True
+    
+    # Allow all paid items (including paid gift items)
+    return False
+
 def filter_physical_items(df):
     """
     Filter out digital/free items to get only physical fruit items.
@@ -772,8 +802,13 @@ def main():
 
         # Process NEEDS: Unfulfilled orders from Shopify
         if unfulfilled_df is not None and not unfulfilled_df.empty:
-            # Filter out gift items ($0 unit price)
-            needs_df = unfulfilled_df[unfulfilled_df['Unit Price'] > 0].copy()
+            # Filter out ONLY specific digital items for Fast Summary: e.ripening_guide and expedited-shipping
+            # Keep ALL gifts, $0 items, and physical products
+            def is_specific_digital_item(row):
+                sku = str(row.get('SKU', '')).lower()
+                return sku in ['e.ripening_guide', 'expedited-shipping']
+            
+            needs_df = unfulfilled_df[~unfulfilled_df.apply(is_specific_digital_item, axis=1)].copy()
             
             # Check if we have SKU mappings
             if sku_mappings is None:
@@ -1621,7 +1656,7 @@ def main():
         - **Period**: Last 7 days from today (unfulfilled orders created within this period)
         - **Date Range**: {datetime.now().strftime('%m/%d/%Y')} back to {(datetime.now() - timedelta(days=7)).strftime('%m/%d/%Y')}
         - **Units**: Both pounds (lbs) and pieces (ea)
-        - **Filter**: Excludes gift items ($0 unit price)
+        - **Filter**: Excludes ONLY e.ripening_guide and expedited-shipping. INCLUDES all gifts, $0 items, and physical products
         - **Processing**: Bundles are decomposed into individual components
         
         **🏪 Current Inventory**
@@ -1908,11 +1943,11 @@ def main():
                 if action == 'select_all':
                     selected_metrics = search_filtered_metrics
                 elif action == 'rates_only':
-                    selected_metrics = [m for m in search_filtered_metrics if any(word in m.lower() for word in ['rate', '%', 'left'])]
+                    selected_metrics = [m for m in search_filtered_metrics if any(word in m.lower() for word in ['rate', '%', 'remaining'])]
                 elif action == 'costs_only':
                     selected_metrics = [m for m in search_filtered_metrics if any(word in m.lower() for word in ['cost', 'expense', 'invoiced', 'sales'])]
                 elif action == 'weights_only':
-                    selected_metrics = [m for m in search_filtered_metrics if any(word in m.lower() for word in ['weight', 'inventory', 'delivered', 'fulfilled', 'culls', 'pack'])]
+                    selected_metrics = [m for m in search_filtered_metrics if any(word in m.lower() for word in ['weight', 'inventory', 'delivered', 'fulfilled', 'waste', 'pack'])]
                 else:
                     # Default to search filtered metrics (or all if no search)
                     selected_metrics = search_filtered_metrics
@@ -2020,13 +2055,80 @@ def main():
                         
                         display_pivot_df[col_name] = changes.apply(format_change_with_arrow).astype('object')
                 
+                # WoW Metric Name Mapping for Better Display Names
+                wow_metric_mapping = {
+                    # Weight & Delivery Metrics
+                    "Delivered Weight - OX": "Weight Delivered to Oxnard",
+                    "Delivered Weight - WH": "Weight Delivered to Wheeling", 
+                    "TOTAL delivered weight ( )": "Total Weight Delivered (Both FC)",
+                    
+                    # Cost Metrics
+                    "Estimated cost - OX": "Estimated Fruit Cost - Oxnard",
+                    "Estimated cost - WH": "Estimated Fruit Cost - Wheeling",
+                    "TOTAL fruit cost": "Total Estimated Fruit Cost",
+                    
+                    # Previous Inventory
+                    "Last week inventory - OX": "Previous Week Inventory - Oxnard",
+                    "Last week inventory - WH": "Previous Week Inventory - Wheeling",
+                    "Total inventory ( )": "Total Previous Week Inventory",
+                    "Estimated Inventory cost - OX": "Previous Inventory Cost - Oxnard",
+                    "Estimated Inventory cost - WH": "Previous Inventory Cost - Wheeling", 
+                    "Total inventory cost": "Total Previous Inventory Cost",
+                    
+                    # Combined Metrics
+                    "TOTAL delivered + last inventory ( )": "Total Available (Delivered + Previous)",
+                    "TOTAL delivered + last inventory cost": "Total Available Cost",
+                    
+                    # End of Week Inventory
+                    "EOW Inventory - OX": "Current Week Inventory - Oxnard",
+                    "EOW Inventory - WH": "Current Week Inventory - Wheeling",
+                    "TOTAL EOW Inventory": "Total Current Week Inventory",
+                    "TOTAL EOW Inventory cost": "Current Week Inventory Cost",
+                    
+                    # Culls (Waste)
+                    "New Culls - OX": "New Waste - Oxnard",
+                    "New Culls - WH": "New Waste - Wheeling",
+                    "TOTAL New culls": "Total New Waste",
+                    "New cull cost": "New Waste Cost",
+                    "Aged Culls - OX": "Aged Waste - Oxnard", 
+                    "Aged Culls - WH": "Aged Waste - Wheeling",
+                    "TOTAL Aged culls": "Total Aged Waste",
+                    "Aged cull cost": "Aged Waste Cost",
+                    "TOTAL CULLS": "Total Waste",
+                    "TOTAL CULLS Cost": "Total Waste Cost",
+                    
+                    # Rate Metrics
+                    "CULL RATE": "Waste Rate",
+                    "INVENTORY LEFT": "Inventory Remaining Rate",
+                    "FULFILLED FRUIT RATE": "Fulfillment Rate",
+                    "FULFILLED FRUIT EXPENSE %": "Fruit Cost as % of Sales",
+                    "OVERPACK RATE": "Overpack Rate",
+                    "TRANSPORT %": "Transport Cost as % of Sales",
+                    "AGG INVOICED %": "Invoiced Fruit Cost as % of Sales",
+                    
+                    # Fulfillment Metrics
+                    "TOTAL FULFILLED WEIGHT ( )": "Total Weight Fulfilled",
+                    "FULFILLED NET SALES": "Net Sales Fulfilled",
+                    "TOTAL FULFILLED cost": "Fulfilled Fruit Cost",
+                    
+                    # Packing & Transport
+                    "OVER-UNDER PACK ": "Over/Under Pack Weight",
+                    "OVERPACK Cost estimated": "Estimated Overpack Cost",
+                    "TRANSPORT Cost": "Transport Cost",
+                    "AGG INVOICED": "Total Invoiced Fruit Cost"
+                }
+                
+                # Apply metric name mapping
+                def apply_wow_metric_mapping(metric):
+                    """Apply user-friendly names to WoW metrics"""
+                    return wow_metric_mapping.get(metric, metric)
+                
                 # Make metric names more visual with icons
                 def add_metric_icon(metric):
                     metric = metric.replace('**', '')  # Remove any existing markdown
                     
-                    # Replace "EOW Inventory" with "This week inventory" for clearer naming
-                    if 'EOW Inventory' in metric:
-                        metric = metric.replace('EOW Inventory', 'This week inventory')
+                    # Apply the WoW metric mapping first
+                    metric = apply_wow_metric_mapping(metric)
                     
                     # Prioritize rate/percentage icon for anything with % or rate
                     if 'rate' in metric.lower() or '%' in metric.lower() or 'left' in metric.lower():
@@ -2059,30 +2161,30 @@ def main():
                     def apply_color_blocks(row):
                         metric_name = row['Metric']
                         
-                        # Define color blocks for metric groups
-                        if any(keyword in metric_name for keyword in ['Delivered Weight', 'TOTAL delivered weight']):
+                        # Define color blocks for metric groups (updated for new naming)
+                        if any(keyword in metric_name for keyword in ['Weight Delivered', 'Total Weight Delivered']):
                             return ['background-color: #f3e5f5; color: #4a148c'] * len(row)  # Light purple - Delivered
-                        elif any(keyword in metric_name for keyword in ['Estimated cost', 'TOTAL fruit cost']):
+                        elif any(keyword in metric_name for keyword in ['Estimated Fruit Cost', 'Total Estimated Fruit Cost']):
                             return ['background-color: #e8f5e8; color: #1b5e20'] * len(row)  # Light green - Costs
-                        elif any(keyword in metric_name for keyword in ['Last week inventory', 'Total inventory']):
-                            return ['background-color: #fff3e0; color: #e65100'] * len(row)  # Light orange - Inventory
-                        elif any(keyword in metric_name for keyword in ['Estimated Inventory cost', 'Total inventory cost']):
-                            return ['background-color: #e0f2f1; color: #00695c'] * len(row)  # Light teal - Inventory Costs
-                        elif any(keyword in metric_name for keyword in ['TOTAL delivered + last inventory', 'TOTAL delivered + last inventory cost']):
+                        elif any(keyword in metric_name for keyword in ['Previous Week Inventory', 'Total Previous Week Inventory']):
+                            return ['background-color: #fff3e0; color: #e65100'] * len(row)  # Light orange - Previous Inventory
+                        elif any(keyword in metric_name for keyword in ['Previous Inventory Cost', 'Total Previous Inventory Cost']):
+                            return ['background-color: #e0f2f1; color: #00695c'] * len(row)  # Light teal - Previous Inventory Costs
+                        elif any(keyword in metric_name for keyword in ['Total Available', 'Total Available Cost']):
                             return ['background-color: #e1f5fe; color: #01579b'] * len(row)  # Light cyan - Combined
-                        elif any(keyword in metric_name for keyword in ['EOW Inventory', 'TOTAL EOW Inventory']):
-                            return ['background-color: #fce4ec; color: #880e4f'] * len(row)  # Light pink - EOW
-                        elif any(keyword in metric_name for keyword in ['New Culls', 'TOTAL New culls', 'New cull cost']):
-                            return ['background-color: #ffebee; color: #b71c1c'] * len(row)  # Light red - New Culls
-                        elif any(keyword in metric_name for keyword in ['Aged Culls', 'TOTAL Aged culls', 'Aged cull cost']):
-                            return ['background-color: #fff8e1; color: #f57f17'] * len(row)  # Light yellow - Aged Culls
-                        elif any(keyword in metric_name for keyword in ['TOTAL CULLS', 'CULL RATE', 'INVENTORY LEFT']):
-                            return ['background-color: #f1f8e9; color: #33691e'] * len(row)  # Light lime - Cull Summary
-                        elif any(keyword in metric_name for keyword in ['TOTAL FULFILLED', 'FULFILLED FRUIT RATE', 'FULFILLED NET SALES', 'FULFILLED FRUIT EXPENSE']):
+                        elif any(keyword in metric_name for keyword in ['Current Week Inventory', 'Total Current Week Inventory']):
+                            return ['background-color: #fce4ec; color: #880e4f'] * len(row)  # Light pink - Current Inventory
+                        elif any(keyword in metric_name for keyword in ['New Waste', 'Total New Waste', 'New Waste Cost']):
+                            return ['background-color: #ffebee; color: #b71c1c'] * len(row)  # Light red - New Waste
+                        elif any(keyword in metric_name for keyword in ['Aged Waste', 'Total Aged Waste', 'Aged Waste Cost']):
+                            return ['background-color: #fff8e1; color: #f57f17'] * len(row)  # Light yellow - Aged Waste
+                        elif any(keyword in metric_name for keyword in ['Total Waste', 'Waste Rate', 'Inventory Remaining Rate']):
+                            return ['background-color: #f1f8e9; color: #33691e'] * len(row)  # Light lime - Waste Summary
+                        elif any(keyword in metric_name for keyword in ['Total Weight Fulfilled', 'Fulfillment Rate', 'Net Sales Fulfilled', 'Fruit Cost as % of Sales']):
                             return ['background-color: #e8eaf6; color: #1a237e'] * len(row)  # Light indigo - Fulfillment
-                        elif any(keyword in metric_name for keyword in ['OVER-UNDER PACK', 'OVERPACK']):
+                        elif any(keyword in metric_name for keyword in ['Over/Under Pack', 'Overpack']):
                             return ['background-color: #f9fbe7; color: #827717'] * len(row)  # Light lime green - Packing
-                        elif any(keyword in metric_name for keyword in ['TRANSPORT', 'AGG INVOICED']):
+                        elif any(keyword in metric_name for keyword in ['Transport Cost', 'Invoiced Fruit Cost']):
                             return ['background-color: #efebe9; color: #3e2723'] * len(row)  # Light brown - Transport/Invoicing
                         else:
                             return [''] * len(row)  # No styling for unmatched metrics
@@ -2138,11 +2240,14 @@ def main():
                         if 'rate' in metric_lower or '%' in metric_lower or 'left' in metric_lower:
                             rate_metrics.append(metric)
                     
-                    # Show top rate metrics (up to 4)
+                    # Show top rate metrics (up to 4) - updated for new naming
                     priority_rates = []
-                    for priority in ['CULL RATE', 'FULFILLED FRUIT RATE', 'OVERPACK RATE', 'AGG INVOICED %', 'TRANSPORT %', 'FULFILLED FRUIT EXPENSE %']:
+                    priority_names = ['Waste Rate', 'Fulfillment Rate', 'Overpack Rate', 'Invoiced Fruit Cost as % of Sales', 'Transport Cost as % of Sales', 'Fruit Cost as % of Sales']
+                    for priority in priority_names:
                         for metric in rate_metrics:
-                            if priority in metric:
+                            # Check if the mapped metric name contains the priority
+                            mapped_metric = apply_wow_metric_mapping(metric.replace('📊 ', '').replace('📈 ', ''))
+                            if priority in mapped_metric:
                                 priority_rates.append(metric)
                                 break
                     
@@ -2189,7 +2294,7 @@ def main():
                                     # Determine if this is a "lower is better" metric
                                     clean_metric_lower = clean_metric.lower()
                                     lower_is_better = any(word in clean_metric_lower for word in [
-                                        'cull rate', 'overpack rate', 'expense', 'cost', 'transport %'
+                                        'waste rate', 'overpack rate', 'expense', 'cost', 'transport cost', 'fruit cost as %'
                                     ])
                                     
                                     # Cap extreme percentage changes to make them more readable
@@ -2689,8 +2794,8 @@ def main():
                     st.error(f"Error loading unfulfilled orders: {str(e)}")
         
         if unfulfilled_df is not None and not unfulfilled_df.empty:
-            # Filter out gift items ($0 unit price) for display
-            display_unfulfilled = unfulfilled_df[unfulfilled_df['Unit Price'] > 0].copy()
+            # Filter out digital items for display (same logic as Need/Have summary)
+            display_unfulfilled = unfulfilled_df[~unfulfilled_df.apply(is_digital_item, axis=1)].copy()
             
             if not display_unfulfilled.empty:
                 # Add filters
@@ -2770,7 +2875,7 @@ def main():
                 
 
             else:
-                st.info("No unfulfilled orders with paid items found (only gift items with $0 price)")
+                st.info("No unfulfilled orders found (excluding digital items like ripening guides)")
         else:
             st.warning("No unfulfilled orders data available")
 
