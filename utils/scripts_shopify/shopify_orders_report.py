@@ -24,7 +24,7 @@ def update_orders_data(start_date=None, end_date=None):
     """
     # Define columns for consistent DataFrame structure
     columns = [
-        'Order ID', 'Created At', 'Fulfillment Status', 'Subtotal', 'Shipping', 'Total',
+        'Order ID', 'Created At', 'Fulfillment Status', 'Subtotal', 'Shipping', 'Line Item Total',
         'Discount Code', 'Discount Amount', 'Delivery Date', 'Shipping Method',
         'Quantity', 'SKU', 'Unit Price', 'Tags', 'Customer Type', 'Fulfilled At', 'Fulfillment Duration'
     ]
@@ -264,20 +264,25 @@ def update_orders_data(start_date=None, end_date=None):
                             elif 'amount' in discount_value:
                                 discount_amount = float(discount_value['amount'])
                     
+                    # Calculate line item total (unit price * quantity - discount)
+                    unit_price = float(line_item.get('originalUnitPriceSet', {}).get('shopMoney', {}).get('amount', 0))
+                    quantity = line_item.get('quantity', 0)
+                    line_item_total = (unit_price * quantity) - discount_amount
+                    
                     rows.append([
                         order_id,
                         created_at,
                         node.get('displayFulfillmentStatus', ''),
                         subtotal,
                         shipping,
-                        total_price,
+                        line_item_total,  # Use line item total instead of full order total
                         discount_code,
                         discount_amount,
                         delivery_date,
                         shipping_method,
-                        line_item.get('quantity', 0),
+                        quantity,
                         sku,
-                        float(line_item.get('originalUnitPriceSet', {}).get('shopMoney', {}).get('amount', 0)),
+                        unit_price,
                         ', '.join(node.get('tags', [])),
                         'Returning' if 'Returning Buyer' in node.get('tags', []) else 'New',
                         fulfilled_at if fulfilled_at else '',
@@ -311,7 +316,7 @@ def update_unfulfilled_orders(start_date=None, end_date=None):
     # Define columns for consistent DataFrame structure
     columns = [
         'Order ID', 'Created At', 'Order Name', 'SKU', 'Product Name',
-        'Unfulfilled Quantity', 'Unit Price', 'Total Price',
+        'Unfulfilled Quantity', 'Unit Price', 'Line Item Total',
         'Delivery Date', 'Shipping Method', 'Tags'
     ]
     
@@ -454,7 +459,7 @@ def update_unfulfilled_orders(start_date=None, end_date=None):
                         continue
                         
                     unit_price = float(line_item.get('originalUnitPriceSet', {}).get('shopMoney', {}).get('amount', 0))
-                    total_price = unit_price * unfulfilled_quantity
+                    line_item_total = unit_price * unfulfilled_quantity
                     product_name = line_item.get('name', '')
                     
                     rows.append([
@@ -465,7 +470,7 @@ def update_unfulfilled_orders(start_date=None, end_date=None):
                         product_name,
                         unfulfilled_quantity,
                         unit_price,
-                        total_price,
+                        line_item_total,
                         delivery_date,
                         shipping_method,
                         tags

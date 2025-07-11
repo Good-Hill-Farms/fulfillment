@@ -519,136 +519,136 @@ def main():
         st.error("❌ Failed to load main fruit data. Please check your data sources.")
         return
 
-    # ------------------- NEW: AT A GLANCE SUMMARY -------------------
-    st.markdown("---")
-    with st.container():
-        st.subheader("💡 At a Glance")
+    # # ------------------- NEW: AT A GLANCE SUMMARY -------------------
+    # st.markdown("---")
+    # with st.container():
+    #     st.subheader("💡 At a Glance")
 
-        # Get data from session state
-        agg_orders_df = st.session_state.get('agg_orders_df')
-        picklist_df = st.session_state.get('picklist_data')
-        inventory_data = st.session_state.get('inventory_data', {})
-        oxnard_inventory_df = inventory_data.get('oxnard')
-        wheeling_inventory_df = inventory_data.get('wheeling')
-        orders_new_df = st.session_state.get('orders_new_df')
-        wow_df = st.session_state.get('wow_df')
-        unfulfilled_df = st.session_state.get('unfulfilled_orders_df')
-        pieces_vs_lb_df = st.session_state.get('reference_data', {}).get('pieces_vs_lb')
+    #     # Get data from session state
+    #     agg_orders_df = st.session_state.get('agg_orders_df')
+    #     picklist_df = st.session_state.get('picklist_data')
+    #     inventory_data = st.session_state.get('inventory_data', {})
+    #     oxnard_inventory_df = inventory_data.get('oxnard')
+    #     wheeling_inventory_df = inventory_data.get('wheeling')
+    #     orders_new_df = st.session_state.get('orders_new_df')
+    #     wow_df = st.session_state.get('wow_df')
+    #     unfulfilled_df = st.session_state.get('unfulfilled_orders_df')
+    #     pieces_vs_lb_df = st.session_state.get('reference_data', {}).get('pieces_vs_lb')
 
-        # --- Calculation for unfulfilled weight & pieces ---
-        unfulfilled_lbs = 0
-        unfulfilled_pcs = 0
-        if unfulfilled_df is not None and not unfulfilled_df.empty:
-            unfulfilled_df_copy = unfulfilled_df.copy()
-            unfulfilled_df_copy['Unfulfilled Quantity'] = pd.to_numeric(unfulfilled_df_copy['Unfulfilled Quantity'], errors='coerce').fillna(0)
-            unfulfilled_df_copy['temp_weight'] = 0.0
+    #     # --- Calculation for unfulfilled weight & pieces ---
+    #     unfulfilled_lbs = 0
+    #     unfulfilled_pcs = 0
+    #     if unfulfilled_df is not None and not unfulfilled_df.empty:
+    #         unfulfilled_df_copy = unfulfilled_df.copy()
+    #         unfulfilled_df_copy['Unfulfilled Quantity'] = pd.to_numeric(unfulfilled_df_copy['Unfulfilled Quantity'], errors='coerce').fillna(0)
+    #         unfulfilled_df_copy['temp_weight'] = 0.0
 
-            for index, row in unfulfilled_df_copy.iterrows():
-                sku = str(row['SKU'])
-                product_name = str(row['Product Name'])
-                quantity = row['Unfulfilled Quantity']
-                weight = 0.0
+    #         for index, row in unfulfilled_df_copy.iterrows():
+    #             sku = str(row['SKU'])
+    #             product_name = str(row['Product Name'])
+    #             quantity = row['Unfulfilled Quantity']
+    #             weight = 0.0
                 
-                # Heuristic to identify items sold by the piece
-                if 'pc' in sku.lower() or 'pcs' in product_name.lower() or 'piece' in product_name.lower():
-                    unfulfilled_pcs += quantity
+    #             # Heuristic to identify items sold by the piece
+    #             if 'pc' in sku.lower() or 'pcs' in product_name.lower() or 'piece' in product_name.lower():
+    #                 unfulfilled_pcs += quantity
                 
-                # Try to extract weight from SKU (e.g., "mango-5lb")
-                match = re.search(r'(\d+\.?\d*)\s?lb', sku, re.IGNORECASE)
-                if match:
-                    try:
-                        weight = float(match.group(1))
-                    except (ValueError, TypeError):
-                        weight = 0.0
+    #             # Try to extract weight from SKU (e.g., "mango-5lb")
+    #             match = re.search(r'(\d+\.?\d*)\s?lb', sku, re.IGNORECASE)
+    #             if match:
+    #                 try:
+    #                     weight = float(match.group(1))
+    #                 except (ValueError, TypeError):
+    #                     weight = 0.0
                 
-                # If no weight from SKU, look up in conversion table
-                if weight == 0 and pieces_vs_lb_df is not None:
-                    lookup_row = pieces_vs_lb_df[pieces_vs_lb_df['picklist sku'] == sku]
-                    if not lookup_row.empty and 'Weight (lbs)' in lookup_row.columns:
-                        try:
-                            weight = pd.to_numeric(lookup_row['Weight (lbs)'].iloc[0], errors='coerce').fillna(0)
-                        except (ValueError, TypeError, IndexError):
-                            weight = 0.0
+    #             # If no weight from SKU, look up in conversion table
+    #             if weight == 0 and pieces_vs_lb_df is not None:
+    #                 lookup_row = pieces_vs_lb_df[pieces_vs_lb_df['picklist sku'] == sku]
+    #                 if not lookup_row.empty and 'Weight (lbs)' in lookup_row.columns:
+    #                     try:
+    #                         weight = pd.to_numeric(lookup_row['Weight (lbs)'].iloc[0], errors='coerce').fillna(0)
+    #                     except (ValueError, TypeError, IndexError):
+    #                         weight = 0.0
                 
-                unfulfilled_df_copy.loc[index, 'temp_weight'] = weight * quantity
+    #             unfulfilled_df_copy.loc[index, 'temp_weight'] = weight * quantity
             
-            unfulfilled_lbs = unfulfilled_df_copy['temp_weight'].sum()
+    #         unfulfilled_lbs = unfulfilled_df_copy['temp_weight'].sum()
 
 
-        col1, col2, col3, col4, col5 = st.columns(5)
+    #     col1, col2, col3, col4, col5 = st.columns(5)
 
-        # 1. INCOMING FRUIT
-        with col1:
-            incoming_statuses = ['Confirmed', 'InTransit', 'Delivered']
-            total_incoming_lbs = 0
-            if agg_orders_df is not None:
-                # Clean up columns to ensure they are numeric
-                for col in ['Oxnard Actual Order', 'Weight Per Pick', 'Wheeling Actual Order', 'Wheeling Weight Per Pick']:
-                    if col in agg_orders_df.columns:
-                        agg_orders_df[col] = pd.to_numeric(agg_orders_df[col], errors='coerce').fillna(0)
+    #     # 1. INCOMING FRUIT
+    #     with col1:
+    #         incoming_statuses = ['Confirmed', 'InTransit', 'Delivered']
+    #         total_incoming_lbs = 0
+    #         if agg_orders_df is not None:
+    #             # Clean up columns to ensure they are numeric
+    #             for col in ['Oxnard Actual Order', 'Weight Per Pick', 'Wheeling Actual Order', 'Wheeling Weight Per Pick']:
+    #                 if col in agg_orders_df.columns:
+    #                     agg_orders_df[col] = pd.to_numeric(agg_orders_df[col], errors='coerce').fillna(0)
 
-                # Calculate for Oxnard, stripping whitespace from status column
-                oxnard_incoming_mask = agg_orders_df['Oxnard Status'].str.strip().isin(incoming_statuses)
-                oxnard_incoming_lbs = (agg_orders_df.loc[oxnard_incoming_mask, 'Oxnard Actual Order'] * agg_orders_df.loc[oxnard_incoming_mask, 'Weight Per Pick']).sum()
+    #             # Calculate for Oxnard, stripping whitespace from status column
+    #             oxnard_incoming_mask = agg_orders_df['Oxnard Status'].str.strip().isin(incoming_statuses)
+    #             oxnard_incoming_lbs = (agg_orders_df.loc[oxnard_incoming_mask, 'Oxnard Actual Order'] * agg_orders_df.loc[oxnard_incoming_mask, 'Weight Per Pick']).sum()
 
-                # Calculate for Wheeling, stripping whitespace from status column
-                wheeling_incoming_mask = agg_orders_df['Wheeling Status'].str.strip().isin(incoming_statuses)
-                wheeling_incoming_lbs = (agg_orders_df.loc[wheeling_incoming_mask, 'Wheeling Actual Order'] * agg_orders_df.loc[wheeling_incoming_mask, 'Wheeling Weight Per Pick']).sum()
+    #             # Calculate for Wheeling, stripping whitespace from status column
+    #             wheeling_incoming_mask = agg_orders_df['Wheeling Status'].str.strip().isin(incoming_statuses)
+    #             wheeling_incoming_lbs = (agg_orders_df.loc[wheeling_incoming_mask, 'Wheeling Actual Order'] * agg_orders_df.loc[wheeling_incoming_mask, 'Wheeling Weight Per Pick']).sum()
                 
-                total_incoming_lbs = oxnard_incoming_lbs + wheeling_incoming_lbs
-            st.metric("Incoming Fruit", f"{total_incoming_lbs:,.0f} LBS", help="Total weight of fruit that is Confirmed, InTransit, or Delivered.")
+    #             total_incoming_lbs = oxnard_incoming_lbs + wheeling_incoming_lbs
+    #         st.metric("Incoming Fruit", f"{total_incoming_lbs:,.0f} LBS", help="Total weight of fruit that is Confirmed, InTransit, or Delivered.")
 
-        # 2. UNFULFILLED DEMAND
-        with col2:
-            st.metric("Unfulfilled Demand", f"{unfulfilled_lbs:,.0f} LBS", f"~ {unfulfilled_pcs:,.0f} Pieces", help="Total weight and approximate piece count of fruit in unfulfilled customer orders.")
+    #     # 2. UNFULFILLED DEMAND
+    #     with col2:
+    #         st.metric("Unfulfilled Demand", f"{unfulfilled_lbs:,.0f} LBS", f"~ {unfulfilled_pcs:,.0f} Pieces", help="Total weight and approximate piece count of fruit in unfulfilled customer orders.")
 
-        # 3. NET POSITION (NEEDS VS HAVES)
-        with col3:
-            picklist_needs_lbs = 0
-            if picklist_df is not None and 'Total Needs (LBS)' in picklist_df.columns:
-                picklist_needs_lbs = picklist_df['Total Needs (LBS)'].sum()
+    #     # 3. NET POSITION (NEEDS VS HAVES)
+    #     with col3:
+    #         picklist_needs_lbs = 0
+    #         if picklist_df is not None and 'Total Needs (LBS)' in picklist_df.columns:
+    #             picklist_needs_lbs = picklist_df['Total Needs (LBS)'].sum()
             
-            total_needs_lbs = picklist_needs_lbs - unfulfilled_lbs
+    #         total_needs_lbs = picklist_needs_lbs - unfulfilled_lbs
 
-            total_haves_lbs = 0
-            if oxnard_inventory_df is not None and 'Total Weight' in oxnard_inventory_df.columns:
-                total_haves_lbs += oxnard_inventory_df['Total Weight'].sum()
-            if wheeling_inventory_df is not None and 'Total Weight' in wheeling_inventory_df.columns:
-                total_haves_lbs += wheeling_inventory_df['Total Weight'].sum()
+    #         total_haves_lbs = 0
+    #         if oxnard_inventory_df is not None and 'Total Weight' in oxnard_inventory_df.columns:
+    #             total_haves_lbs += oxnard_inventory_df['Total Weight'].sum()
+    #         if wheeling_inventory_df is not None and 'Total Weight' in wheeling_inventory_df.columns:
+    #             total_haves_lbs += wheeling_inventory_df['Total Weight'].sum()
             
-            diff_lbs = total_haves_lbs + total_needs_lbs
-            st.metric("Net Position (Haves - Needs)", f"{diff_lbs:,.0f} LBS", f"Total Needs: {total_needs_lbs:,.0f} LBS", help="Your total inventory ('Haves') minus your total projected and unfulfilled demand ('Needs').")
+    #         diff_lbs = total_haves_lbs + total_needs_lbs
+    #         st.metric("Net Position (Haves - Needs)", f"{diff_lbs:,.0f} LBS", f"Total Needs: {total_needs_lbs:,.0f} LBS", help="Your total inventory ('Haves') minus your total projected and unfulfilled demand ('Needs').")
 
-        # 4. TOTAL COST
-        with col4:
-            total_cost = 0
-            if orders_new_df is not None:
-                cost_col = orders_new_df.columns[4]
-                total_cost = pd.to_numeric(orders_new_df[cost_col], errors='coerce').fillna(0).sum()
-            st.metric("Total Cost (Invoiced)", f"${total_cost:,.0f}", help="Total cost from all invoiced orders loaded.")
+    #     # 4. TOTAL COST
+    #     with col4:
+    #         total_cost = 0
+    #         if orders_new_df is not None:
+    #             cost_col = orders_new_df.columns[4]
+    #             total_cost = pd.to_numeric(orders_new_df[cost_col], errors='coerce').fillna(0).sum()
+    #         st.metric("Total Cost (Invoiced)", f"${total_cost:,.0f}", help="Total cost from all invoiced orders loaded.")
 
-        # 5. WOW SUMMARY (AGG INVOICED)
-        with col5:
-            if wow_df is not None and not wow_df.empty:
-                agg_invoiced = wow_df[wow_df['Metric'] == 'AGG INVOICED'].sort_values('Start Date', ascending=False)
-                if len(agg_invoiced) >= 2:
-                    latest_val = agg_invoiced.iloc[0]['Value']
-                    prev_val = agg_invoiced.iloc[1]['Value']
-                    delta = calculate_wow_change(prev_val, latest_val)
-                    st.metric("Agg Invoiced (WoW)", f"${latest_val:,.0f}", f"{delta:+.1f}%" if pd.notna(delta) else "N/A")
-                elif len(agg_invoiced) == 1:
-                    latest_val = agg_invoiced.iloc[0]['Value']
-                    st.metric("Agg Invoiced (Latest)", f"${latest_val:,.0f}")
-                else:
-                    st.metric("Agg Invoiced", "N/A")
+    #     # 5. WOW SUMMARY (AGG INVOICED)
+    #     with col5:
+    #         if wow_df is not None and not wow_df.empty:
+    #             agg_invoiced = wow_df[wow_df['Metric'] == 'AGG INVOICED'].sort_values('Start Date', ascending=False)
+    #             if len(agg_invoiced) >= 2:
+    #                 latest_val = agg_invoiced.iloc[0]['Value']
+    #                 prev_val = agg_invoiced.iloc[1]['Value']
+    #                 delta = calculate_wow_change(prev_val, latest_val)
+    #                 st.metric("Agg Invoiced (WoW)", f"${latest_val:,.0f}", f"{delta:+.1f}%" if pd.notna(delta) else "N/A")
+    #             elif len(agg_invoiced) == 1:
+    #                 latest_val = agg_invoiced.iloc[0]['Value']
+    #                 st.metric("Agg Invoiced (Latest)", f"${latest_val:,.0f}")
+    #             else:
+    #                 st.metric("Agg Invoiced", "N/A")
         
-        st.markdown(
-        "<div style='font-size: 0.8em; color: grey;'>Note: Full 'By Piece' conversions across all metrics and 'Inventory by Lot Date' are complex and will be added in a future update.</div>", 
-        unsafe_allow_html=True
-        )
+    #     st.markdown(
+    #     "<div style='font-size: 0.8em; color: grey;'>Note: Full 'By Piece' conversions across all metrics and 'Inventory by Lot Date' are complex and will be added in a future update.</div>", 
+    #     unsafe_allow_html=True
+    #     )
 
-    st.markdown("---")
-    # ------------------- END: AT A GLANCE SUMMARY -------------------
+    # st.markdown("---")
+    # # ------------------- END: AT A GLANCE SUMMARY -------------------
 
     # Create sidebar filters
     filters = create_sidebar_filters(df)
@@ -657,7 +657,7 @@ def main():
     df_filtered = apply_global_filters(df, filters)
 
     # Display Week over Week Data
-    with st.expander("📊 Week over Week Analysis", expanded=True):
+    with st.expander("📊 Week over Week Analysis", expanded=False):
         wow_df = st.session_state.get('wow_df')
         if wow_df is not None and not wow_df.empty:
             st.markdown("""
@@ -1335,8 +1335,10 @@ def main():
                 with col1:
                     st.metric("Total Orders", len(filtered_df))
                 with col2:
-                    total_value = filtered_df['Total'].sum()
-                    st.metric("Total Value", f"${total_value:,.2f}")
+                    # Use the correct column name for line item totals
+                    total_column = 'Line Item Total' if 'Line Item Total' in filtered_df.columns else 'Total'
+                    total_value = filtered_df[total_column].sum()
+                    st.metric("Total Line Items Value", f"${total_value:,.2f}")
                 with col3:
                     # Convert duration strings to minutes for calculation
                     duration_minutes = filtered_df['Fulfillment Duration'].apply(convert_duration_to_minutes)
@@ -1353,16 +1355,20 @@ def main():
                 st.subheader("📊 Top SKUs")
                 
                 # Calculate SKU summary
+                total_column = 'Line Item Total' if 'Line Item Total' in filtered_df.columns else 'Total'
                 sku_summary = filtered_df.groupby('SKU').agg({
                     'Quantity': 'sum',
-                    'Total': 'sum'
+                    total_column: 'sum'
                 }).reset_index()
+                
+                # Rename the total column for consistency
+                sku_summary = sku_summary.rename(columns={total_column: 'Total Value'})
                 
                 # Sort by quantity and get top 10
                 top_skus_qty = sku_summary.nlargest(10, 'Quantity')
                 
                 # Sort by total value and get top 10
-                top_skus_value = sku_summary.nlargest(10, 'Total')
+                top_skus_value = sku_summary.nlargest(10, 'Total Value')
                 
                 col1, col2 = st.columns(2)
                 
@@ -1378,7 +1384,7 @@ def main():
                                 "Total Quantity",
                                 format="%d"
                             ),
-                            "Total": st.column_config.NumberColumn(
+                            "Total Value": st.column_config.NumberColumn(
                                 "Total Value",
                                 format="$%.2f"
                             )
@@ -1397,7 +1403,7 @@ def main():
                                 "Total Quantity",
                                 format="%d"
                             ),
-                            "Total": st.column_config.NumberColumn(
+                            "Total Value": st.column_config.NumberColumn(
                                 "Total Value",
                                 format="$%.2f"
                             )
@@ -1425,6 +1431,10 @@ def main():
                         ),
                         "Shipping": st.column_config.NumberColumn(
                             "Shipping",
+                            format="$%.2f"
+                        ),
+                        "Line Item Total": st.column_config.NumberColumn(
+                            "Line Item Total", 
                             format="$%.2f"
                         ),
                         "Total": st.column_config.NumberColumn(
