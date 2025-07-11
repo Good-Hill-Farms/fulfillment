@@ -1548,10 +1548,12 @@ def main():
                 df['Oxnard Status'] = df['Oxnard Status'].replace(['', np.nan], '❌ No Status')
                 oxnard_order_statuses = sorted(df['Oxnard Status'].unique())
                 status_help_text = """
-                - **Confirmed:** Order confirmed with vendor.
-                - **InTransit:** On its way to our warehouse.
-                - **Delivered:** Arrived at our warehouse.
-                - **Imported:** Processed into ColdCart inventory.
+                - **Imported:** Added to ColdCart inventory system
+                - **Confirmed:** Vendor confirmed they will fulfill this order
+                - **InTransit:** On its way to warehouse
+                - **Delivered:** Arrived at warehouse, but not yet in ColdCart
+                - **Pending:** In discussion with vendor, waiting for confirmation
+                - **N/A:** Not able to get fruit because of some reasons
                 """
                 selected_oxnard_order_statuses = st.multiselect(
                     "Filter by Status",
@@ -1683,10 +1685,12 @@ def main():
                 df['Wheeling Status'] = df['Wheeling Status'].replace(['', np.nan], '❌ No Status')
                 wheeling_order_statuses = sorted(df['Wheeling Status'].unique())
                 status_help_text = """
-                - **Confirmed:** Order confirmed with vendor.
-                - **InTransit:** On its way to our warehouse.
-                - **Delivered:** Arrived at our warehouse.
-                - **Imported:** Processed into ColdCart inventory.
+                - **Imported:** Added to ColdCart inventory system
+                - **Confirmed:** Vendor confirmed they will fulfill this order
+                - **InTransit:** On its way to warehouse
+                - **Delivered:** Arrived at warehouse, but not yet in ColdCart
+                - **Pending:** In discussion with vendor, waiting for confirmation
+                - **N/A:** Not able to get fruit because of some reasons
                 """
                 selected_wheeling_order_statuses = st.multiselect(
                     "Filter by Status",
