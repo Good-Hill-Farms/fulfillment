@@ -2655,6 +2655,125 @@ def main():
         else:
             st.warning("No pieces vs lb conversion data available")
 
+    # Display Unfulfilled Orders (same date range as needs/haves)
+    with st.expander("🚨 Unfulfilled Orders", expanded=False):
+        st.subheader("📋 Unfulfilled Orders (Last 7 Days)")
+        st.markdown("*Using the same date range as the Need/Have Summary above*")
+        
+        # Use the same 7-day period as the needs/haves summary
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=7)
+        
+        # Add refresh button
+        if st.button("🔄 Refresh Unfulfilled Orders", key="unfulfilled_orders_refresh"):
+            with st.spinner("Refreshing unfulfilled orders..."):
+                try:
+                    orders_df, unfulfilled_df = load_shopify_orders(start_date=start_date, end_date=end_date, force_refresh=True)
+                    if unfulfilled_df is not None:
+                        st.session_state['unfulfilled_orders_df'] = unfulfilled_df
+                        st.success("✅ Unfulfilled orders refreshed!")
+                    else:
+                        st.warning("⚠️ No unfulfilled orders found")
+                except Exception as e:
+                    st.error(f"❌ Could not refresh unfulfilled orders: {str(e)}")
+        
+        # Get unfulfilled orders from session state or load fresh
+        unfulfilled_df = st.session_state.get('unfulfilled_orders_df')
+        if unfulfilled_df is None:
+            with st.spinner("Loading unfulfilled orders..."):
+                try:
+                    orders_df, unfulfilled_df = load_shopify_orders(start_date=start_date, end_date=end_date)
+                    if unfulfilled_df is not None:
+                        st.session_state['unfulfilled_orders_df'] = unfulfilled_df
+                except Exception as e:
+                    st.error(f"Error loading unfulfilled orders: {str(e)}")
+        
+        if unfulfilled_df is not None and not unfulfilled_df.empty:
+            # Filter out gift items ($0 unit price) for display
+            display_unfulfilled = unfulfilled_df[unfulfilled_df['Unit Price'] > 0].copy()
+            
+            if not display_unfulfilled.empty:
+                # Add filters
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    # SKU filter
+                    skus = sorted(display_unfulfilled['SKU'].dropna().unique())
+                    selected_skus = st.multiselect(
+                        "Filter by SKU",
+                        skus,
+                        default=None,
+                        placeholder="Choose SKUs...",
+                        key="unfulfilled_sku_filter"
+                    )
+                    if selected_skus:
+                        display_unfulfilled = display_unfulfilled[display_unfulfilled['SKU'].isin(selected_skus)]
+                
+                with col2:
+                    # Shipping Method filter
+                    shipping_methods = sorted(display_unfulfilled['Shipping Method'].dropna().unique())
+                    selected_shipping = st.multiselect(
+                        "Filter by Shipping Method",
+                        shipping_methods,
+                        default=None,
+                        placeholder="Choose shipping methods...",
+                        key="unfulfilled_shipping_filter"
+                    )
+                    if selected_shipping:
+                        display_unfulfilled = display_unfulfilled[display_unfulfilled['Shipping Method'].isin(selected_shipping)]
+                
+                with col3:
+                    # Order Name filter
+                    order_names = sorted(display_unfulfilled['Order Name'].dropna().unique())
+                    selected_orders = st.multiselect(
+                        "Filter by Order",
+                        order_names,
+                        default=None,
+                        placeholder="Choose orders...",
+                        key="unfulfilled_order_filter"
+                    )
+                    if selected_orders:
+                        display_unfulfilled = display_unfulfilled[display_unfulfilled['Order Name'].isin(selected_orders)]
+                
+
+                # Display the unfulfilled orders table
+                st.dataframe(
+                    display_unfulfilled.sort_values('Created At', ascending=False),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Created At": st.column_config.DatetimeColumn(
+                            "Order Date",
+                            format="MMM DD, YYYY HH:mm"
+                        ),
+                        "Order Name": st.column_config.TextColumn("Order #"),
+                        "SKU": st.column_config.TextColumn("SKU"),
+                        "Product Title": st.column_config.TextColumn("Product"),
+                        "Variant Title": st.column_config.TextColumn("Variant"),
+                        "Unfulfilled Quantity": st.column_config.NumberColumn(
+                            "Qty Needed",
+                            format="%d"
+                        ),
+                        "Unit Price": st.column_config.NumberColumn(
+                            "Unit Price",
+                            format="$%.2f"
+                        ),
+                        "Line Item Total": st.column_config.NumberColumn(
+                            "Line Total",
+                            format="$%.2f"
+                        ),
+                        "Delivery Date": st.column_config.TextColumn("Delivery Date"),
+                        "Shipping Method": st.column_config.TextColumn("Shipping Method"),
+                        "Tags": st.column_config.TextColumn("Tags")
+                    }
+                )
+                
+
+            else:
+                st.info("No unfulfilled orders with paid items found (only gift items with $0 price)")
+        else:
+            st.warning("No unfulfilled orders data available")
+
     # Display Orders with Fulfillment Status
     with st.expander("📦 Shopify Orders by Fulfillment Status", expanded=False):
         st.subheader("🛍️ Recent Shopify Orders")
