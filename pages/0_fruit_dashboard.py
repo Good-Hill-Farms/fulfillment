@@ -183,9 +183,18 @@ def load_shopify_orders(start_date=None, end_date=None, force_refresh=False):
         return load_shopify_orders(start_date, end_date, force_refresh=True)
 
 def calculate_wow_change(prev_value, current_value):
-    """Calculate week-over-week percentage change"""
-    if pd.isna(prev_value) or pd.isna(current_value) or prev_value == 0:
+    """Calculate week-over-week percentage change with better handling of edge cases"""
+    if pd.isna(prev_value) or pd.isna(current_value):
         return None
+    
+    # Handle zero or very small previous values to avoid extreme percentages
+    if abs(prev_value) < 0.01:  # Very small number threshold
+        if abs(current_value) < 0.01:
+            return 0.0  # Both are essentially zero
+        else:
+            # When previous is ~0 but current isn't, calculate absolute change instead
+            return None  # Will be handled as "new value" in display
+    
     return ((current_value - prev_value) / abs(prev_value)) * 100
 
 def apply_global_filters(df, filters):
@@ -674,156 +683,7 @@ def main():
     # Apply global filters to main dataframe
     df_filtered = apply_global_filters(df, filters)
 
-    # Display Week over Week Data
-    with st.expander("📊 Week over Week Analysis", expanded=False):
-        wow_df = st.session_state.get('wow_df')
-        if wow_df is not None and not wow_df.empty:
-            st.markdown("""
-            ### How to use Week over Week Analysis:
-            1. Select two date ranges to compare using the dropdown below
-            2. The most recent two weeks are selected by default
-            3. The "Change" column shows the percentage change from the earlier week (left) to the later week (right)
-            4. A positive change (green) means an increase, negative (red) means a decrease
-            """)
-
-            # Add date range filter
-            def parse_date_for_sorting(date_range):
-                try:
-                    # Split and clean the date string
-                    start_date = date_range.split('-')[0].strip()
-                    return pd.to_datetime(start_date, format='%m/%d')
-                except:
-                    # Return a minimum date for any unparseable dates
-                    return pd.Timestamp.min
-
-            def format_date_range(date_range):
-                """Convert '6/29-7/5' to 'June 29/July 5'"""
-                try:
-                    start, end = date_range.split('-')
-                    start = pd.to_datetime(start.strip(), format='%m/%d')
-                    end = pd.to_datetime(end.strip(), format='%m/%d')
-                    return f"{start.strftime('%B')} {start.day}/{end.strftime('%B')} {end.day}"
-                except:
-                    return date_range
-
-            # Sort date ranges chronologically (oldest to newest)
-            date_ranges = sorted(wow_df['Date Range'].unique(), 
-                               key=parse_date_for_sorting)
-            
-            # Create a mapping of formatted dates to original dates
-            date_range_mapping = {format_date_range(dr): dr for dr in date_ranges}
-            formatted_ranges = list(date_range_mapping.keys())
-            
-            # Get the last two weeks for default selection
-            default_ranges = formatted_ranges[-2:] if len(formatted_ranges) > 1 else formatted_ranges
-            
-            selected_formatted_ranges = st.multiselect(
-                "Select Date Ranges to Compare",
-                formatted_ranges,
-                default=default_ranges,
-                placeholder="Choose two weeks to compare...",
-                help="Select two date ranges to compare. Earlier week will be shown on the left, later week on the right."
-            )
-            
-            # Convert back to original date ranges
-            selected_ranges = [date_range_mapping[fr] for fr in selected_formatted_ranges]
-            
-            if selected_ranges:
-                filtered_df = wow_df[wow_df['Date Range'].isin(selected_ranges)]
-                
-                # Sort ranges chronologically (older to newer)
-                sorted_ranges = sorted(selected_ranges, key=parse_date_for_sorting)
-                
-                # Pivot the data for better comparison
-                pivot_df = filtered_df.pivot(
-                    index='Metric',
-                    columns='Date Range',
-                    values='Value'
-                ).reset_index()
-                
-                # Reorder columns to show previous week first
-                column_order = ['Metric'] + sorted_ranges
-                pivot_df = pivot_df[column_order]
-                
-                # Calculate week-over-week changes if we have at least 2 ranges selected
-                if len(sorted_ranges) >= 2:
-                    for i in range(len(sorted_ranges)-1):
-                        prev_range = sorted_ranges[i]
-                        current_range = sorted_ranges[i+1]
-                        formatted_prev = format_date_range(prev_range)
-                        formatted_curr = format_date_range(current_range)
-                        col_name = f"Change ({formatted_prev} → {formatted_curr})"
-                        pivot_df[col_name] = pivot_df.apply(
-                            lambda row: calculate_wow_change(
-                                row[prev_range], 
-                                row[current_range]
-                            ) if pd.notna(row[prev_range]) and pd.notna(row[current_range]) else None,
-                            axis=1
-                        )
-                
-                # Display the data
-                column_config = {
-                    "Metric": st.column_config.TextColumn(
-                        "Metric",
-                        help="Performance metric"
-                    )
-                }
-                
-                # Add range columns with formatted names
-                for range_name in sorted_ranges:
-                    formatted_name = format_date_range(range_name)
-                    column_config[range_name] = st.column_config.NumberColumn(
-                        formatted_name,
-                        format="%.2f"
-                    )
-                
-                # Add change columns if we have multiple ranges
-                if len(sorted_ranges) >= 2:
-                    for i in range(len(sorted_ranges)-1):
-                        prev_range = sorted_ranges[i]
-                        current_range = sorted_ranges[i+1]
-                        formatted_prev = format_date_range(prev_range)
-                        formatted_curr = format_date_range(current_range)
-                        change_col = f"Change ({formatted_prev} → {formatted_curr})"
-                        column_config[f"Change ({prev_range} → {current_range})"] = st.column_config.NumberColumn(
-                            change_col,
-                            format="+%.1f%%"
-                        )
-                
-                st.dataframe(
-                    pivot_df,
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config=column_config
-                )
-
-                # Display summary metrics
-                st.markdown("### Key Insights")
-                if len(selected_ranges) >= 2:
-                    latest_range = sorted_ranges[-1]
-                    prev_range = sorted_ranges[-2]
-                    
-                    col1, col2, col3 = st.columns(3)
-                    metrics_to_show = pivot_df['Metric'].tolist()[:3]  # Show first 3 metrics
-                    
-                    for i, (col, metric) in enumerate(zip([col1, col2, col3], metrics_to_show)):
-                        with col:
-                            current_val = pivot_df[pivot_df['Metric'] == metric][latest_range].iloc[0]
-                            prev_val = pivot_df[pivot_df['Metric'] == metric][prev_range].iloc[0]
-                            delta = calculate_wow_change(prev_val, current_val)
-                            
-                            st.metric(
-                                metric,
-                                f"{current_val:,.2f}",
-                                f"{delta:+.1f}%" if pd.notna(delta) else None,
-                                delta_color="normal"
-                            )
-            else:
-                st.warning("Please select at least one date range to display data.")
-        else:
-            st.warning("No Week over Week data available")
-
-    # Display Picklist Data
+    # Display Picklist Data - MOVED TO FIRST POSITION
     with st.expander("📋 Current Projections Data", expanded=False):
         st.markdown("""
         ### Color Legend:
@@ -909,6 +769,477 @@ def main():
                     st.metric("Products with Needs", format_number(products_with_needs))
         else:
             st.warning("No picklist data available")
+
+    # Display Week over Week Data
+    with st.expander("📊 Week over Week Analysis", expanded=False):
+        wow_df = st.session_state.get('wow_df')
+        if wow_df is not None and not wow_df.empty:
+            st.markdown("""
+            ### How to use Week over Week Analysis:
+            1. Select two date ranges to compare using the dropdown below
+            2. The most recent two weeks are selected by default
+            3. The "Change" column shows the percentage change from the earlier week (left) to the later week (right)
+            4. A positive change (green) means an increase, negative (red) means a decrease
+            """)
+
+            # Add date range filter
+            def parse_date_for_sorting(date_range):
+                try:
+                    # Split and clean the date string
+                    start_date = date_range.split('-')[0].strip()
+                    return pd.to_datetime(start_date, format='%m/%d')
+                except:
+                    # Return a minimum date for any unparseable dates
+                    return pd.Timestamp.min
+
+            def format_date_range(date_range):
+                """Convert '6/29-7/5' to 'June 29/July 5'"""
+                try:
+                    start, end = date_range.split('-')
+                    start = pd.to_datetime(start.strip(), format='%m/%d')
+                    end = pd.to_datetime(end.strip(), format='%m/%d')
+                    return f"{start.strftime('%B')} {start.day}/{end.strftime('%B')} {end.day}"
+                except:
+                    return date_range
+
+            # Sort date ranges chronologically (oldest to newest)
+            date_ranges = sorted(wow_df['Date Range'].unique(), 
+                               key=parse_date_for_sorting)
+            
+            # Create a mapping of formatted dates to original dates
+            date_range_mapping = {format_date_range(dr): dr for dr in date_ranges}
+            formatted_ranges = list(date_range_mapping.keys())
+            
+            # Get the last two weeks for default selection
+            default_ranges = formatted_ranges[-2:] if len(formatted_ranges) > 1 else formatted_ranges
+            
+            selected_formatted_ranges = st.multiselect(
+                "Select Date Ranges to Compare",
+                formatted_ranges,
+                default=default_ranges,
+                placeholder="Choose two weeks to compare...",
+                help="Select two date ranges to compare. Earlier week will be shown on the left, later week on the right."
+            )
+            
+            # Convert back to original date ranges
+            selected_ranges = [date_range_mapping[fr] for fr in selected_formatted_ranges]
+            
+            # Add metric filter with logical groupings
+            if selected_ranges:  # Only show metric filter if date ranges are selected
+                all_metrics = sorted(wow_df['Metric'].unique())
+                
+                # Define the exact metric order as specified
+                preferred_metric_order = [
+                    "Delivered Weight - OX",
+                    "Delivered Weight - WH", 
+                    "TOTAL delivered weight ( )",
+                    "Estimated cost - OX",
+                    "Estimated cost - WH",
+                    "TOTAL fruit cost",
+                    "Last week inventory - OX",
+                    "Last week inventory - WH",
+                    "Total inventory ( )",
+                    "Estimated Inventory cost - OX",
+                    "Estimated Inventory cost - WH",
+                    "Total inventory cost",
+                    "TOTAL delivered + last inventory ( )",
+                    "TOTAL delivered + last inventory cost",
+                    "EOW Inventory - OX",
+                    "EOW Inventory - WH",
+                    "TOTAL EOW Inventory",
+                    "TOTAL EOW Inventory cost",
+                    "New Culls - OX",
+                    "New Culls - WH",
+                    "TOTAL New culls",
+                    "New cull cost",
+                    "Aged Culls - OX",
+                    "Aged Culls - WH",
+                    "TOTAL Aged culls",
+                    "Aged cull cost",
+                    "TOTAL CULLS",
+                    "TOTAL CULLS Cost",
+                    "CULL RATE",
+                    "INVENTORY LEFT",
+                    "TOTAL FULFILLED WEIGHT ( )",
+                    "FULFILLED FRUIT RATE",
+                    "FULFILLED NET SALES",
+                    "TOTAL FULFILLED cost",
+                    "FULFILLED FRUIT EXPENSE %",
+                    "OVER-UNDER PACK ",
+                    "OVERPACK Cost estimated",
+                    "OVERPACK RATE",
+                    "TRANSPORT Cost",
+                    "TRANSPORT %",
+                    "AGG INVOICED",
+                    "AGG INVOICED %"
+                ]
+                
+                # Quick action buttons for metric selection
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    if st.button("✅ All Metrics", help="Select all metrics"):
+                        st.session_state['metric_action'] = 'select_all'
+                        st.rerun()
+                with col2:
+                    if st.button("📊 Rates Only", help="Show only rate/percentage metrics"):
+                        st.session_state['metric_action'] = 'rates_only'
+                        st.rerun()
+                with col3:
+                    if st.button("💰 Costs Only", help="Show only cost/financial metrics"):
+                        st.session_state['metric_action'] = 'costs_only'
+                        st.rerun()
+                with col4:
+                    if st.button("📦 Weights Only", help="Show only weight/inventory metrics"):
+                        st.session_state['metric_action'] = 'weights_only'
+                        st.rerun()
+                
+                # Handle quick actions and determine selected metrics
+                action = st.session_state.get('metric_action', None)
+                
+                if action == 'select_all':
+                    selected_metrics = [m for m in preferred_metric_order if m in all_metrics]
+                elif action == 'rates_only':
+                    selected_metrics = [m for m in preferred_metric_order if m in all_metrics and any(word in m.lower() for word in ['rate', '%', 'left'])]
+                elif action == 'costs_only':
+                    selected_metrics = [m for m in preferred_metric_order if m in all_metrics and any(word in m.lower() for word in ['cost', 'expense', 'invoiced', 'sales'])]
+                elif action == 'weights_only':
+                    selected_metrics = [m for m in preferred_metric_order if m in all_metrics and any(word in m.lower() for word in ['weight', 'inventory', 'delivered', 'fulfilled', 'culls', 'pack'])]
+                else:
+                    # Default to all metrics in preferred order
+                    selected_metrics = [m for m in preferred_metric_order if m in all_metrics]
+                
+                # Clear the action after use
+                if action:
+                    del st.session_state['metric_action']
+                
+                # Show selection summary
+                st.info(f"📈 **{len(selected_metrics)} metrics selected** | Click buttons above to filter metrics")
+                
+            if selected_ranges and selected_metrics:
+                filtered_df = wow_df[
+                    (wow_df['Date Range'].isin(selected_ranges)) & 
+                    (wow_df['Metric'].isin(selected_metrics))
+                ]
+                
+                # Sort ranges chronologically (older to newer)
+                sorted_ranges = sorted(selected_ranges, key=parse_date_for_sorting)
+                
+                # Use the preferred metric order (exact order as specified)
+                available_metrics_in_data = filtered_df['Metric'].unique()
+                original_metric_order = [m for m in preferred_metric_order if m in available_metrics_in_data]
+                
+                # Pivot the data for better comparison
+                pivot_df = filtered_df.pivot(
+                    index='Metric',
+                    columns='Date Range',
+                    values='Value'
+                ).reset_index()
+                
+                # Restore original metric order from the Google Sheet
+                pivot_df['Metric'] = pd.Categorical(pivot_df['Metric'], categories=original_metric_order, ordered=True)
+                pivot_df = pivot_df.sort_values('Metric').reset_index(drop=True)
+                
+                # Reorder columns to show previous week first
+                column_order = ['Metric'] + sorted_ranges
+                pivot_df = pivot_df[column_order]
+                
+                # Format values with appropriate units based on metric type
+                display_pivot_df = pivot_df.copy()
+                
+                # Convert numeric columns to object type to allow string formatting
+                for date_range in sorted_ranges:
+                    if date_range in display_pivot_df.columns:
+                        display_pivot_df[date_range] = display_pivot_df[date_range].astype('object')
+                
+                for idx, row in display_pivot_df.iterrows():
+                    metric = row['Metric']
+                    
+                    # Get formatting info for this metric from the original data
+                    metric_info = filtered_df[filtered_df['Metric'] == metric].iloc[0] if not filtered_df[filtered_df['Metric'] == metric].empty else None
+                    
+                    if metric_info is not None:
+                        is_percentage = metric_info['Is Percentage']
+                        is_currency = metric_info['Is Currency']
+                        
+                        # Format all date range columns for this metric
+                        for date_range in sorted_ranges:
+                            if date_range in display_pivot_df.columns:
+                                value = display_pivot_df.at[idx, date_range]
+                                if pd.notna(value):
+                                    if is_percentage:
+                                        display_pivot_df.at[idx, date_range] = f"{value:.1f}%"
+                                    elif is_currency:
+                                        display_pivot_df.at[idx, date_range] = f"${value:,.0f}"
+                                    else:
+                                        # If it's just a number (no $ or %), it's weight in lb
+                                        display_pivot_df.at[idx, date_range] = f"{value:,.0f} lb"
+                
+                # Calculate week-over-week changes if we have at least 2 ranges selected
+                if len(sorted_ranges) >= 2:
+                    for i in range(len(sorted_ranges)-1):
+                        prev_range = sorted_ranges[i]
+                        current_range = sorted_ranges[i+1]
+                        formatted_prev = format_date_range(prev_range)
+                        formatted_curr = format_date_range(current_range)
+                        col_name = f"Change ({formatted_prev} → {formatted_curr})"
+                        
+                        # Calculate changes using original numeric values
+                        changes = pivot_df.apply(
+                            lambda row: calculate_wow_change(
+                                row[prev_range], 
+                                row[current_range]
+                            ) if pd.notna(row[prev_range]) and pd.notna(row[current_range]) else None,
+                            axis=1
+                        )
+                        
+                        # Format changes as percentages with arrows and add to display dataframe
+                        def format_change_with_arrow(x):
+                            if pd.isna(x):
+                                return ""
+                            if x > 0:
+                                return f"↗️ +{x:.1f}%"
+                            elif x < 0:
+                                return f"↘️ {x:.1f}%"
+                            else:
+                                return f"→ {x:.1f}%"
+                        
+                        display_pivot_df[col_name] = changes.apply(format_change_with_arrow).astype('object')
+                
+                # Make metric names more visual with icons
+                def add_metric_icon(metric):
+                    metric = metric.replace('**', '')  # Remove any existing markdown
+                    if 'weight' in metric.lower() or 'delivered' in metric.lower():
+                        return f"📦 {metric}"
+                    elif 'cost' in metric.lower() or 'expense' in metric.lower() or 'sales' in metric.lower() or 'invoiced' in metric.lower():
+                        return f"💰 {metric}"
+                    elif 'inventory' in metric.lower():
+                        return f"📋 {metric}"
+                    elif 'cull' in metric.lower():
+                        return f"🗑️ {metric}"
+                    elif 'rate' in metric.lower() or '%' in metric.lower():
+                        return f"📊 {metric}"
+                    elif 'transport' in metric.lower():
+                        return f"🚛 {metric}"
+                    elif 'fulfilled' in metric.lower():
+                        return f"✅ {metric}"
+                    elif 'pack' in metric.lower():
+                        return f"📦 {metric}"
+                    else:
+                        return f"📈 {metric}"
+                
+                display_pivot_df['Metric'] = display_pivot_df['Metric'].apply(add_metric_icon)
+                
+                # Apply color blocking to group related metrics
+                def style_color_blocks(df):
+                    def apply_color_blocks(row):
+                        metric_name = row['Metric']
+                        
+                        # Define color blocks for metric groups
+                        if any(keyword in metric_name for keyword in ['Delivered Weight', 'TOTAL delivered weight']):
+                            return ['background-color: #f3e5f5; color: #4a148c'] * len(row)  # Light purple - Delivered
+                        elif any(keyword in metric_name for keyword in ['Estimated cost', 'TOTAL fruit cost']):
+                            return ['background-color: #e8f5e8; color: #1b5e20'] * len(row)  # Light green - Costs
+                        elif any(keyword in metric_name for keyword in ['Last week inventory', 'Total inventory']):
+                            return ['background-color: #fff3e0; color: #e65100'] * len(row)  # Light orange - Inventory
+                        elif any(keyword in metric_name for keyword in ['Estimated Inventory cost', 'Total inventory cost']):
+                            return ['background-color: #e0f2f1; color: #00695c'] * len(row)  # Light teal - Inventory Costs
+                        elif any(keyword in metric_name for keyword in ['TOTAL delivered + last inventory', 'TOTAL delivered + last inventory cost']):
+                            return ['background-color: #e1f5fe; color: #01579b'] * len(row)  # Light cyan - Combined
+                        elif any(keyword in metric_name for keyword in ['EOW Inventory', 'TOTAL EOW Inventory']):
+                            return ['background-color: #fce4ec; color: #880e4f'] * len(row)  # Light pink - EOW
+                        elif any(keyword in metric_name for keyword in ['New Culls', 'TOTAL New culls', 'New cull cost']):
+                            return ['background-color: #ffebee; color: #b71c1c'] * len(row)  # Light red - New Culls
+                        elif any(keyword in metric_name for keyword in ['Aged Culls', 'TOTAL Aged culls', 'Aged cull cost']):
+                            return ['background-color: #fff8e1; color: #f57f17'] * len(row)  # Light yellow - Aged Culls
+                        elif any(keyword in metric_name for keyword in ['TOTAL CULLS', 'CULL RATE', 'INVENTORY LEFT']):
+                            return ['background-color: #f1f8e9; color: #33691e'] * len(row)  # Light lime - Cull Summary
+                        elif any(keyword in metric_name for keyword in ['TOTAL FULFILLED', 'FULFILLED FRUIT RATE', 'FULFILLED NET SALES', 'FULFILLED FRUIT EXPENSE']):
+                            return ['background-color: #e8eaf6; color: #1a237e'] * len(row)  # Light indigo - Fulfillment
+                        elif any(keyword in metric_name for keyword in ['OVER-UNDER PACK', 'OVERPACK']):
+                            return ['background-color: #f9fbe7; color: #827717'] * len(row)  # Light lime green - Packing
+                        elif any(keyword in metric_name for keyword in ['TRANSPORT', 'AGG INVOICED']):
+                            return ['background-color: #efebe9; color: #3e2723'] * len(row)  # Light brown - Transport/Invoicing
+                        else:
+                            return [''] * len(row)  # No styling for unmatched metrics
+                    
+                    return df.style.apply(apply_color_blocks, axis=1)
+                
+                # Display the data
+                column_config = {
+                    "Metric": st.column_config.TextColumn(
+                        "📊 Metric",
+                        help="Performance metrics with visual indicators"
+                    )
+                }
+                
+                # Add range columns with formatted names (now as text since they include units)
+                for range_name in sorted_ranges:
+                    formatted_name = format_date_range(range_name)
+                    column_config[range_name] = st.column_config.TextColumn(
+                        formatted_name,
+                        help="Values formatted with appropriate units ($, %, or numeric)"
+                    )
+                
+                # Add change columns if we have multiple ranges
+                if len(sorted_ranges) >= 2:
+                    for i in range(len(sorted_ranges)-1):
+                        prev_range = sorted_ranges[i]
+                        current_range = sorted_ranges[i+1]
+                        formatted_prev = format_date_range(prev_range)
+                        formatted_curr = format_date_range(current_range)
+                        change_col = f"Change ({formatted_prev} → {formatted_curr})"
+                        column_config[change_col] = st.column_config.TextColumn(
+                            f"📈 {change_col}",
+                            help="Percentage change between periods (↗️ increase, ↘️ decrease)"
+                        )
+                
+                st.dataframe(
+                    style_color_blocks(display_pivot_df),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config=column_config
+                )
+
+                # Display summary metrics - Focus on Key Rate Metrics
+                st.markdown("### 📊 Key Rate Insights")
+                if len(selected_ranges) >= 2:
+                    latest_range = sorted_ranges[-1]
+                    prev_range = sorted_ranges[-2]
+                    
+                    # Find rate metrics to display
+                    rate_metrics = []
+                    for metric in pivot_df['Metric'].tolist():
+                        metric_lower = metric.lower()
+                        if 'rate' in metric_lower or '%' in metric_lower or 'left' in metric_lower:
+                            rate_metrics.append(metric)
+                    
+                    # Show top rate metrics (up to 4)
+                    priority_rates = []
+                    for priority in ['CULL RATE', 'FULFILLED FRUIT RATE', 'OVERPACK RATE', 'AGG INVOICED %', 'TRANSPORT %', 'FULFILLED FRUIT EXPENSE %']:
+                        for metric in rate_metrics:
+                            if priority in metric:
+                                priority_rates.append(metric)
+                                break
+                    
+                    # Take up to 4 rate metrics
+                    metrics_to_show = priority_rates[:4] if priority_rates else rate_metrics[:4]
+                    
+                    if metrics_to_show:
+                        # Create columns based on number of metrics (2-4)
+                        if len(metrics_to_show) == 2:
+                            cols = st.columns(2)
+                        elif len(metrics_to_show) == 3:
+                            cols = st.columns(3)
+                        else:
+                            cols = st.columns(4)
+                        
+                        for i, (col, metric) in enumerate(zip(cols, metrics_to_show)):
+                            with col:
+                                current_val = pivot_df[pivot_df['Metric'] == metric][latest_range].iloc[0]
+                                prev_val = pivot_df[pivot_df['Metric'] == metric][prev_range].iloc[0]
+                                delta = calculate_wow_change(prev_val, current_val)
+                                
+                                # Get formatting info for this metric
+                                metric_info = filtered_df[filtered_df['Metric'] == metric].iloc[0] if not filtered_df[filtered_df['Metric'] == metric].empty else None
+                                
+                                # Format the metric name for display (remove icons if present)
+                                clean_metric = metric.replace('📊 ', '').replace('📈 ', '')
+                                
+                                if metric_info is not None:
+                                    is_percentage = metric_info['Is Percentage']
+                                    is_currency = metric_info['Is Currency']
+                                    
+                                    if is_percentage:
+                                        formatted_val = f"{current_val:.1f}%"
+                                    elif is_currency:
+                                        formatted_val = f"${current_val:,.0f}"
+                                    else:
+                                        # If it's just a number (no $ or %), it's weight in lb
+                                        formatted_val = f"{current_val:,.0f} lb"
+                                else:
+                                    formatted_val = f"{current_val:,.1f}%"  # Default to percentage for rates
+                                
+                                # Create delta display with clear business performance indicators
+                                if pd.notna(delta):
+                                    # Determine if this is a "lower is better" metric
+                                    clean_metric_lower = clean_metric.lower()
+                                    lower_is_better = any(word in clean_metric_lower for word in [
+                                        'cull rate', 'overpack rate', 'expense', 'cost', 'transport %'
+                                    ])
+                                    
+                                    # Cap extreme percentage changes to make them more readable
+                                    if abs(delta) > 999:
+                                        # For very large changes, show absolute change instead
+                                        abs_change = current_val - prev_val
+                                        is_good_change = (abs_change < 0 if lower_is_better else abs_change > 0)
+                                        
+                                        if abs_change > 0:
+                                            if is_good_change:
+                                                delta_display = f"✅ +{abs_change:.1f}pts"
+                                            else:
+                                                delta_display = f"⚠️ +{abs_change:.1f}pts"
+                                            delta_color = "normal"
+                                        elif abs_change < 0:
+                                            if not is_good_change:
+                                                delta_display = f"⚠️ {abs_change:.1f}pts"
+                                            else:
+                                                delta_display = f"✅ {abs_change:.1f}pts"
+                                            delta_color = "normal"
+                                        else:
+                                            delta_display = f"➡️ {abs_change:.1f}pts"
+                                            delta_color = "normal"
+                                    else:
+                                        # Normal percentage change display with clear good/bad indicators
+                                        is_good_change = (delta < 0 if lower_is_better else delta > 0)
+                                        
+                                        if delta > 0:
+                                            if is_good_change:
+                                                delta_display = f"✅ +{delta:.1f}%"
+                                            else:
+                                                delta_display = f"⚠️ +{delta:.1f}%"
+                                            delta_color = "normal"
+                                        elif delta < 0:
+                                            if not is_good_change:
+                                                delta_display = f"⚠️ {delta:.1f}%"
+                                            else:
+                                                delta_display = f"✅ {delta:.1f}%"
+                                            delta_color = "normal"
+                                        else:
+                                            delta_display = f"➡️ {delta:.1f}%"
+                                            delta_color = "normal"
+                                else:
+                                    # Handle cases where previous value was near zero
+                                    if pd.notna(prev_val) and pd.notna(current_val):
+                                        if abs(prev_val) < 0.01 and current_val > 0.01:
+                                            delta_display = "🆕 New"
+                                            delta_color = "normal"
+                                        elif abs(current_val) < 0.01 and prev_val > 0.01:
+                                            delta_display = "📉 Stopped"
+                                            delta_color = "normal"
+                                        else:
+                                            delta_display = None
+                                            delta_color = "normal"
+                                    else:
+                                        delta_display = None
+                                        delta_color = "normal"
+                                
+                                st.metric(
+                                    f"📊 {clean_metric}",
+                                    formatted_val,
+                                    delta_display,
+                                    delta_color=delta_color,
+                                    help=f"Change from {format_date_range(prev_range)} to {format_date_range(latest_range)}"
+                                )
+                    else:
+                        st.info("No rate metrics found in the selected data.")
+            elif selected_ranges and not selected_metrics:
+                st.warning("Please select at least one metric to display.")
+            else:
+                st.warning("Please select at least one date range to display data.")
+        else:
+            st.warning("No Week over Week data available")
+
+
 
     # Display Inventory Data
     with st.expander("📦 Inventory Hardcounts", expanded=False):
@@ -1008,7 +1339,7 @@ def main():
                                 format="MMM DD, YYYY"
                             ),
                             "Total Weight": st.column_config.NumberColumn(
-                                "Total Weight",
+                                "Total Weight (lb)",
                                 format="%.2f"
                             ),
                             "STATUS": st.column_config.TextColumn(
@@ -1112,7 +1443,7 @@ def main():
                                 format="MMM DD, YYYY"
                             ),
                             "Total Weight": st.column_config.NumberColumn(
-                                "Total Weight",
+                                "Total Weight (lb)",
                                 format="%.2f"
                             ),
                             "STATUS": st.column_config.TextColumn(

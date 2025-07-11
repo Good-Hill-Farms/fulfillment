@@ -829,7 +829,7 @@ def load_wow_data():
         result = sheet.values().get(
             spreadsheetId=GHF_AGG_FRUIT,
             range=WOW_SHEET,
-            valueRenderOption='UNFORMATTED_VALUE'
+            valueRenderOption='FORMATTED_VALUE'
         ).execute()
         
         values = result.get('values', [])
@@ -843,12 +843,17 @@ def load_wow_data():
         
         # Initialize lists to store data
         data = []
+        metric_order = []  # Track original metric order
         
         # Process each row
         for row_idx, row in enumerate(values[1:], start=1):
             metric = row[0] if row else ""
             if not metric or metric.strip().startswith('#'):  # Skip empty rows or comments
                 continue
+                
+            # Track original metric order
+            if metric not in metric_order:
+                metric_order.append(metric)
                 
             # Extend row with empty values if needed
             row_extended = row + [''] * (len(headers) - len(row))
@@ -864,12 +869,18 @@ def load_wow_data():
                     clean_value = '0'
                 
                 try:
-                    # Convert to float if possible
+                    # Detect formatting from the original value
+                    original_value_str = str(value) if value else ""
+                    has_dollar_sign = '$' in original_value_str
+                    has_percent_sign = '%' in original_value_str
+                    
+                    # Convert to float if possible (remove formatting symbols)
                     numeric_value = float(clean_value.replace('$', '').replace(',', '').replace('%', ''))
                     
-                    # Determine if it's a percentage or currency
-                    is_percentage = '%' in str(value) or metric.lower().endswith(('rate', '%', 'percentage', 'left'))
-                    is_currency = '$' in str(value) or metric.lower().endswith(('cost', 'expense', 'invoiced', 'sales'))
+                    # Determine data type based ONLY on original formatting from Google Sheets
+                    is_percentage = has_percent_sign  # Only if cell has % symbol
+                    is_currency = has_dollar_sign     # Only if cell has $ symbol
+                    is_weight = not is_percentage and not is_currency  # Everything else is weight (lb)
                     
                     # Parse date range
                     date_parts = header.split('-')
@@ -891,7 +902,9 @@ def load_wow_data():
                                 'End Date': end_date,
                                 'Value': numeric_value,
                                 'Is Percentage': is_percentage,
-                                'Is Currency': is_currency
+                                'Is Currency': is_currency,
+                                'Is Weight': is_weight,
+                                'Metric_Order': metric_order.index(metric)  # Add original order index
                             })
                         except ValueError as e:
                             logger.warning(f"Error parsing date range '{header}': {e}")
@@ -906,8 +919,8 @@ def load_wow_data():
             logger.warning("No data was processed successfully")
             return df
             
-        # Sort by date (newest first) and metric
-        df = df.sort_values(['Start Date', 'Metric'], ascending=[False, True])
+        # Sort by date (newest first) and original metric order (preserve sheet order)
+        df = df.sort_values(['Start Date', 'Metric_Order'], ascending=[False, True])
         logger.info(f"Successfully loaded {len(df)} data points across {len(df['Date Range'].unique())} date ranges")
         
         return df
