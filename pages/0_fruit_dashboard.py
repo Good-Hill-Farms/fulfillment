@@ -22,7 +22,7 @@ from utils.google_sheets import (
     load_sku_mappings_from_sheets,
     load_sku_type_data
 )
-from utils.scripts_shopify.shopify_orders_report import update_orders_data, update_unfulfilled_orders
+from utils.scripts_shopify.shopify_orders_report import update_orders_data, update_unfulfilled_orders, update_fulfilled_orders_data
 from utils.inventory_api import get_inventory_data
 import time
 import os
@@ -181,7 +181,7 @@ def check_data_availability(df, date_col, start_date, end_date):
     ]
     return not filtered_df.empty
 
-def load_shopify_orders(start_date=None, end_date=None, force_refresh=False):
+def load_shopify_orders(start_date=None, end_date=None, force_refresh=False, use_simplified_query=False):
     """Load Shopify orders data and store in session state"""
     if start_date is None:
         # Default to last Monday
@@ -192,16 +192,22 @@ def load_shopify_orders(start_date=None, end_date=None, force_refresh=False):
         end_date = datetime.combine(end_date.date(), datetime.max.time())
     
     # Check if we need to refresh the data
-    if force_refresh or 'shopify_orders_df' not in st.session_state:
+    cache_key = f"shopify_orders_df_{'simplified' if use_simplified_query else 'detailed'}"
+    
+    if force_refresh or cache_key not in st.session_state:
         with st.spinner("Loading orders data..."):
             try:
-                orders_df = update_orders_data(start_date=start_date, end_date=end_date)
+                if use_simplified_query:
+                    orders_df = update_fulfilled_orders_data(start_date=start_date, end_date=end_date)
+                else:
+                    orders_df = update_orders_data(start_date=start_date, end_date=end_date)
+                
                 unfulfilled_df = update_unfulfilled_orders(start_date=start_date, end_date=end_date)
                 
                 if orders_df is not None:
-                    st.session_state['shopify_orders_df'] = orders_df
-                    st.session_state['shopify_orders_start_date'] = start_date
-                    st.session_state['shopify_orders_end_date'] = end_date
+                    st.session_state[cache_key] = orders_df
+                    st.session_state[f'shopify_orders_start_date_{"simplified" if use_simplified_query else "detailed"}'] = start_date
+                    st.session_state[f'shopify_orders_end_date_{"simplified" if use_simplified_query else "detailed"}'] = end_date
                 
                 if unfulfilled_df is not None:
                     st.session_state['unfulfilled_orders_df'] = unfulfilled_df
@@ -212,14 +218,14 @@ def load_shopify_orders(start_date=None, end_date=None, force_refresh=False):
                 return None, None
     
     # Return cached data if dates match
-    elif (st.session_state.get('shopify_orders_start_date') == start_date and 
-          st.session_state.get('shopify_orders_end_date') == end_date):
-        return (st.session_state.get('shopify_orders_df'), 
+    elif (st.session_state.get(f'shopify_orders_start_date_{"simplified" if use_simplified_query else "detailed"}') == start_date and 
+          st.session_state.get(f'shopify_orders_end_date_{"simplified" if use_simplified_query else "detailed"}') == end_date):
+        return (st.session_state.get(cache_key), 
                 st.session_state.get('unfulfilled_orders_df'))
     
     # Dates changed, need to refresh
     else:
-        return load_shopify_orders(start_date, end_date, force_refresh=True)
+        return load_shopify_orders(start_date, end_date, force_refresh=True, use_simplified_query=use_simplified_query)
 
 def calculate_wow_change(prev_value, current_value):
     """Calculate week-over-week percentage change with better handling of edge cases"""
@@ -2879,11 +2885,11 @@ def main():
         else:
             st.warning("No unfulfilled orders data available")
 
-    # Display Orders with Fulfillment Status
-    with st.expander("📦 Shopify Orders by Fulfillment Status", expanded=False):
-        st.subheader("🛍️ Recent Shopify Orders")
+    # Display Fulfilled Orders
+    with st.expander("📦 Fulfilled Orders", expanded=False):
+        st.subheader("🛍️ Fulfilled Orders")
         
-        # Add date range controls
+        # Add date range controls - now focused on fulfilled orders
         col1, col2, refresh_col = st.columns([2, 2, 1])
         with col1:
             start_date = st.date_input(
@@ -2906,87 +2912,112 @@ def main():
             st.error("Error: Start date must be before end date")
             return
             
-        # Get orders data directly from Shopify API with selected date range
-        orders_df, _ = load_shopify_orders(
-            start_date=datetime.combine(start_date, datetime.min.time()),
-            end_date=datetime.combine(end_date, datetime.max.time()),
-            force_refresh=refresh
-        )
+        # Get fulfilled orders data using the simplified query
+        with st.spinner("Loading fulfilled orders..."):
+            try:
+                orders_df = update_fulfilled_orders_data(
+                    start_date=datetime.combine(start_date, datetime.min.time()),
+                    end_date=datetime.combine(end_date, datetime.max.time())
+                )
+            except Exception as e:
+                st.error(f"Error loading fulfilled orders: {str(e)}")
+                orders_df = None
         
         if orders_df is not None and not orders_df.empty:
-            # Get all unique statuses from the data
-            all_statuses = sorted(orders_df['Fulfillment Status'].unique())
+            # Since we're only showing fulfilled orders, no status filter needed
+            filtered_df = orders_df
             
-            # Add fulfillment status filter
-            status_filter = st.multiselect(
-                "Filter by Fulfillment Status",
-                options=all_statuses,
-                default=None,  # Show all by default
-                help="Select one or more fulfillment statuses to display"
-            )
-            
-            if status_filter:
-                filtered_df = orders_df[orders_df['Fulfillment Status'].isin(status_filter)]
-            else:
-                filtered_df = orders_df
+            # Add basic filters since customer data is removed
+            if 'SKU' in orders_df.columns:
+                col1, col2 = st.columns(2)
+                with col1:
+                    # SKU filter
+                    skus = sorted([sku for sku in orders_df['SKU'].dropna().unique() if sku])
+                    selected_skus = st.multiselect(
+                        "Filter by SKU",
+                        skus,
+                        default=None,
+                        placeholder="Choose SKUs...",
+                        help="Filter orders by SKU"
+                    )
+                    if selected_skus:
+                        filtered_df = filtered_df[filtered_df['SKU'].isin(selected_skus)]
+                
+                with col2:
+                    # Order tags filter
+                    if 'Tags' in orders_df.columns:
+                        all_tags = set()
+                        for tag_list in orders_df['Tags'].dropna():
+                            if isinstance(tag_list, str) and tag_list:
+                                all_tags.update([tag.strip() for tag in tag_list.split(',') if tag.strip()])
+                        
+                        if all_tags:
+                            selected_tags = st.multiselect(
+                                "Filter by Order Tags",
+                                sorted(all_tags),
+                                default=None,
+                                placeholder="Choose order tags...",
+                                help="Filter orders by order tags"
+                            )
+                            if selected_tags:
+                                # Filter rows where order tags contain any of the selected tags
+                                mask = orders_df['Tags'].apply(
+                                    lambda tags: any(tag in str(tags) for tag in selected_tags) if pd.notna(tags) else False
+                                )
+                                filtered_df = filtered_df[mask]
             
             if not filtered_df.empty:
-                # Show summary statistics
+                # Show summary statistics for fulfilled orders
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
-                    st.metric("Total Orders", len(filtered_df))
+                    st.metric("Fulfilled Orders", len(filtered_df))
                 with col2:
-                    # Use the correct column name for line item totals
-                    total_column = 'Line Item Total' if 'Line Item Total' in filtered_df.columns else 'Total'
-                    total_value = filtered_df[total_column].sum()
-                    st.metric("Total Line Items Value", f"${total_value:,.2f}")
+                    # Use Total column for simplified query
+                    total_value = filtered_df['Total'].sum() if 'Total' in filtered_df.columns else 0
+                    st.metric("Total Value", f"${total_value:,.2f}")
                 with col3:
-                    # Filter out digital/free items for fulfillment time calculation
-                    physical_items = filter_physical_items(filtered_df)
-                    
-                    if not physical_items.empty:
-                        # Convert duration strings to minutes for calculation (only physical items)
-                        duration_minutes = physical_items['Fulfillment Duration'].apply(convert_duration_to_minutes)
-                        avg_minutes = duration_minutes[duration_minutes.notna()].mean()
-                        if not pd.isna(avg_minutes):
-                            st.metric("Avg Fulfillment Time (Physical Items)", format_duration(avg_minutes))
-                        else:
-                            st.metric("Avg Fulfillment Time (Physical Items)", "No data")
-                    else:
-                        st.metric("Avg Fulfillment Time (Physical Items)", "No physical items")
-                with col4:
-                    # Count orders by status with detailed breakdown
-                    status_counts = filtered_df['Fulfillment Status'].value_counts()
-                    
-                    if len(status_counts) > 0:
-                        # Create bullet points for each status
-                        status_bullets = []
-                        for status, count in status_counts.items():
-                            # Clean up status names for display
-                            if 'PARTIALLY' in status:
-                                clean_status = 'Partial Fulfilled'
-                            elif 'UNFULFILLED' in status:
-                                clean_status = 'Pending'
-                            elif 'FULFILLED' in status and 'PARTIALLY' not in status:
-                                clean_status = 'Fulfilled'
-                            elif 'HOLD' in status:
-                                clean_status = 'On Hold'
+                    # Add average fulfillment time for physical items (if we have fulfilled orders with timing data)
+                    if 'Fulfilled At' in filtered_df.columns and 'Created At' in filtered_df.columns:
+                        # Filter out digital items for fulfillment time calculation
+                        physical_items = filter_physical_items(filtered_df)
+                        
+                        if not physical_items.empty:
+                            # Calculate fulfillment time for physical items only
+                            physical_with_times = physical_items.dropna(subset=['Fulfilled At', 'Created At'])
+                            if not physical_with_times.empty:
+                                # Convert string dates to datetime if needed
+                                if physical_with_times['Created At'].dtype == 'object':
+                                    physical_with_times = physical_with_times.copy()
+                                    physical_with_times['Created At'] = pd.to_datetime(physical_with_times['Created At'])
+                                if physical_with_times['Fulfilled At'].dtype == 'object':
+                                    physical_with_times = physical_with_times.copy()
+                                    physical_with_times['Fulfilled At'] = pd.to_datetime(physical_with_times['Fulfilled At'])
+                                
+                                # Calculate fulfillment duration in hours
+                                fulfillment_durations = (physical_with_times['Fulfilled At'] - physical_with_times['Created At']).dt.total_seconds() / 3600
+                                avg_hours = fulfillment_durations.mean()
+                                
+                                if pd.notna(avg_hours):
+                                    if avg_hours >= 24:
+                                        avg_display = f"{avg_hours/24:.1f} days"
+                                    else:
+                                        avg_display = f"{avg_hours:.1f} hours"
+                                    st.metric("Avg Fulfillment Time (Physical)", avg_display)
+                                else:
+                                    st.metric("Avg Fulfillment Time (Physical)", "No data")
                             else:
-                                # Fallback for any other status
-                                clean_status = status.replace('_', ' ').title()
-                            
-                            status_bullets.append(f"• {clean_status}: {count}")
-                        
-                        st.metric(
-                            label="Status Breakdown",
-                            value=""
-                        )
-                        
-                        # Show bullet points in small text below
-                        for bullet in status_bullets:
-                            st.caption(bullet)
+                                st.metric("Avg Fulfillment Time (Physical)", "No timing data")
+                        else:
+                            st.metric("Avg Fulfillment Time (Physical)", "No physical items")
                     else:
-                        st.metric("Status Breakdown", "0 orders")
+                        # Show average order value for fulfilled orders (fallback if no timing data)
+                        total_value = filtered_df['Total'].sum() if 'Total' in filtered_df.columns else 0
+                        avg_order_value = total_value / len(filtered_df) if len(filtered_df) > 0 else 0
+                        st.metric("Avg Order Value", f"${avg_order_value:,.2f}")
+                with col4:
+                    # Show unique SKUs count since customer data is removed
+                    unique_skus = len(filtered_df['SKU'].dropna().unique()) if 'SKU' in filtered_df.columns else 0
+                    st.metric("Unique SKUs", f"{unique_skus:,}")
 
                 # Add Top SKUs Summary
                 st.subheader("📊 Top SKUs (Physical Items Only)")
@@ -2995,14 +3026,17 @@ def main():
                 physical_items = filter_physical_items(filtered_df)
                 
                 if not physical_items.empty:
-                    total_column = 'Line Item Total' if 'Line Item Total' in physical_items.columns else 'Total'
-                    sku_summary = physical_items.groupby('SKU').agg({
+                    # Calculate line item total properly: Unit Price × Quantity
+                    physical_items_calc = physical_items.copy()
+                    physical_items_calc['Line Item Total'] = physical_items_calc['Unit Price'] * physical_items_calc['Quantity']
+                    
+                    sku_summary = physical_items_calc.groupby('SKU').agg({
                         'Quantity': 'sum',
-                        total_column: 'sum'
+                        'Line Item Total': 'sum'
                     }).reset_index()
                     
                     # Rename the total column for consistency
-                    sku_summary = sku_summary.rename(columns={total_column: 'Total Value'})
+                    sku_summary = sku_summary.rename(columns={'Line Item Total': 'Total Value'})
                     
                     # Sort by quantity and get top 10
                     top_skus_qty = sku_summary.nlargest(10, 'Quantity')
@@ -3054,61 +3088,58 @@ def main():
 
                 # Display full orders table
                 st.subheader("📋 All Orders")
+                
+                # Configure columns for fulfilled orders (no customer data)
+                column_config = {
+                    "Created At": st.column_config.DatetimeColumn(
+                        "Order Date",
+                        format="MMM DD, YYYY HH:mm"
+                    ),
+                    "Order Name": st.column_config.TextColumn("Order #"),
+                    "Subtotal": st.column_config.NumberColumn(
+                        "Subtotal",
+                        format="$%.2f"
+                    ),
+                    "Shipping": st.column_config.NumberColumn(
+                        "Shipping",
+                        format="$%.2f"
+                    ),
+                    "Total": st.column_config.NumberColumn(
+                        "Total",
+                        format="$%.2f"
+                    ),
+                    "Delivery Date": st.column_config.TextColumn(
+                        "Delivery Date",
+                        help="Scheduled delivery date"
+                    ),
+                    "SKU": st.column_config.TextColumn(
+                        "SKU",
+                        help="Product SKU"
+                    ),
+                    "Quantity": st.column_config.NumberColumn(
+                        "Quantity",
+                        format="%d"
+                    ),
+                    "Unit Price": st.column_config.NumberColumn(
+                        "Unit Price",
+                        format="$%.2f"
+                    ),
+                    "Tags": st.column_config.TextColumn(
+                        "Order Tags",
+                        help="Order tags"
+                    )
+                }
+                
                 st.dataframe(
                     filtered_df.sort_values('Created At', ascending=False),
                     use_container_width=True,
                     hide_index=True,
-                    column_config={
-                        "Created At": st.column_config.DatetimeColumn(
-                            "Order Date",
-                            format="MMM DD, YYYY HH:mm"
-                        ),
-                        "Fulfilled At": st.column_config.DatetimeColumn(
-                            "Fulfilled Date",
-                            format="MMM DD, YYYY HH:mm"
-                        ),
-                        "Subtotal": st.column_config.NumberColumn(
-                            "Subtotal",
-                            format="$%.2f"
-                        ),
-                        "Shipping": st.column_config.NumberColumn(
-                            "Shipping",
-                            format="$%.2f"
-                        ),
-                        "Line Item Total": st.column_config.NumberColumn(
-                            "Line Item Total", 
-                            format="$%.2f"
-                        ),
-                        "Total": st.column_config.NumberColumn(
-                            "Total",
-                            format="$%.2f"
-                        ),
-                        "Fulfillment Status": st.column_config.TextColumn(
-                            "Status",
-                            help="Current fulfillment status of the order"
-                        ),
-                        "Delivery Date": st.column_config.TextColumn(
-                            "Delivery Date",
-                            help="Scheduled delivery date"
-                        ),
-                        "Shipping Method": st.column_config.TextColumn(
-                            "Shipping Method",
-                            help="Method used to ship the order"
-                        ),
-                        "Customer Type": st.column_config.TextColumn(
-                            "Customer Type",
-                            help="New or Returning customer"
-                        ),
-                        "Tags": st.column_config.TextColumn(
-                            "Tags",
-                            help="Order tags"
-                        )
-                    }
+                    column_config=column_config
                 )
             else:
-                st.warning("No orders found with selected fulfillment status")
+                st.warning("No fulfilled orders found with selected filters")
         else:
-            st.warning("No orders data available")
+            st.warning("No fulfilled orders data available")
 
     df = st.session_state.get('agg_orders_df')
     

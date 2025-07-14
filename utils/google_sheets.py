@@ -10,7 +10,7 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
 # Set up logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)  # Changed from INFO to WARNING
 logger = logging.getLogger(__name__)
 
 # If modifying these scopes, delete the file token.pickle.
@@ -133,7 +133,7 @@ def get_credentials():
         # First, check if we have a local service account file
         json_file = "nca-toolkit-project-446011-67d246fdbccf.json"
         if os.path.exists(json_file):
-            logger.info("Using local service account JSON file")
+            logger.debug("Using local service account JSON file")
             creds = service_account.Credentials.from_service_account_file(json_file, scopes=SCOPES)
             return creds
     except Exception as e:
@@ -235,7 +235,7 @@ def load_agg_orders() -> pd.DataFrame | None:
 
 def _safe_float_convert(value, default=0.0):
     """
-    Safely convert a value to float, handling '#VALUE!' and other invalid cases.
+    Safely convert a value to float, handling Excel/Sheets formula errors and other invalid cases.
 
     Args:
         value: The value to convert
@@ -247,10 +247,14 @@ def _safe_float_convert(value, default=0.0):
     if not value or not str(value).strip():
         return default
     try:
-        # Handle '#VALUE!' and similar Excel error values
-        if isinstance(value, str) and value.startswith("#"):
+        # Handle all common Excel/Google Sheets formula error values
+        str_value = str(value).strip().upper()
+        if str_value.startswith("#") or str_value in ['#REF!', '#VALUE!', '#DIV/0!', '#N/A', '#NAME?', '#NULL!', '#NUM!']:
             return default
-        return float(value)
+        
+        # Remove common formatting characters
+        clean_value = str(value).replace('$', '').replace(',', '').replace('%', '').strip()
+        return float(clean_value)
     except (ValueError, TypeError):
         return default
 
@@ -265,10 +269,10 @@ def process_sku_data(data: List[List[Any]], center: str) -> Dict[str, Dict[str, 
     headers = data[0]
     rows = data[1:]
     
-    
-    # Print first 5 rows to see the actual data
-    for i, row in enumerate(rows[:5]):
-        print(f"Row {i+2}: {row}")
+    # Debug: Print first 5 rows to see the actual data (only in debug mode)
+    if logger.isEnabledFor(logging.DEBUG):
+        for i, row in enumerate(rows[:5]):
+            logger.debug(f"Row {i+2}: {row}")
     
     # Initialize result structure
     result = {center: {"singles": {}, "bundles": {}}}
@@ -329,7 +333,7 @@ def process_sku_data(data: List[List[Any]], center: str) -> Dict[str, Dict[str, 
                     # Ensure we have a picklist_sku (inventory SKU)
                     picklist_sku = mapping.get("picklist sku", "")
                     if not picklist_sku:
-                        logger.error(
+                        logger.debug(
                             f"No picklist sku found for single SKU {order_sku}, skipping SKU"
                         )
                         continue  # Skip this SKU instead of falling back
@@ -367,7 +371,7 @@ def load_sku_mappings_from_sheets(center=None):
         dict: Dictionary with warehouse names as top-level keys, each containing 'singles' and 'bundles'
               Format: {"Oxnard": {"singles": {...}, "bundles": {...}}, "Wheeling": {"singles": {...}, "bundles": {...}}}
     """
-    logger.info("Loading all SKU mappings from Google Sheets...")
+    logger.debug("Loading all SKU mappings from Google Sheets...")
 
     # Initialize output structure
     result = {}
@@ -378,7 +382,7 @@ def load_sku_mappings_from_sheets(center=None):
 
         # Process each center
         for current_center in centers:
-            logger.info(f"Processing {current_center} SKU mappings...")
+            logger.debug(f"Processing {current_center} SKU mappings...")
 
             # Get data from appropriate sheet
             sheet_name = f"INPUT_bundles_cvr_{current_center.lower()}"
@@ -393,7 +397,7 @@ def load_sku_mappings_from_sheets(center=None):
             center_data = process_sku_data(data, current_center)
             result.update(center_data)
 
-            logger.info(
+            logger.debug(
                 f"Loaded {len(result[current_center]['singles'])} simple SKUs and {len(result[current_center]['bundles'])} bundles for {current_center}"
             )
 
@@ -415,13 +419,9 @@ def load_sku_mappings_from_sheets(center=None):
         if "bundles" not in result[warehouse_name]:
             result[warehouse_name]["bundles"] = {}
 
-    # Log summary
-    total_singles = sum(len(result[warehouse]["singles"]) for warehouse in result)
-    total_bundles = sum(len(result[warehouse]["bundles"]) for warehouse in result)
-    logger.info(
-        f"Total loaded: {total_singles} singles and {total_bundles} bundles across all warehouses"
+    logger.debug(
+        f"Total loaded: {sum(len(center_data['singles']) for center_data in result.values())} singles and {sum(len(center_data['bundles']) for center_data in result.values())} bundles across all warehouses"
     )
-
     return result
 
 
@@ -452,7 +452,7 @@ def get_fruit_inventory_data(sheet_name: str) -> List[List[Any]]:
 
 def load_inventory_data(sheet_name: str) -> pd.DataFrame | None:
     """Loads inventory data from specified sheet."""
-    logger.info(f"Fetching data from {sheet_name} sheet...")
+    logger.debug(f"Fetching data from {sheet_name} sheet...")
     try:
         values = get_fruit_inventory_data(sheet_name)
         if not values:
@@ -489,7 +489,7 @@ def load_wheeling_inventory() -> pd.DataFrame | None:
 
 def load_pieces_vs_lb_conversion() -> pd.DataFrame | None:
     """Loads the pieces vs lb conversion data."""
-    logger.info("Loading pieces vs lb conversion data...")
+    logger.debug("Loading pieces vs lb conversion data...")
     try:
         creds = get_credentials()
         service = build("sheets", "v4", credentials=creds)
@@ -519,7 +519,7 @@ def load_pieces_vs_lb_conversion() -> pd.DataFrame | None:
 
 def load_all_picklist_v2() -> pd.DataFrame | None:
     """Loads the All Picklist V2 data from GHF Aggregation Dashboard."""
-    logger.info(f"Loading All Picklist V2 data from GHF Aggregation Dashboard...")
+    logger.debug(f"Loading All Picklist V2 data from GHF Aggregation Dashboard...")
     try:
         creds = get_credentials()
         service = build("sheets", "v4", credentials=creds)
@@ -580,8 +580,8 @@ def load_all_picklist_v2() -> pd.DataFrame | None:
             selected_row = []
             for i in selected_indices:
                 value = row[i] if i < len(row) else None
-                # Clean up special values
-                if value in ['#DIV/0!', '#N/A', '#VALUE!', '', None]:
+                # Clean up special values (expanded to include all common Excel/Sheets errors)
+                if value in ['#DIV/0!', '#N/A', '#VALUE!', '#REF!', '#NAME?', '#NULL!', '#NUM!', '', None]:
                     value = '0'
                 elif isinstance(value, str):
                     # Remove any currency symbols, commas and extra spaces
@@ -595,7 +595,7 @@ def load_all_picklist_v2() -> pd.DataFrame | None:
                 selected_row.append(value)
             selected_data.append(selected_row)
         
-        logger.info(f"Found {len(selected_data)} rows with {len(selected_headers)} columns")
+        logger.debug(f"Found {len(selected_data)} rows with {len(selected_headers)} columns")
         
         df = pd.DataFrame(selected_data, columns=selected_headers)
         
@@ -623,7 +623,7 @@ def load_all_picklist_v2() -> pd.DataFrame | None:
         numeric_mask = df[numeric_columns].ne(0).any(axis=1)
         df = df[numeric_mask]
         
-        logger.info(f"Successfully loaded {len(df)} rows from {ALL_PICKLIST_V2_SHEET_NAME}")
+        logger.debug(f"Successfully loaded {len(df)} rows from {ALL_PICKLIST_V2_SHEET_NAME}")
         return df
         
     except Exception as e:
@@ -762,40 +762,47 @@ def get_fruit_tracking_data(sheet_name: str) -> List[List[Any]]:
         return []
 
 def load_orders_new() -> pd.DataFrame | None:
-    """Loads the Orders_new data from GHF Fruit Tracking sheet."""
-    logger.info(f"Loading Orders_new data from GHF Fruit Tracking...")
+    """Load Orders_new data from GHF Fruit Tracking spreadsheet."""
+    logger.debug(f"Loading Orders_new data from GHF Fruit Tracking...")
     try:
-        values = get_fruit_tracking_data(ORDERS_NEW_SHEET_NAME)
+        creds = get_credentials()
+        service = build("sheets", "v4", credentials=creds)
+        
+        sheet = service.spreadsheets()
+        result = (
+            sheet.values()
+            .get(spreadsheetId=GHF_FRUIT_TRACKING, range=ORDERS_NEW_SHEET_NAME)
+            .execute()
+        )
+        
+        values = result.get("values", [])
         if not values:
+            logger.warning(f"No data found in {ORDERS_NEW_SHEET_NAME}")
             return None
-
-        # Get all data first
+            
         headers = values[0]
         data = values[1:]
         
-        # Extract only needed columns using their letter indices
-        needed_indices = [ord(col.upper()) - ord('A') for col in ORDERS_NEW_NEDDED_COLUMNS]
+        # Select only the columns we need (columns A, B, C, D, E)
+        needed_columns = ["A", "B", "C", "D", "E"]
+        max_col_index = min(len(headers), 5)  # Only take first 5 columns
         
-        # Extract only the needed columns from both headers and data
-        selected_headers = [headers[i] for i in needed_indices if i < len(headers)]
+        selected_headers = headers[:max_col_index]
         selected_data = []
+        
         for row in data:
-            # Pad row if it's shorter than headers
-            if len(row) < len(headers):
-                row = row + [''] * (len(headers) - len(row))
-            # Extract only needed columns
-            selected_row = [row[i] if i < len(row) else '' for i in needed_indices]
+            # Ensure row has enough columns
+            if len(row) < max_col_index:
+                row = row + [''] * (max_col_index - len(row))
             
-            # Clean price and cost values
-            if len(selected_row) > 3:  # Price column
-                price_str = str(selected_row[3]).strip()
-                # Remove currency symbols and commas
-                price_str = price_str.replace('$', '').replace(',', '')
-                # Convert to float, defaulting to 0 if invalid
-                try:
-                    selected_row[3] = float(price_str) if price_str else 0
-                except ValueError:
-                    selected_row[3] = 0
+            selected_row = row[:max_col_index]
+            
+            # Clean up the data
+            for i in range(len(selected_row)):
+                if selected_row[i] is None:
+                    selected_row[i] = ''
+                else:
+                    selected_row[i] = str(selected_row[i]).strip()
                     
             if len(selected_row) > 4:  # Total cost column
                 cost_str = str(selected_row[4]).strip()
@@ -816,7 +823,7 @@ def load_orders_new() -> pd.DataFrame | None:
         if len(df.columns) > 0:
             df.iloc[:, 0] = pd.to_datetime(df.iloc[:, 0], errors='coerce')
         
-        logger.info(f"Successfully loaded {len(df)} rows from {ORDERS_NEW_SHEET_NAME}")
+        logger.debug(f"Successfully loaded {len(df)} rows from {ORDERS_NEW_SHEET_NAME}")
         return df
         
     except Exception as e:
@@ -845,11 +852,11 @@ def load_wow_data():
 
         # Get headers (date ranges) from first row
         headers = values[0]
-        logger.info(f"Found {len(headers)} columns in the sheet")
+        logger.debug(f"Found {len(headers)} columns in the sheet")
         
         # Initialize lists to store data
         data = []
-        metric_order = []  # Track original metric order
+        metric_order = []
         
         # Process each row
         for row_idx, row in enumerate(values[1:], start=1):
@@ -871,7 +878,7 @@ def load_wow_data():
                     
                 # Clean and convert the value
                 clean_value = str(value).strip() if value else ""
-                if clean_value.lower() in ['#n/a', '#div/0!', '#div/0', 'n/a', '-', '', '#div/0! (function divide parameter 2 cannot be zero.)', '#div/0! (function divide parameter 2 cannot be zero.)']:
+                if clean_value.lower() in ['#n/a', '#div/0!', '#div/0', 'n/a', '-', '', '#ref!', '#value!', '#name?', '#null!', '#num!', '#div/0! (function divide parameter 2 cannot be zero.)', '#div/0! (function divide parameter 2 cannot be zero.)']:
                     clean_value = '0'
                 
                 try:
@@ -883,40 +890,39 @@ def load_wow_data():
                     # Convert to float if possible (remove formatting symbols)
                     numeric_value = float(clean_value.replace('$', '').replace(',', '').replace('%', ''))
                     
-                    # Determine data type based ONLY on original formatting from Google Sheets
+                    # Determine data type based on original formatting from Google Sheets
                     is_percentage = has_percent_sign  # Only if cell has % symbol
                     is_currency = has_dollar_sign     # Only if cell has $ symbol
                     is_weight = not is_percentage and not is_currency  # Everything else is weight (lb)
                     
-                    # Parse date range
-                    date_parts = header.split('-')
-                    if len(date_parts) == 2:
-                        try:
-                            # Use the current year for all dates
-                            current_year = datetime.now().year
-                            start_date = datetime.strptime(date_parts[0].strip(), '%m/%d').replace(year=current_year)
-                            end_date = datetime.strptime(date_parts[1].strip(), '%m/%d').replace(year=current_year)
-                            
-                            # Handle year wrap-around (e.g., Dec-Jan dates)
-                            if end_date < start_date:
-                                end_date = end_date.replace(year=current_year + 1)
-                            
-                            data.append({
-                                'Metric': metric,
-                                'Date Range': header,
-                                'Start Date': start_date,
-                                'End Date': end_date,
-                                'Value': numeric_value,
-                                'Is Percentage': is_percentage,
-                                'Is Currency': is_currency,
-                                'Is Weight': is_weight,
-                                'Metric_Order': metric_order.index(metric)  # Add original order index
-                            })
-                        except ValueError as e:
-                            logger.warning(f"Error parsing date range '{header}': {e}")
-                            continue
+                    # Parse the date range to get start and end dates
+                    try:
+                        start_date, end_date = parse_date_range(header)
+                    except (ValueError, AttributeError) as date_e:
+                        logger.debug(f"Could not parse date range '{header}': {date_e}")
+                        continue
+                    
+                    # Add to data list
+                    data.append({
+                        'Metric': metric,
+                        'Date Range': header,
+                        'Start Date': start_date,
+                        'End Date': end_date,
+                        'Value': numeric_value,
+                        'Original Value': str(value) if value else "",
+                        'Is Percentage': is_percentage,
+                        'Is Currency': is_currency,
+                        'Is Weight': is_weight,
+                        'Metric_Order': metric_order.index(metric)
+                    })
+                    
                 except (ValueError, TypeError) as e:
-                    logger.warning(f"Error processing value for {metric} at {header}: {e}")
+                    # Only log debug for common Excel/Sheets formula errors
+                    error_str = str(e).lower()
+                    if any(excel_error in error_str for excel_error in ['#ref!', '#value!', '#div/0!', '#n/a']):
+                        logger.debug(f"Skipping formula error for {metric} at {header}: {e}")
+                    else:
+                        logger.warning(f"Error processing value for {metric} at {header}: {e}")
                     continue
 
         # Convert to DataFrame
@@ -927,7 +933,15 @@ def load_wow_data():
             
         # Sort by date (newest first) and original metric order (preserve sheet order)
         df = df.sort_values(['Start Date', 'Metric_Order'], ascending=[False, True])
-        logger.info(f"Successfully loaded {len(df)} data points across {len(df['Date Range'].unique())} date ranges")
+        # Log summary of data issues encountered
+        total_data_points = len(data)
+        successful_data_points = len(df)
+        skipped_points = total_data_points - successful_data_points
+        
+        if skipped_points > 0:
+            logger.debug(f"Processed {successful_data_points} data points, skipped {skipped_points} due to formula errors or invalid data")
+        else:
+            logger.debug(f"Successfully loaded {successful_data_points} data points across {len(df['Date Range'].unique())} date ranges")
         
         return df
 
@@ -936,48 +950,53 @@ def load_wow_data():
         raise
 
 def load_sku_type_data() -> pd.DataFrame | None:
-    """Loads the SKU Type data from INPUT_SKU_TYPE sheet."""
-    logger.info(f"Loading SKU Type data from {INPUT_SKU_TYPE_SHEET_NAME}...")
+    """Load SKU Type data from INPUT_SKU_TYPE sheet."""
+    logger.debug(f"Loading SKU Type data from {INPUT_SKU_TYPE_SHEET_NAME}...")
     try:
-        creds = get_credentials()
-        service = build("sheets", "v4", credentials=creds)
-        
-        sheet = service.spreadsheets()
-        
-        # Create range string to get only the needed columns (A, B, I)
-        range_string = f"{INPUT_SKU_TYPE_SHEET_NAME}!A:I"
-        
-        result = (
-            sheet.values()
-            .get(
-                spreadsheetId=GHF_INVENTORY_ID,
-                range=range_string
-            )
-            .execute()
-        )
-        
-        values = result.get("values", [])
-        if not values:
+        # Get raw data
+        data = get_sheet_data(INPUT_SKU_TYPE_SHEET_NAME)
+        if not data:
             logger.warning(f"No data found in {INPUT_SKU_TYPE_SHEET_NAME}")
             return None
-            
-        # Get headers from first row
-        headers = values[0]
-        data = values[1:]
         
-        # Create column mapping for A, B, I columns
-        needed_indices = [0, 1, 8]  # A=0, B=1, I=8 (0-based indexing)
+        # Get headers
+        headers = data[0] if data else []
+        if not headers:
+            logger.warning("No headers found in SKU Type data")
+            return None
         
-        # Extract only the needed columns
-        selected_headers = []
-        for idx in needed_indices:
-            if idx < len(headers):
-                selected_headers.append(headers[idx])
+        # Convert column letters to indices
+        column_map = {}
+        for i, col_letter in enumerate(INPUT_SKU_TYPE_NEEDED_COLUMNS):
+            if col_letter == "A":
+                column_map[col_letter] = 0
+            elif col_letter == "B":
+                column_map[col_letter] = 1
+            elif col_letter == "I":
+                column_map[col_letter] = 8
             else:
-                logger.warning(f"Column index {idx} not found in headers")
+                # Calculate column index for multi-letter columns
+                if len(col_letter) == 1:
+                    column_map[col_letter] = ord(col_letter) - ord('A')
+                else:
+                    # For columns like AA, AB, etc.
+                    column_map[col_letter] = (ord(col_letter[0]) - ord('A') + 1) * 26 + (ord(col_letter[1]) - ord('A'))
         
+        # Check if needed columns exist
+        needed_indices = []
+        for col in INPUT_SKU_TYPE_NEEDED_COLUMNS:
+            if col in column_map and column_map[col] < len(headers):
+                needed_indices.append(column_map[col])
+            else:
+                logger.warning(f"Column index {column_map.get(col, 'unknown')} not found in headers")
+        
+        if not needed_indices:
+            logger.warning("No valid columns found in SKU Type data")
+            return None
+            
+        # Process data rows
         selected_data = []
-        for row in data:
+        for row in data[1:]:  # Skip header row
             # Pad row if it's shorter than needed
             if len(row) < max(needed_indices) + 1:
                 row = row + [''] * (max(needed_indices) + 1 - len(row))
@@ -1002,7 +1021,7 @@ def load_sku_type_data() -> pd.DataFrame | None:
         # Remove empty rows
         df = df[df['SKU'].str.strip() != '']
         
-        logger.info(f"Successfully loaded {len(df)} rows from {INPUT_SKU_TYPE_SHEET_NAME}")
+        logger.debug(f"Successfully loaded {len(df)} rows from {INPUT_SKU_TYPE_SHEET_NAME}")
         return df
         
     except Exception as e:
