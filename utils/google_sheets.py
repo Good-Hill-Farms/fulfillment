@@ -329,10 +329,10 @@ def process_sku_data(data: List[List[Any]], center: str) -> Dict[str, Dict[str, 
                     # Ensure we have a picklist_sku (inventory SKU)
                     picklist_sku = mapping.get("picklist sku", "")
                     if not picklist_sku:
-                        logger.warning(
-                            f"No picklist sku found for single SKU {order_sku}, using order SKU as fallback"
+                        logger.error(
+                            f"No picklist sku found for single SKU {order_sku}, skipping SKU"
                         )
-                        picklist_sku = order_sku
+                        continue  # Skip this SKU instead of falling back
 
                     result[center]["singles"][order_sku] = {
                         "picklist_sku": picklist_sku,

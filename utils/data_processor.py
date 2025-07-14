@@ -70,7 +70,7 @@ class DataProcessor:
         self.initial_inventory = pd.DataFrame()
         self.current_inventory_state = {}
 
-    def normalize_warehouse_name(self, warehouse_name, log_transformations=True) -> str:
+    def normalize_warehouse_name(self, warehouse_name, log_transformations=True) -> str | None:
         """
         Centralized warehouse name normalization function that handles all variations
         and provides backward compatibility with existing data.
@@ -90,18 +90,8 @@ class DataProcessor:
             str: Standardized warehouse name ("Oxnard" or "Wheeling")
         """
         if not warehouse_name or pd.isna(warehouse_name):
-            standardized_name = "Oxnard"  # Default to Oxnard for missing values
-            if log_transformations:
-                transformation = {
-                    "original": warehouse_name,
-                    "standardized": standardized_name,
-                    "reason": "default_for_missing_value",
-                }
-                self._warehouse_transformations.append(transformation)
-                logger.debug(
-                    f"Warehouse normalization: {warehouse_name} -> {standardized_name} (default for missing value)"
-                )
-            return standardized_name
+            logger.warning(f"Missing or invalid warehouse name: {warehouse_name}")
+            return None  # Return None instead of defaulting to Oxnard
 
         # Convert to string and normalize case for comparison
         original_name = str(warehouse_name)
@@ -175,20 +165,9 @@ class DataProcessor:
             else:
                 reason = "wheeling_variation"
         else:
-            # If no match found, try to infer from first character or default to Oxnard
-            if normalized_input.startswith(("ca", "c")) or any(
-                char in normalized_input for char in ["9"]
-            ):
-                standardized_name = "Oxnard"
-                reason = "inferred_california_to_oxnard"
-            elif normalized_input.startswith(("il", "i")) or any(
-                char in normalized_input for char in ["6"]
-            ):
-                standardized_name = "Wheeling"
-                reason = "inferred_illinois_to_wheeling"
-            else:
-                standardized_name = "Oxnard"  # Default fallback
-                reason = "default_fallback_to_oxnard"
+            # If no match found, be strict - no more inference fallbacks
+            logger.warning(f"Could not determine warehouse for: {original_name}")
+            return None  # Return None instead of guessing
 
         # Log transformation if requested and there was a change
         if log_transformations and original_name != standardized_name:
@@ -1068,12 +1047,14 @@ class DataProcessor:
                 continue
 
             # Get fulfillment center and normalize
-            fulfillment_center = row.get("Fulfillment Center", "Moorpark")
-            fc_key = (
-                self.normalize_warehouse_name(fulfillment_center, log_transformations=True)
-                if fulfillment_center
-                else "Oxnard"
-            )
+            fulfillment_center = row.get("Fulfillment Center")
+            if not fulfillment_center:
+                logger.warning(f"Order {order_id}: No fulfillment center specified, skipping")
+                continue
+            fc_key = self.normalize_warehouse_name(fulfillment_center, log_transformations=True)
+            if fc_key is None:
+                logger.error(f"Order {order_id}: Could not normalize fulfillment center '{fulfillment_center}', skipping")
+                continue
 
             # Create base order data
             order_data = self._create_base_order_data(
@@ -1706,13 +1687,9 @@ class DataProcessor:
         if not sku_column:
             return output_df
 
-        # Load SKU type data for component resolution if needed
+        # Note: SKU type data loading removed to prevent excessive API calls
+        # Component resolution should be handled at mapping level, not during processing
         sku_type_df = None
-        try:
-            from utils.google_sheets import load_sku_type_data
-            sku_type_df = load_sku_type_data()
-        except Exception as e:
-            logger.warning(f"Could not load SKU type data for component resolution: {e}")
 
         for component in bundle_components:
             component_order_data = order_data.copy()
@@ -1778,6 +1755,11 @@ class DataProcessor:
                 shopify_sku=resolved_sku, fulfillment_center=fc_key, sku_mappings=sku_mappings
             )
 
+            # Skip this component if no mapping found
+            if component_inventory_sku is None:
+                logger.error(f"Bundle component {resolved_sku} has no inventory mapping, skipping component")
+                continue
+
             # Update the sku field to use the mapped inventory SKU
             component_order_data["sku"] = component_inventory_sku
 
@@ -1837,6 +1819,11 @@ class DataProcessor:
         inventory_sku = self.map_shopify_to_inventory_sku(
             shopify_sku=shopify_sku, fulfillment_center=fc_key, sku_mappings=sku_mappings
         )
+        
+        # Skip if no mapping found
+        if inventory_sku is None:
+            logger.error(f"Order {row.get('ordernumber', 'unknown')}: Skipping SKU {shopify_sku} - no inventory mapping found")
+            return output_df
 
         # Calculate proper actualqty and Total Pick Weight based on shop quantity and mapping
         warehouse_key = self.normalize_warehouse_name(fc_key)
@@ -1919,29 +1906,44 @@ class DataProcessor:
     def _get_current_balance(
         self, inventory_sku, fc_key, running_balances, inventory_df, sku_column, balance_column
     ):
-        """Get current balance for a SKU with fallback to inventory lookup"""
+        """Get current balance for a SKU with strict warehouse checking - no fallbacks"""
         normalized_warehouse = self.normalize_warehouse_name(fc_key, log_transformations=False)
+        if normalized_warehouse is None:
+            logger.error(f"Could not normalize warehouse '{fc_key}' for inventory lookup")
+            return 0
+            
         composite_key = f"{inventory_sku}|{normalized_warehouse}"
 
+        # Only check the specific warehouse - no fallbacks
         if composite_key in running_balances:
             return running_balances[composite_key]
-        elif inventory_sku in running_balances:
-            return running_balances[inventory_sku]
         else:
-            # Look up in inventory
+            # Look up in inventory for this specific warehouse only
             sku_inventory = inventory_df[inventory_df[sku_column] == inventory_sku]
             if sku_inventory.empty:
+                logger.warning(f"SKU '{inventory_sku}' not found in inventory for warehouse '{normalized_warehouse}'")
                 return 0
 
-            if balance_column and balance_column in sku_inventory.columns:
-                balance = (
-                    float(sku_inventory.iloc[0][balance_column])
-                    if pd.notna(sku_inventory.iloc[0][balance_column])
-                    else 0
-                )
-                running_balances[composite_key] = balance
-                return balance
-
+            # Filter by warehouse if we have warehouse information
+            if 'WarehouseName' in inventory_df.columns:
+                warehouse_filtered = sku_inventory[
+                    sku_inventory['WarehouseName'].apply(
+                        lambda x: self.normalize_warehouse_name(str(x), log_transformations=False) == normalized_warehouse
+                    )
+                ]
+                if warehouse_filtered.empty:
+                    logger.warning(f"SKU '{inventory_sku}' not found in warehouse '{normalized_warehouse}'")
+                    return 0
+                
+                if balance_column and balance_column in warehouse_filtered.columns:
+                    balance = (
+                        float(warehouse_filtered.iloc[0][balance_column])
+                        if pd.notna(warehouse_filtered.iloc[0][balance_column])
+                        else 0
+                    )
+                    running_balances[composite_key] = balance
+                    return balance
+            
             return 0
 
     def _allocate_inventory(
@@ -2596,7 +2598,7 @@ class DataProcessor:
 
     def map_shopify_to_inventory_sku(
         self, shopify_sku, fulfillment_center=None, sku_mappings=None
-    ) -> str:
+    ) -> str | None:
         """
         Maps a Shopify SKU to the corresponding inventory SKU using the Google Sheets mappings.
         This function focuses solely on the SKU mapping logic, following the single responsibility principle.
@@ -2607,7 +2609,7 @@ class DataProcessor:
             sku_mappings (dict, optional): SKU mapping dictionary (if already loaded)
 
         Returns:
-            str: The mapped inventory SKU or the original SKU if no mapping exists
+            str | None: The mapped inventory SKU, or None if no mapping exists
         """
         if not shopify_sku:
             return ""
@@ -2635,8 +2637,8 @@ class DataProcessor:
         # Use provided mappings or load from instance
         mappings = sku_mappings or self.sku_mappings
         if not mappings:
-            logger.warning("No SKU mappings available for mapping Shopify SKU to inventory SKU")
-            return shopify_sku
+            logger.error("No SKU mappings available for mapping Shopify SKU to inventory SKU")
+            return None
 
         # Handle m.* (bundle SKUs) directly - they represent bundles in the inventory
         # They don't have mappings in the mappings section
@@ -2681,9 +2683,9 @@ class DataProcessor:
                         if component.get("component_sku") == shopify_sku:
                             return shopify_sku
 
-        # If still no mapping found, return original SKU
-        logger.info(f"No mapping found for Shopify SKU '{shopify_sku}', using the original SKU")
-        return shopify_sku
+        # If still no mapping found, return None instead of falling back
+        logger.error(f"No mapping found for Shopify SKU '{shopify_sku}' in any warehouse")
+        return None
 
     def _map_sku_to_inventory(
         self,
