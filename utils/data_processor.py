@@ -2617,22 +2617,18 @@ class DataProcessor:
         # Normalize input
         shopify_sku = str(shopify_sku).strip()
 
-        # Special case: SKUs that don't start with "f." or "m." are likely already inventory SKUs from bundle components
-        # This fixes the "No mapping found" errors for bundle component SKUs
-        if not shopify_sku.startswith("f.") and not shopify_sku.startswith("m."):
-            # Check if this SKU appears in inventory directly
-            return shopify_sku
-
-        # If fulfillment center isn't specified, default to both centers
-        fc_keys = []
-        if fulfillment_center:
-            normalized_fc = self.normalize_warehouse_name(fulfillment_center)
-            if normalized_fc.lower() == "oxnard":
-                fc_keys = ["oxnard", "moorpark"]
-            elif normalized_fc.lower() == "wheeling":
-                fc_keys = ["wheeling", "il-wheeling"]
-        else:
-            fc_keys = ["wheeling", "il-wheeling", "oxnard", "moorpark"]
+        # Be strict - require fulfillment center to be specified
+        if not fulfillment_center:
+            logger.error(f"No fulfillment center specified for SKU mapping: {shopify_sku}")
+            return None
+            
+        normalized_fc = self.normalize_warehouse_name(fulfillment_center)
+        if normalized_fc is None:
+            logger.error(f"Could not normalize fulfillment center '{fulfillment_center}' for SKU {shopify_sku}")
+            return None
+            
+        # Only check the specific warehouse - no fallbacks
+        fc_keys = [normalized_fc]
 
         # Use provided mappings or load from instance
         mappings = sku_mappings or self.sku_mappings
@@ -2695,6 +2691,8 @@ class DataProcessor:
         fc_key=None,
         running_balances=None,
     ):
+        # NOTE: This function appears to be legacy code and is not used in current order processing
+        # Current processing uses map_shopify_to_inventory_sku() and _get_current_balance()
         """
         Map order SKU to inventory SKU using various matching strategies.
         Prioritizes exact SKU mappings from the JSON file before attempting any fuzzy matching.
@@ -2893,40 +2891,9 @@ class DataProcessor:
             issue = f"SKU '{sku}' not found in inventory."
             return sku, 0, issue  # Return the SKU as-is with 0 balance
 
-        # STEP 3: If mapping exists but SKU not found in mappings, try direct inventory lookup as fallback
-        # Try exact match in inventory
-        matching_rows = inventory_df[inventory_df[sku_column] == sku]
-
-        if not matching_rows.empty:
-            # Return the first matching SKU and balance
-            inv_sku = matching_rows.iloc[0][sku_column]
-            matched_balance = get_balance_for_sku(inv_sku)
-            logger.info(
-                f"Found exact match in inventory as fallback: '{sku}' with balance {matched_balance}"
-            )
-            # Check if there's enough inventory
-            if matched_balance <= 0:
-                issue = f"No inventory available for {inv_sku}"
-                logger.warning(issue)
-            return inv_sku, matched_balance, issue
-
-        # Try case-insensitive match
-        sku_lower = sku.lower()
-        for inv_sku in inventory_df[sku_column].unique():
-            if inv_sku.lower() == sku_lower:
-                matched_balance = get_balance_for_sku(inv_sku)
-                logger.info(
-                    f"Found case-insensitive match in inventory as fallback: '{sku}' -> '{inv_sku}' with balance {matched_balance}"
-                )
-                # Check if there's enough inventory
-                if matched_balance <= 0:
-                    issue = f"No inventory available for {inv_sku}"
-                    logger.warning(issue)
-                return inv_sku, matched_balance, issue
-
-        # If still no match found
-        logger.warning(f"SKU '{sku}' not found in SKU mappings JSON file or inventory.")
-        issue = f"SKU '{sku}' not found in inventory or mappings."
+        # No more fallbacks - if SKU not found in mappings, return error
+        logger.error(f"SKU '{sku}' not found in SKU mappings for any warehouse.")
+        issue = f"SKU '{sku}' not found in mappings."
         return "", 0, issue
 
     def get_optimal_fulfillment_center(
