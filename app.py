@@ -320,12 +320,44 @@ def main():
 
         # Dashboard Tab
         with dashboard_tab:
-            render_summary_dashboard(
-                st.session_state.processed_orders,
-                st.session_state.inventory_df,
-                st.session_state.processing_stats if "processing_stats" in st.session_state else None,
-                st.session_state.warehouse_performance if "warehouse_performance" in st.session_state else None,
-            )
+            # OPTIMIZATION: Only load dashboard when user explicitly requests it
+            # This prevents expensive dashboard calculations from running on every page load
+            
+            if st.button("📊 Load Dashboard Analytics", type="primary", key="load_dashboard"):
+                st.session_state['dashboard_loaded'] = True
+            
+            if st.session_state.get('dashboard_loaded', False):
+                render_summary_dashboard(
+                    st.session_state.processed_orders,
+                    st.session_state.inventory_df,
+                    st.session_state.processing_stats if "processing_stats" in st.session_state else None,
+                    st.session_state.warehouse_performance if "warehouse_performance" in st.session_state else None,
+                )
+            else:
+                st.info("Click 'Load Dashboard Analytics' to view comprehensive order and inventory analytics.")
+                
+                # Show basic stats without expensive calculations
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    if st.session_state.processed_orders is not None:
+                        order_count = len(st.session_state.processed_orders)
+                        st.metric("📋 Processed Orders", f"{order_count:,}")
+                    else:
+                        st.metric("📋 Processed Orders", "0")
+                
+                with col2:
+                    if st.session_state.inventory_df is not None:
+                        inventory_count = len(st.session_state.inventory_df)
+                        st.metric("📦 Inventory Items", f"{inventory_count:,}")
+                    else:
+                        st.metric("📦 Inventory Items", "0")
+                
+                with col3:
+                    if st.session_state.get('shortage_summary') is not None and not st.session_state.shortage_summary.empty:
+                        shortage_count = len(st.session_state.shortage_summary)
+                        st.metric("⚠️ Shortages", f"{shortage_count:,}")
+                    else:
+                        st.metric("⚠️ Shortages", "0")
     else:
         # Show minimal welcome message for faster loading
         st.info("👋 **Welcome to the AI-Powered Fulfillment Assistant!**")
