@@ -8,9 +8,84 @@ import logging
 load_dotenv()
 logger = logging.getLogger(__name__)
 
+# Import SKU mapping functions
+try:
+    from utils.google_sheets import load_sku_mappings_from_sheets, load_sku_type_data
+except ImportError:
+    logger.warning("Could not import SKU mapping functions")
+    load_sku_mappings_from_sheets = None
+    load_sku_type_data = None
+
 # Shopify setup
 SHOPIFY_ACCESS_TOKEN = os.getenv('SHOPIFY_ACCESS_TOKEN')
 SHOP_URL = os.getenv('SHOP_URL')
+
+def get_product_type_from_sku(sku, sku_mappings=None, sku_type_df=None, failed_skus=None):
+    """
+    Get product type from SKU using the SKU mappings with fallback to SKU type data.
+    
+    Args:
+        sku (str): The SKU to lookup
+        sku_mappings (dict, optional): SKU mappings dictionary
+        sku_type_df (pd.DataFrame, optional): SKU type data for fallback
+        failed_skus (set, optional): Set to track SKUs where product type was not found
+    
+    Returns:
+        str: Product type or 'Unknown' if not found
+    """
+    if not sku or pd.isna(sku):
+        return "Unknown"
+    
+    # Load SKU mappings if not provided
+    if sku_mappings is None:
+        if load_sku_mappings_from_sheets:
+            try:
+                sku_mappings = load_sku_mappings_from_sheets()
+            except Exception as e:
+                logger.debug(f"Could not load SKU mappings: {e}")
+                sku_mappings = None
+        else:
+            sku_mappings = None
+    
+    # Try SKU mappings first
+    if sku_mappings and isinstance(sku_mappings, dict):
+        # Check SKU mappings for both warehouses
+        for location in ['Oxnard', 'Wheeling']:
+            if location in sku_mappings and 'singles' in sku_mappings[location]:
+                if sku in sku_mappings[location]['singles']:
+                    product_type = sku_mappings[location]['singles'][sku].get('pick_type_inventory', 'Unknown')
+                    if product_type and product_type != 'Unknown':
+                        return product_type
+            if location in sku_mappings and 'bundles' in sku_mappings[location]:
+                if sku in sku_mappings[location]['bundles']:
+                    # For bundles, use the first component's product type
+                    components = sku_mappings[location]['bundles'][sku]
+                    if components and len(components) > 0:
+                        product_type = components[0].get('pick_type', 'Unknown')
+                        if product_type and product_type != 'Unknown':
+                            return product_type
+    
+    # Fallback to SKU type data
+    if sku_type_df is None and load_sku_type_data:
+        try:
+            sku_type_df = load_sku_type_data()
+        except Exception as e:
+            logger.debug(f"Could not load SKU type data: {e}")
+            sku_type_df = None
+    
+    if sku_type_df is not None and not sku_type_df.empty:
+        # Look for the SKU in the type data
+        sku_row = sku_type_df[sku_type_df['SKU'] == sku]
+        if not sku_row.empty:
+            product_type = sku_row.iloc[0]['PRODUCT_TYPE']
+            if product_type and str(product_type).strip() and str(product_type).strip() != 'Unknown':
+                return str(product_type).strip()
+    
+    # Track failed SKU lookup
+    if failed_skus is not None and sku and str(sku).strip():
+        failed_skus.add(str(sku).strip())
+    
+    return "Unknown"
 
 def update_fulfilled_orders_data(start_date=None, end_date=None):
     """
@@ -26,8 +101,27 @@ def update_fulfilled_orders_data(start_date=None, end_date=None):
     columns = [
         'Order ID', 'Order Name', 'Created At', 'Subtotal', 'Shipping', 'Total',
         'Discount Code', 'Discount Amount', 'Delivery Date', 
-        'Quantity', 'SKU', 'Unit Price', 'Tags'
+        'Quantity', 'SKU', 'Product Type', 'Unit Price', 'Tags'
     ]
+    
+    # Load SKU mappings for product type lookup
+    sku_mappings = None
+    if load_sku_mappings_from_sheets:
+        try:
+            sku_mappings = load_sku_mappings_from_sheets()
+        except Exception as e:
+            logger.debug(f"Could not load SKU mappings: {e}")
+    
+    # Load SKU type data as fallback
+    sku_type_df = None
+    if load_sku_type_data:
+        try:
+            sku_type_df = load_sku_type_data()
+        except Exception as e:
+            logger.debug(f"Could not load SKU type data: {e}")
+    
+    # Track SKUs where product type was not found
+    failed_skus = set()
     
     try:
         headers = {
@@ -228,6 +322,7 @@ def update_fulfilled_orders_data(start_date=None, end_date=None):
                         delivery_date,
                         quantity,
                         sku,
+                        get_product_type_from_sku(sku, sku_mappings, sku_type_df, failed_skus),
                         unit_price,
                         ', '.join(node.get('tags', []))
                     ])
@@ -240,6 +335,16 @@ def update_fulfilled_orders_data(start_date=None, end_date=None):
             return pd.DataFrame(columns=columns)
             
         df = pd.DataFrame(rows, columns=columns)
+        
+        # Log summary of SKUs without product type
+        if failed_skus:
+            logger.info(f"\n📊 FULFILLED ORDERS - SKUs without Product Type found ({len(failed_skus)} unique SKUs):")
+            for sku in sorted(failed_skus):
+                logger.info(f"  - {sku}")
+            logger.info(f"📊 These SKUs appear in {len(df[df['Product Type'] == 'Unknown'])} order line items")
+        else:
+            logger.info("✅ FULFILLED ORDERS - All SKUs have Product Type mappings!")
+        
         return df
         
     except Exception as e:
@@ -537,7 +642,7 @@ def update_orders_data(start_date=None, end_date=None):
         logger.error(f"\n! Error updating Orders report: {str(e)}")
         return pd.DataFrame(columns=columns)
 
-def update_unfulfilled_orders(start_date=None, end_date=None):
+def update_unfulfilled_orders(start_date=None, end_date=None, all_unfulfilled=False):
     """
     Get unfulfilled orders data
     
@@ -549,10 +654,29 @@ def update_unfulfilled_orders(start_date=None, end_date=None):
     """
     # Define columns for consistent DataFrame structure
     columns = [
-        'Order ID', 'Created At', 'Order Name', 'SKU', 'Product Name',
+        'Order ID', 'Created At', 'Order Name', 'SKU', 'Product Type', 'Product Name',
         'Unfulfilled Quantity', 'Unit Price', 'Line Item Total',
         'Delivery Date', 'Shipping Method', 'Tags'
     ]
+    
+    # Load SKU mappings for product type lookup
+    sku_mappings = None
+    if load_sku_mappings_from_sheets:
+        try:
+            sku_mappings = load_sku_mappings_from_sheets()
+        except Exception as e:
+            logger.debug(f"Could not load SKU mappings: {e}")
+    
+    # Load SKU type data as fallback
+    sku_type_df = None
+    if load_sku_type_data:
+        try:
+            sku_type_df = load_sku_type_data()
+        except Exception as e:
+            logger.debug(f"Could not load SKU type data: {e}")
+    
+    # Track SKUs where product type was not found
+    failed_skus = set()
     
     try:
         headers = {
@@ -560,15 +684,20 @@ def update_unfulfilled_orders(start_date=None, end_date=None):
             'Content-Type': 'application/json'
         }
         
-        # Get date range - default to last 90 days if not specified
-        if end_date is None:
-            end_date = datetime.now()
-        if start_date is None:
-            start_date = end_date - timedelta(days=90)
+        if all_unfulfilled:
+            # Get all unfulfilled orders regardless of creation date
+            date_query = "financial_status:paid NOT cancelled:true (fulfillment_status:unfulfilled OR fulfillment_status:partial)"
+            logger.debug("Fetching all unfulfilled orders (no date filter)")
+        else:
+            # Get date range - default to last 90 days if not specified
+            if end_date is None:
+                end_date = datetime.now()
+            if start_date is None:
+                start_date = end_date - timedelta(days=90)
+                
+            date_query = f"created_at:>='{start_date.strftime('%Y-%m-%d')}' created_at:<='{end_date.strftime('%Y-%m-%d')}' financial_status:paid NOT cancelled:true (fulfillment_status:unfulfilled OR fulfillment_status:partial)"
             
-        date_query = f"created_at:>='{start_date.strftime('%Y-%m-%d')}' created_at:<='{end_date.strftime('%Y-%m-%d')}' financial_status:paid NOT cancelled:true (fulfillment_status:unfulfilled OR fulfillment_status:partial)"
-        
-        logger.debug(f"Fetching unfulfilled orders from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+            logger.debug(f"Fetching unfulfilled orders from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
         
         all_orders = []
         has_next_page = True
@@ -701,6 +830,7 @@ def update_unfulfilled_orders(start_date=None, end_date=None):
                         created_at,
                         order_name,
                         sku,
+                        get_product_type_from_sku(sku, sku_mappings, sku_type_df, failed_skus),
                         product_name,
                         unfulfilled_quantity,
                         unit_price,
@@ -719,6 +849,16 @@ def update_unfulfilled_orders(start_date=None, end_date=None):
             return pd.DataFrame(columns=columns)
             
         df = pd.DataFrame(rows, columns=columns)
+        
+        # Log summary of SKUs without product type
+        if failed_skus:
+            logger.info(f"\n📊 UNFULFILLED ORDERS - SKUs without Product Type found ({len(failed_skus)} unique SKUs):")
+            for sku in sorted(failed_skus):
+                logger.info(f"  - {sku}")
+            logger.info(f"📊 These SKUs appear in {len(df[df['Product Type'] == 'Unknown'])} order line items")
+        else:
+            logger.info("✅ UNFULFILLED ORDERS - All SKUs have Product Type mappings!")
+        
         return df
         
     except Exception as e:

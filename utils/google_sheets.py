@@ -460,7 +460,26 @@ def load_inventory_data(sheet_name: str) -> pd.DataFrame | None:
 
         headers = values[0]
         data = values[1:]
-        df = pd.DataFrame(data, columns=headers)
+        
+        # Log the column count information for debugging
+        logger.info(f"Headers contain {len(headers)} columns")
+        if data:
+            row_lengths = [len(row) for row in data[:5]]  # Check first 5 rows
+            logger.info(f"First 5 data rows have lengths: {row_lengths}")
+        
+        # Pad short rows with None values to match header length
+        padded_data = []
+        for i, row in enumerate(data):
+            if len(row) < len(headers):
+                # Pad the row with None values
+                padded_row = row + [None] * (len(headers) - len(row))
+                if i < 3:  # Log first few padding operations for debugging
+                    logger.info(f"Row {i+2} padded from {len(row)} to {len(padded_row)} columns")
+                padded_data.append(padded_row)
+            else:
+                padded_data.append(row)
+        
+        df = pd.DataFrame(padded_data, columns=headers)
         df = deduplicate_columns(df)
         
         # Convert numeric columns
@@ -473,6 +492,7 @@ def load_inventory_data(sheet_name: str) -> pd.DataFrame | None:
             if col in df.columns:
                 df[col] = pd.to_datetime(df[col], errors='coerce')
         
+        logger.info(f"Successfully created DataFrame with {len(df)} rows and {len(df.columns)} columns")
         return df
 
     except Exception as e:
