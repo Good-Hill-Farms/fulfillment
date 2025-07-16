@@ -1957,9 +1957,12 @@ class DataProcessor:
                 order_data["shopsku"],
             )
 
-            # Add to output
-            component_df = pd.DataFrame([component_order_data])
-            if not component_df.empty:
+                    # Add to output
+        component_df = pd.DataFrame([component_order_data])
+        if not component_df.empty:
+            if output_df.empty:
+                output_df = component_df.copy()
+            else:
                 output_df = pd.concat([output_df, component_df], ignore_index=True)
 
         return output_df
@@ -2067,7 +2070,10 @@ class DataProcessor:
         # Add to output
         order_df = pd.DataFrame([order_data])
         if not order_df.empty:
-            output_df = pd.concat([output_df, order_df], ignore_index=True)
+            if output_df.empty:
+                output_df = order_df.copy()
+            else:
+                output_df = pd.concat([output_df, order_df], ignore_index=True)
 
         return output_df
 
@@ -3526,7 +3532,7 @@ class DataProcessor:
 
         # Add to staged orders
         if self.staged_orders.empty:
-            self.staged_orders = orders_to_stage
+            self.staged_orders = orders_to_stage.copy()
         elif not orders_to_stage.empty:
             self.staged_orders = pd.concat([self.staged_orders, orders_to_stage], ignore_index=True)
 
@@ -3659,7 +3665,7 @@ class DataProcessor:
 
         # Add back to orders in processing
         if self.orders_in_processing.empty:
-            self.orders_in_processing = orders_to_unstage
+            self.orders_in_processing = orders_to_unstage.copy()
         elif not orders_to_unstage.empty:
             self.orders_in_processing = pd.concat(
                 [self.orders_in_processing, orders_to_unstage], ignore_index=True
@@ -3697,7 +3703,7 @@ class DataProcessor:
 
         # Add all staged orders back to processing
         if self.orders_in_processing.empty:
-            self.orders_in_processing = orders_to_unstage
+            self.orders_in_processing = orders_to_unstage.copy()
         elif not orders_to_unstage.empty:
             self.orders_in_processing = pd.concat(
                 [self.orders_in_processing, orders_to_unstage], ignore_index=True
