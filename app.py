@@ -1,4 +1,5 @@
 import logging
+import os
 
 import pandas as pd
 import streamlit as st
@@ -145,25 +146,57 @@ def main():
 
     # Sidebar for file uploads and configuration
     with st.sidebar:
-        st.subheader("📤 Upload Files")
+        st.subheader("📤 Data Sources")
 
         # File uploaders
         orders_file = st.file_uploader(
             "Upload Orders CSV (e.g. from Shopify)", type="csv", key="orders_upload"
         )
-        inventory_file = st.file_uploader(
-            "Upload Inventory CSV (from warehouse)", type="csv", key="inventory_upload"
+        
+        # Inventory source selection
+        st.subheader("📦 Inventory Source")
+        inventory_source = st.radio(
+            "Choose inventory source:",
+            ["ColdCart API", "Upload File"],
+            key="inventory_source",
+            index=0  # Default to ColdCart API
         )
+        
+        inventory_file = None
+        if inventory_source == "ColdCart API":
+            st.info("🔄 Real-time inventory from ColdCart API (Recommended)")
+            if not os.getenv('COLDCART_API_TOKEN'):
+                st.warning("⚠️ COLDCART_API_TOKEN environment variable not set")
+                st.caption("💡 Contact your admin to set up the API token for automatic inventory")
+        else:  # Upload File
+            inventory_file = st.file_uploader(
+                "Upload Inventory CSV (from warehouse)", type="csv", key="inventory_upload"
+            )
 
-        if orders_file and inventory_file:
-            if st.button("Process Files", key="process_files"):
-                with st.spinner("Processing files..."):
+        # Process button - now works with either file upload or ColdCart API
+        can_process = orders_file and (inventory_file or inventory_source == "ColdCart API")
+        
+        if can_process:
+            if st.button("Process Data", key="process_files"):
+                with st.spinner("Processing data..."):
                     try:
-                        # Step 1 & 2: Load and parse files
+                        # Step 1: Load orders
                         st.session_state.orders_df = data_processor.load_orders(orders_file)
-                        st.session_state.inventory_df = data_processor.load_inventory(
-                            inventory_file
-                        )
+                        
+                        # Step 2: Load inventory based on source
+                        if inventory_source == "ColdCart API":
+                            try:
+                                st.session_state.inventory_df = data_processor.load_inventory(
+                                    source="coldcart"
+                                )
+                                st.success("✅ Successfully fetched inventory from ColdCart API")
+                            except Exception as e:
+                                st.error(f"❌ Failed to fetch from ColdCart API: {str(e)}")
+                                st.stop()
+                        else:  # Upload File
+                            st.session_state.inventory_df = data_processor.load_inventory(
+                                inventory_file, source="file"
+                            )
 
                         # Initialize staging processor only when processing files
                         if st.session_state.staging_processor is None:
@@ -239,7 +272,10 @@ def main():
                                     "Wheeling": {"singles": {}, "bundles": {}},
                                 }
 
-                        st.success("✅ Files processed successfully!")
+                        if inventory_source == "Upload File":
+                            st.success("✅ Files processed successfully!")
+                        else:
+                            st.success("✅ Data processed successfully with ColdCart inventory!")
 
                     except Exception as e:
                         st.error(f"Error processing files: {str(e)}")
@@ -362,7 +398,7 @@ def main():
         # Show minimal welcome message for faster loading
         st.info("👋 **Welcome to the AI-Powered Fulfillment Assistant!**")
         st.warning(
-            "⚠️ **No data loaded yet**. Please upload Orders and Inventory files using the sidebar."
+            "⚠️ **No data loaded yet**. Please upload Orders file and select an inventory source using the sidebar."
         )
 
         # Show detailed instructions only if user clicks to expand
@@ -373,9 +409,10 @@ def main():
 
             To begin using the smart fulfillment system:
 
-            1. **📁 Upload Files**: Use the sidebar to upload your Orders and Inventory files
-            2. **⚙️ Process Data**: The system will automatically process and analyze your data
-            3. **📊 Explore Results**: Navigate through the tabs to see orders, staging, inventory, and analytics
+            1. **📁 Upload Orders**: Use the sidebar to upload your Orders file
+            2. **📦 Choose Inventory Source**: Select either file upload or ColdCart API for real-time inventory
+            3. **⚙️ Process Data**: The system will automatically process and analyze your data
+            4. **📊 Explore Results**: Navigate through the tabs to see orders, staging, inventory, and analytics
 
             ### 🎯 Key Features
 
@@ -394,10 +431,10 @@ def main():
                 st.caption("• Quantity and customer information")
 
             with col2:
-                st.markdown("**📦 Inventory File Requirements:**")
-                st.caption("• CSV format with inventory balances")
-                st.caption("• Must include SKU and quantity columns")
-                st.caption("• Warehouse information preferred")
+                st.markdown("**📦 Inventory Source Options:**")
+                st.caption("• **File Upload**: CSV with SKU and quantity columns")
+                st.caption("• **ColdCart API**: Real-time inventory (requires API token)")
+                st.caption("• Automatic warehouse normalization")
 
 
 if __name__ == "__main__":

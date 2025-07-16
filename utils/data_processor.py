@@ -15,6 +15,14 @@ from constants.schemas import SchemaManager
 from utils.airtable_handler import AirtableHandler
 from utils.data_parser import DataParser
 
+# Import ColdCart inventory API functions
+try:
+    from utils.inventory_api import get_inventory_data, get_formatted_inventory
+    COLDCART_API_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"ColdCart API integration not available: {e}")
+    COLDCART_API_AVAILABLE = False
+
 # Optional Google Sheets import - make it conditional
 try:
     from utils.google_sheets import load_sku_mappings_from_sheets, load_sku_type_data
@@ -288,7 +296,143 @@ class DataProcessor:
             logger.error(f"Error loading SKU mappings from Google Sheets: {e}")
             return default_data
 
-    def load_inventory(self, file):
+    def load_inventory_from_coldcart(self):
+        """
+        Load inventory data directly from ColdCart API
+        
+        Returns:
+            pandas.DataFrame: Processed inventory dataframe with normalized columns
+        """
+        if not COLDCART_API_AVAILABLE:
+            raise Exception("ColdCart API integration not available. Please install required dependencies.")
+        
+        try:
+            logger.info("Fetching inventory data from ColdCart API...")
+            
+            # Get raw inventory data from ColdCart
+            inventory_df = get_inventory_data()
+            
+            if inventory_df is None:
+                logger.error("No inventory data received from ColdCart API")
+                return pd.DataFrame(columns=["WarehouseName", "Sku", "Name", "Type", "Balance"])
+            
+            logger.info(f"Retrieved {len(inventory_df)} inventory items from ColdCart API")
+            
+            # Process the ColdCart data to match expected format
+            processed_df = self._process_coldcart_inventory(inventory_df)
+            
+            logger.info(f"Processed ColdCart inventory: {len(processed_df)} rows")
+            return processed_df
+            
+        except Exception as e:
+            logger.error(f"Error loading inventory from ColdCart API: {str(e)}")
+            raise
+
+    def _process_coldcart_inventory(self, df):
+        """
+        Process ColdCart inventory data to match expected format
+        
+        Args:
+            df (DataFrame): Raw ColdCart inventory data
+            
+        Returns:
+            DataFrame: Processed inventory data
+        """
+        try:
+            # Make a copy to avoid modifying original data
+            inventory_df = df.copy()
+            
+            # Normalize warehouse names (ColdCart uses CA-Moorpark-93021, CA-Oxnard-93030, IL-Wheeling-60090)
+            if 'WarehouseName' in inventory_df.columns:
+                warehouse_mapping = {
+                    'CA-Moorpark-93021': 'Oxnard',
+                    'CA-Oxnard-93030': 'Oxnard', 
+                    'IL-Wheeling-60090': 'Wheeling'
+                }
+                inventory_df['WarehouseName'] = inventory_df['WarehouseName'].replace(warehouse_mapping)
+                logger.info("Normalized ColdCart warehouse names")
+            
+            # Ensure required columns exist and rename if necessary
+            column_mapping = {
+                'SKU': 'Sku',
+                'sku': 'Sku',
+                'AvailableQty': 'Balance',
+                'Available Qty': 'Balance'
+            }
+            
+            for old_col, new_col in column_mapping.items():
+                if old_col in inventory_df.columns and new_col not in inventory_df.columns:
+                    inventory_df = inventory_df.rename(columns={old_col: new_col})
+                    logger.info(f"Renamed column '{old_col}' to '{new_col}'")
+            
+            # Ensure all required columns exist
+            required_columns = ["WarehouseName", "Sku", "Name", "Balance"]
+            for col in required_columns:
+                if col not in inventory_df.columns:
+                    if col == "Type":
+                        inventory_df[col] = "Product"  # Default type for ColdCart items
+                    elif col == "Balance" and "AvailableQty" in inventory_df.columns:
+                        inventory_df[col] = inventory_df["AvailableQty"]
+                    elif col == "Name" and "Name" not in inventory_df.columns:
+                        inventory_df[col] = inventory_df.get("Sku", "")  # Use SKU as fallback name
+                    else:
+                        inventory_df[col] = "" if col != "Balance" else 0
+                        logger.warning(f"Added missing column '{col}' with default values")
+
+            # Add Type column if missing
+            if "Type" not in inventory_df.columns:
+                inventory_df["Type"] = "Product"
+            
+            # Convert Balance column to numeric
+            if "Balance" in inventory_df.columns:
+                inventory_df["Balance"] = pd.to_numeric(
+                    inventory_df["Balance"].astype(str).str.replace(",", ""), errors="coerce"
+                ).fillna(0)
+            
+            # Filter out zero quantity items (common for ColdCart data)
+            initial_count = len(inventory_df)
+            inventory_df = inventory_df[inventory_df["Balance"] > 0]
+            filtered_count = len(inventory_df)
+            
+            if initial_count != filtered_count:
+                logger.info(f"Filtered out {initial_count - filtered_count} zero-quantity items")
+            
+            # Add tracking key for SKU and warehouse
+            if "tracking_key" not in inventory_df.columns:
+                inventory_df["tracking_key"] = (
+                    inventory_df["WarehouseName"] + "|" + inventory_df["Sku"]
+                )
+                logger.info(
+                    f"ColdCart inventory has {len(inventory_df)} rows with {inventory_df['tracking_key'].nunique()} unique SKU-warehouse combinations"
+                )
+            
+            return inventory_df
+            
+        except Exception as e:
+            logger.error(f"Error processing ColdCart inventory data: {str(e)}")
+            raise
+
+    def load_inventory(self, file=None, source="file"):
+        """
+        Load and preprocess inventory from file or ColdCart API
+
+        Args:
+            file: Uploaded CSV file object or file path (required if source="file")
+            source: Source of inventory data ("file" or "coldcart")
+
+        Returns:
+            pandas.DataFrame: Processed inventory dataframe with normalized columns
+        """
+        if source == "coldcart":
+            return self.load_inventory_from_coldcart()
+        elif source == "file":
+            if file is None:
+                raise ValueError("File parameter is required when source='file'")
+            return self._load_inventory_from_file(file)
+        else:
+            raise ValueError(f"Invalid source '{source}'. Must be 'file' or 'coldcart'")
+
+    def _load_inventory_from_file(self, file):
         """
         Load and preprocess inventory CSV file
 

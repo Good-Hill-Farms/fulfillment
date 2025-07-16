@@ -1652,7 +1652,50 @@ def render_inventory_tab(
     )
 
     with initial_inventory_tab:
-        st.markdown("**Uploaded Initial Inventory State**")
+        st.markdown("**Initial Inventory State**")
+        
+        # Add ColdCart refresh button
+        col1, col2, col3 = st.columns([2, 1, 1])
+        
+        with col2:
+            if st.button("🔄 Refresh from ColdCart", key="refresh_coldcart"):
+                try:
+                    with st.spinner("Fetching latest inventory from ColdCart API..."):
+                        # Import here to avoid circular imports
+                        from utils.data_processor import DataProcessor
+                        
+                        temp_processor = DataProcessor()
+                        new_inventory = temp_processor.load_inventory(source="coldcart")
+                        
+                        if new_inventory is not None and not new_inventory.empty:
+                            # Update session state with new inventory
+                            st.session_state.inventory_df = new_inventory
+                            
+                            # Convert to initial inventory format and update
+                            initial_records = []
+                            for _, row in new_inventory.iterrows():
+                                initial_records.append({
+                                    "sku": row["Sku"],
+                                    "warehouse": row["WarehouseName"], 
+                                    "balance": row["Balance"]
+                                })
+                            
+                            st.session_state.initial_inventory = pd.DataFrame(initial_records)
+                            
+                            # Update staging processor if it exists
+                            if hasattr(st.session_state, 'staging_processor') and st.session_state.staging_processor:
+                                st.session_state.staging_processor.initial_inventory = st.session_state.initial_inventory
+                            
+                            st.success(f"✅ Updated inventory with {len(new_inventory)} items from ColdCart")
+                            st.rerun()
+                        else:
+                            st.error("❌ No inventory data received from ColdCart API")
+                            
+                except Exception as e:
+                    st.error(f"❌ Failed to refresh from ColdCart: {str(e)}")
+        
+        with col3:
+            st.caption("Real-time inventory from ColdCart API")
 
         # Use the most up-to-date initial_inventory (prefer session state over parameter)
         if (
