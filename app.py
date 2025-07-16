@@ -164,7 +164,6 @@ def main():
         
         inventory_file = None
         if inventory_source == "ColdCart API":
-            st.info("🔄 Real-time inventory from ColdCart API (Recommended)")
             if not os.getenv('COLDCART_API_TOKEN'):
                 st.warning("⚠️ COLDCART_API_TOKEN environment variable not set")
                 st.caption("💡 Contact your admin to set up the API token for automatic inventory")
@@ -173,112 +172,138 @@ def main():
                 "Upload Inventory CSV (from warehouse)", type="csv", key="inventory_upload"
             )
 
-        # Process button - now works with either file upload or ColdCart API
+        # Auto-process when orders are uploaded, but keep manual button option
         can_process = orders_file and (inventory_file or inventory_source == "ColdCart API")
         
+        # Auto-process logic
+        auto_process = False
         if can_process:
-            if st.button("Process Data", key="process_files"):
-                with st.spinner("Processing data..."):
-                    try:
-                        # Step 1: Load orders
-                        st.session_state.orders_df = data_processor.load_orders(orders_file)
-                        
-                        # Step 2: Load inventory based on source
-                        if inventory_source == "ColdCart API":
-                            try:
-                                st.session_state.inventory_df = data_processor.load_inventory(
-                                    source="coldcart"
-                                )
-                                st.success("✅ Successfully fetched inventory from ColdCart API")
-                            except Exception as e:
-                                st.error(f"❌ Failed to fetch from ColdCart API: {str(e)}")
-                                st.stop()
-                        else:  # Upload File
+            # Check if this is a new orders file (different from what's already processed)
+            if (orders_file is not None and 
+                (st.session_state.get('last_processed_orders_file') != orders_file.name or
+                 st.session_state.get('orders_df') is None)):
+                auto_process = True
+        
+        # Manual process button (always show if can process)
+        manual_process = False
+        if can_process:
+            if st.button("🔄 Reprocess Data", key="manual_process_files"):
+                    manual_process = True
+        
+        # Process data (either auto or manual)
+        if auto_process or manual_process:
+            process_type = "Auto-processing" if auto_process else "Reprocessing"
+            with st.spinner(f"{process_type} data..."):
+                try:
+                    # Step 1: Load orders
+                    st.session_state.orders_df = data_processor.load_orders(orders_file)
+                    
+                    # Remember this file as processed
+                    if orders_file:
+                        st.session_state.last_processed_orders_file = orders_file.name
+                    
+                    # Step 2: Load inventory based on source
+                    if inventory_source == "ColdCart API":
+                        try:
                             st.session_state.inventory_df = data_processor.load_inventory(
-                                inventory_file, source="file"
+                                source="coldcart"
                             )
-
-                        # Initialize staging processor only when processing files
-                        if st.session_state.staging_processor is None:
-                            st.session_state.staging_processor = DataProcessor()
-
-                        # Load shipping zones and cache them
-                        if (
-                            "shipping_zones_df" not in st.session_state
-                            or st.session_state.shipping_zones_df is None
-                        ):
-                            st.session_state.shipping_zones_df = load_shipping_zones()
-
-                        # Initialize staging workflow
-                        result = st.session_state.staging_processor.initialize_workflow(
-                            st.session_state.orders_df, st.session_state.inventory_df
+                            st.success("✅ Successfully fetched inventory from ColdCart API")
+                        except Exception as e:
+                            st.error(f"❌ Failed to fetch from ColdCart API: {str(e)}")
+                            st.stop()
+                    else:  # Upload File
+                        st.session_state.inventory_df = data_processor.load_inventory(
+                            inventory_file, source="file"
                         )
 
-                        # Store results in session state - with error checking
-                        if "orders" in result:
-                            st.session_state.processed_orders = result["orders"]
+                    # Initialize staging processor only when processing files
+                    if st.session_state.staging_processor is None:
+                        st.session_state.staging_processor = DataProcessor()
 
-                            # Initialize staged flag if not exists to ensure orders appear in processing tab
-                            if "staged" not in st.session_state.processed_orders.columns:
-                                st.session_state.processed_orders["staged"] = False
+                    # Load shipping zones and cache them
+                    if (
+                        "shipping_zones_df" not in st.session_state
+                        or st.session_state.shipping_zones_df is None
+                    ):
+                        st.session_state.shipping_zones_df = load_shipping_zones()
 
-                            # Update staged_orders as a filtered view of processed_orders
-                            st.session_state.staged_orders = st.session_state.processed_orders[
-                                st.session_state.processed_orders["staged"] == True
-                            ].copy()
+                    # Initialize staging workflow
+                    result = st.session_state.staging_processor.initialize_workflow(
+                        st.session_state.orders_df, st.session_state.inventory_df
+                    )
 
-                        # Store other results - check if keys exist before accessing
-                        if "inventory_summary" in result:
-                            st.session_state.inventory_summary = result["inventory_summary"]
+                    # Store results in session state - with error checking
+                    if "orders" in result:
+                        st.session_state.processed_orders = result["orders"]
 
-                        if "shortage_summary" in result:
-                            st.session_state.shortage_summary = result["shortage_summary"]
+                        # Initialize staged flag if not exists to ensure orders appear in processing tab
+                        if "staged" not in st.session_state.processed_orders.columns:
+                            st.session_state.processed_orders["staged"] = False
 
-                        if "grouped_shortage_summary" in result:
-                            st.session_state.grouped_shortage_summary = result[
-                                "grouped_shortage_summary"
-                            ]
+                        # Update staged_orders as a filtered view of processed_orders
+                        st.session_state.staged_orders = st.session_state.processed_orders[
+                            st.session_state.processed_orders["staged"] == True
+                        ].copy()
 
-                        if "initial_inventory" in result:
-                            st.session_state.initial_inventory = result["initial_inventory"]
-                            # Always sync to staging_processor
-                            if st.session_state.staging_processor is not None:
-                                st.session_state.staging_processor.initial_inventory = (
-                                    st.session_state.initial_inventory
-                                )
+                    # Store other results - check if keys exist before accessing
+                    if "inventory_summary" in result:
+                        st.session_state.inventory_summary = result["inventory_summary"]
 
-                        if "inventory_comparison" in result:
-                            st.session_state.inventory_comparison = result["inventory_comparison"]
+                    if "shortage_summary" in result:
+                        st.session_state.shortage_summary = result["shortage_summary"]
 
-                        # Mark workflow as initialized
-                        st.session_state.workflow_initialized = True
+                    if "grouped_shortage_summary" in result:
+                        st.session_state.grouped_shortage_summary = result[
+                            "grouped_shortage_summary"
+                        ]
 
-                        # Load SKU mappings only when workflow is initialized
-                        if st.session_state.sku_mappings is None:
-                            logger.info("Loading SKU mappings after workflow initialization...")
-                            st.session_state.staging_processor.load_sku_mappings()
-                            st.session_state.sku_mappings = (
-                                st.session_state.staging_processor.sku_mappings
+                    if "initial_inventory" in result:
+                        st.session_state.initial_inventory = result["initial_inventory"]
+                        # Always sync to staging_processor
+                        if st.session_state.staging_processor is not None:
+                            st.session_state.staging_processor.initial_inventory = (
+                                st.session_state.initial_inventory
                             )
-                            if (
-                                st.session_state.sku_mappings is None
-                                or not st.session_state.sku_mappings
-                            ):
-                                logger.warning(
-                                    "Failed to load SKU mappings. Using default empty structure."
-                                )
-                                st.session_state.sku_mappings = {
-                                    "Oxnard": {"singles": {}, "bundles": {}},
-                                    "Wheeling": {"singles": {}, "bundles": {}},
-                                }
 
-                        if inventory_source == "Upload File":
-                            st.success("✅ Files processed successfully!")
+                    if "inventory_comparison" in result:
+                        st.session_state.inventory_comparison = result["inventory_comparison"]
+
+                    # Mark workflow as initialized
+                    st.session_state.workflow_initialized = True
+
+                    # Load SKU mappings only when workflow is initialized
+                    if st.session_state.sku_mappings is None:
+                        logger.info("Loading SKU mappings after workflow initialization...")
+                        st.session_state.staging_processor.load_sku_mappings()
+                        st.session_state.sku_mappings = (
+                            st.session_state.staging_processor.sku_mappings
+                        )
+                        if (
+                            st.session_state.sku_mappings is None
+                            or not st.session_state.sku_mappings
+                        ):
+                            logger.warning(
+                                "Failed to load SKU mappings. Using default empty structure."
+                            )
+                            st.session_state.sku_mappings = {
+                                "Oxnard": {"singles": {}, "bundles": {}},
+                                "Wheeling": {"singles": {}, "bundles": {}},
+                            }
+
+                    if inventory_source == "ColdCart API":
+                        if auto_process:
+                            st.success("🚀 Auto-processed successfully with ColdCart inventory!")
                         else:
-                            st.success("✅ Data processed successfully with ColdCart inventory!")
+                            st.success("✅ Data reprocessed successfully with ColdCart inventory!")
+                    else:
+                        if auto_process:
+                            st.success("🚀 Auto-processed files successfully!")
+                        else:
+                            st.success("✅ Files reprocessed successfully!")
 
-                    except Exception as e:
-                        st.error(f"Error processing files: {str(e)}")
+                except Exception as e:
+                    st.error(f"Error processing data: {str(e)}")
 
     # Always show workflow status
     # render_workflow_status()
@@ -398,7 +423,7 @@ def main():
         # Show minimal welcome message for faster loading
         st.info("👋 **Welcome to the AI-Powered Fulfillment Assistant!**")
         st.warning(
-            "⚠️ **No data loaded yet**. Please upload Orders file and select an inventory source using the sidebar."
+            "⚠️ **No data loaded yet**. Simply upload an Orders file in the sidebar - processing will happen automatically!"
         )
 
         # Show detailed instructions only if user clicks to expand
@@ -409,9 +434,9 @@ def main():
 
             To begin using the smart fulfillment system:
 
-            1. **📁 Upload Orders**: Use the sidebar to upload your Orders file
-            2. **📦 Choose Inventory Source**: Select either file upload or ColdCart API for real-time inventory
-            3. **⚙️ Process Data**: The system will automatically process and analyze your data
+            1. **📁 Upload Orders**: Use the sidebar to upload your Orders file - processing starts automatically!
+            2. **📦 Inventory Source**: ColdCart API is selected by default for real-time inventory
+            3. **🚀 Auto-Processing**: The system automatically fetches inventory and processes your data
             4. **📊 Explore Results**: Navigate through the tabs to see orders, staging, inventory, and analytics
 
             ### 🎯 Key Features
@@ -432,9 +457,9 @@ def main():
 
             with col2:
                 st.markdown("**📦 Inventory Source Options:**")
-                st.caption("• **File Upload**: CSV with SKU and quantity columns")
-                st.caption("• **ColdCart API**: Real-time inventory (requires API token)")
-                st.caption("• Automatic warehouse normalization")
+                st.caption("• **ColdCart API**: Real-time inventory (Default & Recommended)")
+                st.caption("• **File Upload**: CSV backup option with SKU and quantity columns")
+                st.caption("• Automatic warehouse normalization for both sources")
 
 
 if __name__ == "__main__":
