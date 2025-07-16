@@ -58,7 +58,14 @@ class DataParser:
         """
         try:
             # Read CSV file with all columns
-            df = pd.read_csv(orders_file, na_values=[""], keep_default_na=True)
+            # Force zip codes to be read as strings to preserve leading zeros
+            dtype_dict = {
+                "Shipping: Zip": str,
+                "shiptopostalcode": str,
+                "Zip": str,
+                "Postal Code": str
+            }
+            df = pd.read_csv(orders_file, na_values=[""], keep_default_na=True, dtype=dtype_dict)
 
             # Identify column types
             unnamed_cols = [col for col in df.columns if str(col).startswith("Unnamed:")]
@@ -86,11 +93,14 @@ class DataParser:
 
             # Clean up shipping info
             if "Shipping: Zip" in df.columns:
+                # Keep zip code as string, preserve full format including leading zeros
                 df["Shipping: Zip"] = df["Shipping: Zip"].astype(str).str.strip()
-                # Extract just the ZIP code (first 5-9 digits)
+                # Extract full ZIP code (5 digits or 5+4 format) and preserve as string
                 df["Shipping: Zip"] = (
                     df["Shipping: Zip"].str.extract(r"(\d{5}(?:-?\d{4})?)", expand=False).fillna("")
                 )
+                # Ensure zip codes stay as strings (prevent pandas from inferring numeric types)
+                df["Shipping: Zip"] = df["Shipping: Zip"].astype(str)
             else:
                 df["Shipping: Zip"] = ""
 
@@ -145,8 +155,8 @@ class DataParser:
                 df = df.drop(columns=extra_cols)
                 logger.info(f"Dropped extra columns: {extra_cols}")
 
-            # Parse zip codes
-            df["Shipping: Zip"] = df["Shipping: Zip"].astype(str).str.strip().str.split("-").str[0]
+            # Keep zip codes as strings (no additional parsing needed)
+            df["Shipping: Zip"] = df["Shipping: Zip"].astype(str).str.strip()
 
             return df
 

@@ -2885,8 +2885,19 @@ def create_aggrid_table(
         dict: Contains AgGrid response and additional info
     """
     try:
+        # CRITICAL FIX: Force zip code columns to be strings to prevent AgGrid conversion issues
+        zip_keywords = ["zip", "postal", "postcode"]
+        df_display = df.copy()  # Work with a copy to avoid modifying original data
+        
+        for col in df_display.columns:
+            if any(keyword in col.lower() for keyword in zip_keywords):
+                # Ensure zip codes are strings and preserve leading zeros
+                df_display[col] = df_display[col].astype(str)
+                # Add zero-width space prefix to prevent AgGrid from treating as numbers
+                df_display[col] = '\u200B' + df_display[col]
+        
         # Create GridOptionsBuilder with simplified configuration
-        gb = GridOptionsBuilder.from_dataframe(df)
+        gb = GridOptionsBuilder.from_dataframe(df_display)
 
         # Configure default column properties with enhanced filtering and grouping
         gb.configure_default_column(
@@ -2928,7 +2939,19 @@ def create_aggrid_table(
             elif any(keyword in col.lower() for keyword in ["qty", "quantity", "balance"]):
                 col_width = 120  # narrower for numbers
 
-            if df[col].dtype in ["int64", "float64"]:
+            # Special handling for zip code columns - ALWAYS treat as text
+            if any(keyword in col.lower() for keyword in ["zip", "postal", "postcode"]):
+                gb.configure_column(
+                    col,
+                    filter="agTextColumnFilter",
+                    enableRowGroup=True,  # Enable for grouping
+                    floatingFilter=True,
+                    width=col_width,
+                    minWidth=120,
+                    type=None,  # Explicitly avoid numeric type
+                    cellDataType="text",  # Force text data type
+                )
+            elif df[col].dtype in ["int64", "float64"]:
                 # Numeric columns with enhanced number filter and aggregation
                 gb.configure_column(
                     col,

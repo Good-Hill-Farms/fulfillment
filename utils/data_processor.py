@@ -1575,6 +1575,9 @@ class DataProcessor:
         for old_col, new_col in column_mapping.items():
             if old_col in orders_df.columns and new_col not in orders_df.columns:
                 orders_df[new_col] = orders_df[old_col]
+                # Ensure zip codes stay as strings after mapping
+                if new_col == "shiptopostalcode":
+                    orders_df[new_col] = orders_df[new_col].astype(str)
 
     def _extract_shopify_sku(self, row, columns):
         """Extract Shopify SKU from order row"""
@@ -1624,6 +1627,27 @@ class DataProcessor:
                         order_data[field] = row[field]
                 else:
                     order_data[field] = row[field]
+
+        # Handle special field mappings (original column names to output column names)
+        field_mappings = {
+            "Shipping: Zip": "shiptopostalcode",
+            "Customer: First Name": "CustomerFirstName", 
+            "Customer: Last Name": "customerLastname",
+            "Email": "customeremail",
+            "Shipping: Name": "shiptoname",
+            "Shipping: Address 1": "shiptostreet1", 
+            "Shipping: Address 2": "shiptostreet2",
+            "Shipping: City": "shiptocity",
+            "Shipping: Province Code": "shiptostate"
+        }
+        
+        for original_field, output_field in field_mappings.items():
+            if original_field in row and pd.notna(row[original_field]) and output_field in output_columns:
+                if output_field == "shiptopostalcode":
+                    # Ensure zip code stays as string
+                    order_data[output_field] = str(row[original_field]).strip()
+                else:
+                    order_data[output_field] = row[original_field]
 
         # Add SKU information
         order_data["shopsku"] = shopify_sku
@@ -3145,8 +3169,8 @@ class DataProcessor:
             return default_service
 
         # Get the first 3 digits of the ZIP code for matching
-        # Extract first 3 digits without leading zeros to match the format in the CSV
-        zip_short = str(int(zip_code[:3]))
+        # Keep as string to preserve leading zeros (e.g., "001", "010")
+        zip_short = str(zip_code[:3]).zfill(3)
 
         # Determine origin ZIP code based on fulfillment center
         # Convert to integer to match the format in the CSV
@@ -3216,8 +3240,8 @@ class DataProcessor:
                 delivery_df = pd.read_csv(delivery_services_path, sep=";", encoding="utf-8")
                 logger.info(f"Loaded {len(delivery_df)} delivery service entries from CSV")
 
-            # Ensure destination zip short column is string type and remove leading zeros
-            delivery_df["destination zip short"] = delivery_df["destination zip short"].astype(str)
+            # Ensure destination zip short column is string type and preserve leading zeros
+            delivery_df["destination zip short"] = delivery_df["destination zip short"].astype(str).str.zfill(3)
 
             # Ensure origin column is integer type
             delivery_df["origin"] = delivery_df["origin"].astype(int)

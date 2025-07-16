@@ -213,7 +213,7 @@ def load_shipping_zones_from_csv(file_path):
 
             # Ensure ZIP prefixes are strings and zones are integers
             try:
-                zip_prefix = str(int(zip_prefix)).zfill(3)  # Ensure 3-digit format
+                zip_prefix = str(zip_prefix).strip().zfill(3)  # Ensure 3-digit format as string
                 moorpark_zone = int(moorpark_zone) if pd.notna(moorpark_zone) else None
                 wheeling_zone = int(wheeling_zone) if pd.notna(wheeling_zone) else None
 
