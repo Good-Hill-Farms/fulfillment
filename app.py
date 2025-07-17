@@ -157,20 +157,20 @@ def main():
         st.subheader("📦 Inventory Source")
         inventory_source = st.radio(
             "Choose inventory source:",
-            ["ColdCart API", "Upload File"],
+            ["Upload File", "ColdCart API"],
             key="inventory_source",
-            index=0  # Default to ColdCart API
+            index=0  # Default to Upload File
         )
         
         inventory_file = None
-        if inventory_source == "ColdCart API":
-            if not os.getenv('COLDCART_API_TOKEN'):
-                st.warning("⚠️ COLDCART_API_TOKEN environment variable not set")
-                st.caption("💡 Contact your admin to set up the API token for automatic inventory")
-        else:  # Upload File
+        if inventory_source == "Upload File":
             inventory_file = st.file_uploader(
                 "Upload Inventory CSV (from warehouse)", type="csv", key="inventory_upload"
             )
+        else:  # ColdCart API
+            if not os.getenv('COLDCART_API_TOKEN'):
+                st.warning("⚠️ COLDCART_API_TOKEN environment variable not set")
+                st.caption("💡 Contact your admin to set up the API token for automatic inventory")
 
         # Auto-process when orders are uploaded, but keep manual button option
         can_process = orders_file and (inventory_file or inventory_source == "ColdCart API")
@@ -291,16 +291,16 @@ def main():
                                 "Wheeling": {"singles": {}, "bundles": {}},
                             }
 
-                    if inventory_source == "ColdCart API":
-                        if auto_process:
-                            st.success("🚀 Auto-processed successfully with ColdCart inventory!")
-                        else:
-                            st.success("✅ Data reprocessed successfully with ColdCart inventory!")
-                    else:
+                    if inventory_source == "Upload File":
                         if auto_process:
                             st.success("🚀 Auto-processed files successfully!")
                         else:
                             st.success("✅ Files reprocessed successfully!")
+                    else:  # ColdCart API
+                        if auto_process:
+                            st.success("🚀 Auto-processed successfully with ColdCart inventory!")
+                        else:
+                            st.success("✅ Data reprocessed successfully with ColdCart inventory!")
 
                 except Exception as e:
                     st.error(f"Error processing data: {str(e)}")
@@ -423,7 +423,7 @@ def main():
         # Show minimal welcome message for faster loading
         st.info("👋 **Welcome to the AI-Powered Fulfillment Assistant!**")
         st.warning(
-            "⚠️ **No data loaded yet**. Simply upload an Orders file in the sidebar - processing will happen automatically!"
+            "⚠️ **No data loaded yet**. Upload Orders and Inventory files in the sidebar - processing will happen automatically!"
         )
 
         # Show detailed instructions only if user clicks to expand
@@ -435,8 +435,8 @@ def main():
             To begin using the smart fulfillment system:
 
             1. **📁 Upload Orders**: Use the sidebar to upload your Orders file - processing starts automatically!
-            2. **📦 Inventory Source**: ColdCart API is selected by default for real-time inventory
-            3. **🚀 Auto-Processing**: The system automatically fetches inventory and processes your data
+            2. **📦 Inventory Source**: File upload is selected by default - upload your inventory CSV
+            3. **🚀 Auto-Processing**: The system automatically processes your data when both files are uploaded
             4. **📊 Explore Results**: Navigate through the tabs to see orders, staging, inventory, and analytics
 
             ### 🎯 Key Features
@@ -457,8 +457,8 @@ def main():
 
             with col2:
                 st.markdown("**📦 Inventory Source Options:**")
-                st.caption("• **ColdCart API**: Real-time inventory (Default & Recommended)")
-                st.caption("• **File Upload**: CSV backup option with SKU and quantity columns")
+                st.caption("• **File Upload**: CSV with SKU and quantity columns (Default)")
+                st.caption("• **ColdCart API**: Real-time inventory alternative option")
                 st.caption("• Automatic warehouse normalization for both sources")
 
 
