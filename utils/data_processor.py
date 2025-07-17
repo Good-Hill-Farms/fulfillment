@@ -1593,15 +1593,12 @@ class DataProcessor:
             elif "Current Balance" in row and pd.notna(row["Current Balance"]):
                 balance = float(row["Current Balance"])
 
-            # Store in running balances for order processing - sum all balances for same SKU+warehouse
-            if composite_key in running_balances:
-                running_balances[composite_key] += balance
-            else:
-                running_balances[composite_key] = balance
+            # Store in running balances for order processing
+            running_balances[composite_key] = balance
 
             # If we've seen this key before, sum the balance (like file inventory does)
             if composite_key in initial_inventory_state:
-                initial_inventory_state[composite_key]["balance"] += balance
+                initial_inventory_state[composite_key]["balance"] = balance
             else:
                 # First time seeing this SKU+warehouse combination
                 initial_inventory_state[composite_key] = {
