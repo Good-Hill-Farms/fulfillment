@@ -15,12 +15,14 @@ from utils.data_processor import DataProcessor
 from utils.airtable_handler import AirtableHandler
 
 # Import Google API libraries
-from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-# Import constants from google_sheets.py
-from utils.google_sheets import GHF_AGGREGATION_DASHBOARD_ID, ALL_PICKLIST_V2_SHEET_NAME
+# Import constants and functions from google_sheets.py
+from utils.google_sheets import GHF_AGGREGATION_DASHBOARD_ID, ALL_PICKLIST_V2_SHEET_NAME, get_credentials
+
+# Import inventory API for coldcart data
+from utils.inventory_api import get_inventory_data
 
 # This page will not appear in the navigation sidebar
 st.set_page_config(
@@ -54,20 +56,23 @@ SCOPES = [
 
 # Function to check query parameters
 def get_google_credentials():
-    """Get Google API credentials for accessing Drive and Sheets"""
+    """Get Google API credentials for accessing Drive and Sheets using the exact same approach as google_sheets.py"""
     try:
-        # First, check if we have a local service account file
-        json_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
-                               "nca-toolkit-project-446011-67d246fdbccf.json")
+        # Use the proven get_credentials function from google_sheets.py but with Drive scopes
+        # First get the base credentials
+        base_creds = get_credentials()
         
-        if os.path.exists(json_file):
-            return service_account.Credentials.from_service_account_file(
-                json_file, scopes=SCOPES)
+        # Create new credentials with the required scopes for Drive and Sheets
+        if hasattr(base_creds, 'with_scopes'):
+            creds = base_creds.with_scopes(SCOPES)
         else:
-            st.error("Service account credentials file not found")
-            return None
+            creds = base_creds
+            
+        st.info("✅ Successfully obtained Google credentials")
+        return creds
     except Exception as e:
-        st.error(f"Error loading credentials: {str(e)}")
+        st.error(f"❌ Error getting Google credentials: {e}")
+        st.error("Could not authenticate. Make sure you have either the JSON file locally or have run 'gcloud auth application-default login'")
         return None
 
 def create_spreadsheet(title, data=None, data_type="inventory"):
@@ -88,14 +93,14 @@ def create_spreadsheet(title, data=None, data_type="inventory"):
         time_str = now.strftime("%H%M")
         spreadsheet_title = f"ALL_Picklist_{date_str}_{time_str}"
         
-        # Get the service account email for debugging
-        credentials_info = service_account.Credentials.from_service_account_file(
-            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
-                        "nca-toolkit-project-446011-67d246fdbccf.json")
-        ).service_account_email
-        
-        # Log the service account being used
-        st.info(f"Using service account: {credentials_info}")
+        # Try to get service account email for debugging if using service account
+        try:
+            if hasattr(creds, 'service_account_email'):
+                st.info(f"Using service account: {creds.service_account_email}")
+            else:
+                st.info("Using Application Default Credentials")
+        except Exception:
+            st.info("Using Google credentials (type unknown)")
         
         # Create year/month directory structure
         year_str = now.strftime("%Y")
@@ -195,6 +200,105 @@ def create_spreadsheet(title, data=None, data_type="inventory"):
                     st.error(f"❌ Error in picklist copy process: {str(e)}")
                     import traceback
                     st.error(f"Full traceback: {traceback.format_exc()}")
+            
+            # Special case for coldcart inventory data
+            elif data_type == "coldcart_inventory":
+                st.info(f"Starting coldcart inventory data fetch and save process...")
+                
+                try:
+                    # Fetch current coldcart inventory
+                    st.info("📦 Fetching current coldcart inventory...")
+                    inventory_df = get_inventory_data()
+                    
+                    if inventory_df is not None and not inventory_df.empty:
+                        st.success(f"✅ Successfully fetched {len(inventory_df)} inventory items")
+                        
+                        # Rename the sheet to ColdCart_Inventory
+                        sheets_service.spreadsheets().batchUpdate(
+                            spreadsheetId=spreadsheet_id,
+                            body={
+                                'requests': [{
+                                    'updateSheetProperties': {
+                                        'properties': {
+                                            'sheetId': 0,  # First sheet ID
+                                            'title': 'ColdCart_Inventory'
+                                        },
+                                        'fields': 'title'
+                                    }
+                                }]
+                            }
+                        ).execute()
+                        
+                        # Convert DataFrame to values list for the API
+                        values = [inventory_df.columns.tolist()] + inventory_df.values.tolist()
+                        
+                        body = {
+                            'values': values
+                        }
+                        
+                        # Update the spreadsheet with inventory data
+                        sheets_service.spreadsheets().values().update(
+                            spreadsheetId=spreadsheet_id,
+                            range='ColdCart_Inventory!A1',
+                            valueInputOption='RAW',
+                            body=body
+                        ).execute()
+                        
+                        # Add some basic formatting
+                        sheets_service.spreadsheets().batchUpdate(
+                            spreadsheetId=spreadsheet_id,
+                            body={
+                                'requests': [
+                                    {
+                                        'repeatCell': {
+                                            'range': {
+                                                'sheetId': 0,
+                                                'startRowIndex': 0,
+                                                'endRowIndex': 1
+                                            },
+                                            'cell': {
+                                                'userEnteredFormat': {
+                                                    'backgroundColor': {
+                                                        'red': 0.2,
+                                                        'green': 0.6,
+                                                        'blue': 0.9
+                                                    },
+                                                    'textFormat': {
+                                                        'bold': True,
+                                                        'foregroundColor': {
+                                                            'red': 1.0,
+                                                            'green': 1.0,
+                                                            'blue': 1.0
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            'fields': 'userEnteredFormat(backgroundColor,textFormat)'
+                                        }
+                                    },
+                                    {
+                                        'updateSheetProperties': {
+                                            'properties': {
+                                                'sheetId': 0,
+                                                'gridProperties': {
+                                                    'frozenRowCount': 1
+                                                }
+                                            },
+                                            'fields': 'gridProperties.frozenRowCount'
+                                        }
+                                    }
+                                ]
+                            }
+                        ).execute()
+                        
+                        st.success(f"✅ Successfully saved coldcart inventory data to spreadsheet")
+                    else:
+                        st.warning("⚠️ No coldcart inventory data available")
+                        
+                except Exception as e:
+                    st.error(f"❌ Error in coldcart inventory process: {str(e)}")
+                    import traceback
+                    st.error(f"Full traceback: {traceback.format_exc()}")
             # If other data is provided, add it to the spreadsheet
             elif data is not None and isinstance(data, pd.DataFrame):
                 # Convert DataFrame to values list for the API
@@ -218,7 +322,14 @@ def create_spreadsheet(title, data=None, data_type="inventory"):
             
         except Exception as folder_error:
             st.error(f"Target folder not found: {str(folder_error)}")
-            st.info(f"Please make sure the folder exists and is shared with the service account: {credentials_info}")
+            # Try to get service account info for error message
+            try:
+                if hasattr(creds, 'service_account_email'):
+                    st.info(f"Please make sure the folder exists and is shared with the service account: {creds.service_account_email}")
+                else:
+                    st.info("Please make sure the folder exists and is accessible with your current Google credentials")
+            except Exception:
+                st.info("Please make sure the folder exists and is accessible")
             return None, f"Cannot create spreadsheet: target folder not accessible"
         
     except HttpError as error:
@@ -952,9 +1063,10 @@ def check_trigger_params():
     if "key" in query_params and query_params["key"] == "fulfillment_projection_snapshot_trigger":
         st.title("📊 Fulfillment Projection Snapshot")
         st.info("Creating snapshot of ALL_Picklist_V2 with complete data and formatting...")
+        st.info("Also saving current ColdCart inventory for reference...")
         
         # Execute the copy operation
-        with st.spinner("Creating projection snapshot..."):
+        with st.spinner("Creating projection snapshot and inventory backup..."):
             try:
                 # Get credentials
                 creds = get_google_credentials()
@@ -965,39 +1077,64 @@ def check_trigger_params():
                 # Build the Sheets service
                 sheets_service = build('sheets', 'v4', credentials=creds)
                 
-                # Create the new spreadsheet
-                spreadsheet_id, spreadsheet_url = create_spreadsheet("Fulfillment_Projection_Snapshot")
+                # Create the projection spreadsheet
+                st.info("📊 Creating projection snapshot spreadsheet...")
+                projection_spreadsheet_id, projection_spreadsheet_url = create_spreadsheet("Fulfillment_Projection_Snapshot", data_type="picklist")
                 
-                if spreadsheet_id:
-                    st.success(f"✅ Created spreadsheet: {spreadsheet_url}")
+                # Create the inventory spreadsheet
+                st.info("📦 Creating inventory snapshot spreadsheet...")
+                inventory_spreadsheet_id, inventory_spreadsheet_url = create_spreadsheet("ColdCart_Inventory_Snapshot", data_type="coldcart_inventory")
+                
+                projection_success = False
+                inventory_success = False
+                
+                if projection_spreadsheet_id:
+                    st.success(f"✅ Created projection spreadsheet: {projection_spreadsheet_url}")
                     
                     # Copy the ALL_Picklist_V2 sheet
                     success = copy_sheet_with_related_data(
                         sheets_service, 
                         GHF_AGGREGATION_DASHBOARD_ID, 
                         ALL_PICKLIST_V2_SHEET_NAME, 
-                        spreadsheet_id
+                        projection_spreadsheet_id
                     )
                     
                     if success:
                         st.success("🎉 Fulfillment projection snapshot created successfully!")
-                        st.markdown(f"**📋 Access your snapshot:** [Open Spreadsheet]({spreadsheet_url})")
-                        
-                        # Show summary
-                        st.markdown("### ✅ What was copied:")
+                        projection_success = True
+                    else:
+                        st.error("❌ Failed to copy projection sheet data")
+                else:
+                    st.error("❌ Failed to create projection spreadsheet")
+                
+                if inventory_spreadsheet_id:
+                    st.success(f"✅ Created inventory spreadsheet: {inventory_spreadsheet_url}")
+                    inventory_success = True
+                else:
+                    st.error("❌ Failed to create inventory spreadsheet")
+                
+                # Show summary
+                if projection_success or inventory_success:
+                    st.markdown("### ✅ Snapshot Summary:")
+                    
+                    if projection_success:
+                        st.markdown(f"**📊 Projection Snapshot:** [Open Spreadsheet]({projection_spreadsheet_url})")
                         st.markdown("- 📊 All data from ALL_Picklist_V2 (calculated values, no formulas)")
                         st.markdown("- 🎨 Complete formatting (colors, fonts, borders, column widths)")
                         st.markdown("- 🔒 Frozen headers for easy navigation")
                         st.markdown("- 🔍 Filters enabled for sorting and filtering")
-                        st.markdown("- 📁 Organized in year/month folders")
-                        st.markdown("- 📅 Timestamped filename for easy identification")
-                    else:
-                        st.error("❌ Failed to copy sheet data")
-                else:
-                    st.error("❌ Failed to create spreadsheet")
+                    
+                    if inventory_success:
+                        st.markdown(f"**📦 Inventory Snapshot:** [Open Spreadsheet]({inventory_spreadsheet_url})")
+                        st.markdown("- 📦 Current ColdCart inventory data")
+                        st.markdown("- 🎨 Formatted headers and frozen rows")
+                        st.markdown("- 📅 Real-time inventory snapshot")
+                    
+                    st.markdown("**📁 Both files organized in year/month folders**")
+                    st.markdown("**📅 Timestamped filenames for easy identification**")
                     
             except Exception as e:
-                st.error(f"❌ Error creating snapshot: {str(e)}")
+                st.error(f"❌ Error creating snapshots: {str(e)}")
                 import traceback
                 st.error(traceback.format_exc())
         
@@ -1106,6 +1243,26 @@ def generate_report_data(data_type):
                     'Shipping Zone': [1, 3, 2, 4, 1],
                     'Delivery Service': ['UPS Ground', 'USPS Priority', 'UPS Ground', 'FedEx', 'UPS Ground'],
                     'Estimated Delivery': ['1-2 days', '3-4 days', '2-3 days', '4-5 days', '1-2 days']
+                })
+                
+        elif data_type == "coldcart_inventory":
+            # Try to get real coldcart inventory data
+            try:
+                inventory_df = get_inventory_data()
+                if inventory_df is not None and not inventory_df.empty:
+                    return inventory_df
+                else:
+                    # Return empty DataFrame if no data available
+                    return pd.DataFrame({
+                        'Message': ['No ColdCart inventory data available'],
+                        'Timestamp': [datetime.now().strftime("%Y-%m-%d %H:%M:%S")]
+                    })
+            except Exception as e:
+                # Return error information if API call fails
+                return pd.DataFrame({
+                    'Error': ['Failed to fetch ColdCart inventory'],
+                    'Details': [str(e)],
+                    'Timestamp': [datetime.now().strftime("%Y-%m-%d %H:%M:%S")]
                 })
         else:
             # Default to a simple status report
