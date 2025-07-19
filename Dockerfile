@@ -21,18 +21,13 @@ COPY . /app/
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
-# Expose the port the app runs on
-EXPOSE ${PORT:-8080}
+# Expose ports for both Streamlit and FastAPI
+EXPOSE ${PORT:-8501}
+EXPOSE 8001
 
-# Health check
+# Health check (check both Streamlit and API)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-8080}/_stcore/health || exit 1
+    CMD curl -f http://localhost:${PORT:-8501}/_stcore/health && curl -f http://localhost:8001/api/health || exit 1
 
-# Command to run the application with optimized settings for Cloud Run
-CMD ["sh", "-c", "streamlit run app.py \
-    --server.port=${PORT:-8080} \
-    --server.address=0.0.0.0 \
-    --server.enableCORS=false \
-    --server.enableXsrfProtection=false \
-    --server.maxUploadSize=200 \
-    --browser.gatherUsageStats=false"]
+# Command to run both Streamlit and FastAPI
+CMD ["python", "start.py"]

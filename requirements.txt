@@ -18,3 +18,5 @@ google-auth-httplib2==0.2.0
 google-auth-oauthlib==1.2.0
 xlsxwriter==3.2.5
 gspread==6.2.1
+fastapi==0.104.1
+uvicorn==0.24.0
