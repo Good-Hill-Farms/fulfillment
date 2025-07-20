@@ -8,6 +8,7 @@ import pandas as pd
 from google.auth import default
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
 
 # Set up logging
 logging.basicConfig(level=logging.WARNING)  # Changed from INFO to WARNING
@@ -16,7 +17,8 @@ logger = logging.getLogger(__name__)
 # If modifying these scopes, delete the file token.pickle.
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",  # Full access to Google Sheets
-    "https://www.googleapis.com/auth/drive.file"     # Access to files created by the app
+    "https://www.googleapis.com/auth/drive.file",    # Access to files created by the app
+    "https://www.googleapis.com/auth/drive"          # Full access to Google Drive
 ]
 
 # GHF Inventory Table
@@ -1051,6 +1053,240 @@ def load_sku_type_data() -> pd.DataFrame | None:
         logger.error(f"Failed to load SKU Type data: {str(e)}")
         logger.exception("Full traceback:")
         return None
+
+
+# Google Drive Upload Functions
+def file_exists_in_drive(filename: str, folder_id: str = None) -> bool:
+    """
+    Check if a file already exists in Google Drive
+    
+    Args:
+        filename (str): Name of the file to check
+        folder_id (str): ID of the folder to search in (optional)
+        
+    Returns:
+        bool: True if file exists, False otherwise
+    """
+    try:
+        creds = get_credentials()
+        service = build("drive", "v3", credentials=creds)
+        
+        # Build query to search for the file
+        query = f"name='{filename}' and trashed=false"
+        if folder_id:
+            query += f" and '{folder_id}' in parents"
+        
+        results = service.files().list(
+            q=query,
+            spaces='drive',
+            fields='files(id, name)'
+        ).execute()
+        
+        existing_files = results.get('files', [])
+        return len(existing_files) > 0
+        
+    except Exception as e:
+        logger.error(f"Error checking if file '{filename}' exists: {str(e)}")
+        return False
+
+
+def create_folder_if_not_exists(folder_name: str, parent_folder_id: str = None) -> str:
+    """
+    Create a folder in Google Drive if it doesn't already exist
+    
+    Args:
+        folder_name (str): Name of the folder to create
+        parent_folder_id (str): ID of the parent folder (optional)
+        
+    Returns:
+        str: Folder ID of the created or existing folder, or None if failed
+    """
+    try:
+        creds = get_credentials()
+        service = build("drive", "v3", credentials=creds)
+        
+        # Check if folder already exists
+        query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder'"
+        if parent_folder_id:
+            query += f" and '{parent_folder_id}' in parents"
+        
+        results = service.files().list(
+            q=query,
+            spaces='drive',
+            fields='files(id, name)'
+        ).execute()
+        
+        existing_folders = results.get('files', [])
+        
+        if existing_folders:
+            # Folder already exists, return the first one
+            folder_id = existing_folders[0]['id']
+            logger.info(f"Folder '{folder_name}' already exists with ID: {folder_id}")
+            return folder_id
+        
+        # Create new folder
+        folder_metadata = {
+            'name': folder_name,
+            'mimeType': 'application/vnd.google-apps.folder'
+        }
+        
+        if parent_folder_id:
+            folder_metadata['parents'] = [parent_folder_id]
+        
+        folder = service.files().create(
+            body=folder_metadata,
+            fields='id'
+        ).execute()
+        
+        folder_id = folder.get('id')
+        logger.info(f"Created folder '{folder_name}' with ID: {folder_id}")
+        return folder_id
+        
+    except Exception as e:
+        logger.error(f"Error creating folder '{folder_name}': {str(e)}")
+        return None
+
+
+def upload_file_to_drive(file_path: str, folder_id: str = None, filename: str = None) -> str:
+    """
+    Upload a file to Google Drive
+    
+    Args:
+        file_path (str): Path to the local file to upload
+        folder_id (str): Optional Google Drive folder ID to upload to
+        filename (str): Optional custom filename for the uploaded file
+        
+    Returns:
+        str: Google Drive file ID of the uploaded file, or None if upload failed
+    """
+    try:
+        creds = get_credentials()
+        service = build("drive", "v3", credentials=creds)
+        
+        # Prepare file metadata
+        file_metadata = {}
+        if folder_id:
+            file_metadata['parents'] = [folder_id]
+        
+        if filename:
+            file_metadata['name'] = filename
+        else:
+            # Use the original filename
+            file_metadata['name'] = os.path.basename(file_path)
+        
+        # Upload the file
+        logger.info(f"Uploading {file_path} to Google Drive...")
+        
+        with open(file_path, 'rb') as file:
+            media = service.files().create(
+                body=file_metadata,
+                media_body=file,
+                fields='id,name,webViewLink'
+            ).execute()
+        
+        file_id = media.get('id')
+        file_name = media.get('name')
+        web_link = media.get('webViewLink')
+        
+        logger.info(f"Successfully uploaded {file_name} to Google Drive")
+        logger.info(f"File ID: {file_id}")
+        logger.info(f"Web Link: {web_link}")
+        
+        return file_id
+        
+    except Exception as e:
+        logger.error(f"Failed to upload {file_path} to Google Drive: {str(e)}")
+        return None
+
+
+def upload_csv_to_drive(csv_content: str, filename: str, folder_id: str = None) -> str:
+    """
+    Upload CSV content directly to Google Drive
+    
+    Args:
+        csv_content (str): CSV content as string
+        filename (str): Name for the file
+        folder_id (str): Google Drive folder ID to upload to (optional)
+        
+    Returns:
+        str: Google Drive file ID of the uploaded file or None if failed
+    """
+    try:
+        # Check if file already exists
+        if file_exists_in_drive(filename, folder_id):
+            logger.info(f"File '{filename}' already exists in Drive, skipping upload")
+            return None
+        
+        creds = get_credentials()
+        service = build("drive", "v3", credentials=creds)
+        
+        logger.info(f"Uploading CSV content as {filename} to Google Drive...")
+        
+        # Create file metadata
+        file_metadata = {
+            'name': filename,
+            'mimeType': 'text/csv'
+        }
+        
+        if folder_id:
+            file_metadata['parents'] = [folder_id]
+        
+        # Create media upload object
+        from io import BytesIO
+        media = MediaIoBaseUpload(
+            BytesIO(csv_content.encode('utf-8')),
+            mimetype='text/csv',
+            resumable=True
+        )
+        
+        # Upload the file
+        file = service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields='id,webViewLink'
+        ).execute()
+        
+        file_id = file.get('id')
+        web_link = file.get('webViewLink')
+        
+        logger.info(f"Successfully uploaded {filename} to Google Drive")
+        logger.info(f"File ID: {file_id}")
+        logger.info(f"Web Link: {web_link}")
+        
+        return file_id
+        
+    except Exception as e:
+        logger.error(f"Error uploading CSV to Drive: {str(e)}")
+        return None
+
+
+def list_folder_contents(folder_id: str) -> list:
+    """
+    List contents of a Google Drive folder
+    
+    Args:
+        folder_id (str): Google Drive folder ID
+        
+    Returns:
+        list: List of file information dictionaries
+    """
+    try:
+        creds = get_credentials()
+        service = build("drive", "v3", credentials=creds)
+        
+        results = service.files().list(
+            q=f"'{folder_id}' in parents",
+            fields="files(id,name,mimeType,createdTime,size)"
+        ).execute()
+        
+        files = results.get('files', [])
+        logger.info(f"Found {len(files)} files in folder {folder_id}")
+        
+        return files
+        
+    except Exception as e:
+        logger.error(f"Failed to list folder contents: {str(e)}")
+        return []
 
 
 if __name__ == "__main__":
