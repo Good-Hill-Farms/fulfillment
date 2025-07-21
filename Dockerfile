@@ -27,9 +27,9 @@ ENV PORT=8080
 # Expose the Cloud Run port
 EXPOSE ${PORT}
 
-# Health check (check FastAPI endpoint since it's on the main port)
+# Health check for Streamlit
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:${PORT}/api/health || exit 1
+    CMD curl -f http://localhost:${PORT}/_stcore/health || exit 1
 
-# Command to run both Streamlit and FastAPI
+# Command to run Streamlit
 CMD ["python", "start.py"]
