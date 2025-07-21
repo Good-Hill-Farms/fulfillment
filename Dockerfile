@@ -21,13 +21,15 @@ COPY . /app/
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
-# Expose ports for both Streamlit and FastAPI
-EXPOSE ${PORT:-8501}
-EXPOSE 8001
+# Default to port 8080 for Cloud Run
+ENV PORT=8080
 
-# Health check (check both Streamlit and API)
+# Expose the Cloud Run port
+EXPOSE ${PORT}
+
+# Health check (check FastAPI endpoint since it's on the main port)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-8501}/_stcore/health && curl -f http://localhost:8001/api/health || exit 1
+    CMD curl -f http://localhost:${PORT}/api/health || exit 1
 
 # Command to run both Streamlit and FastAPI
 CMD ["python", "start.py"]

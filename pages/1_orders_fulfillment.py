@@ -19,6 +19,14 @@ SCOPES = [
 # Add header and description
 st.title("Order Fulfillment")
 st.caption("Shopify orders and ColdCart shipment details for the selected date range")
+st.markdown("""
+This page helps track fruit fulfillment by comparing:
+- **Wave Summary Data**: Shows shipments with SKUs and Shipment IDs but without actual delivery dates
+- **ColdCart Shipment Stats**: Confirms if orders were actually shipped and their status (delivered, in transit, etc.)
+- **Shopify Orders**: Original order details for cross-reference
+
+Use this page to verify how planned shipments were fulfilled.
+""")
 
 def get_default_dates():
     """Get last week's Monday to Sunday"""
@@ -101,8 +109,19 @@ def filter_dataframe(df, search):
 # ColdCart Data section
 st.subheader("ColdCart Data")
 st.caption("ColdCart Wave Summaries and Orders Shipment Stats joined on ShipmentID, showing detailed fulfillment information")
-# Apply global search to ColdCart data
-filtered_cc_df = filter_dataframe(cc_df, search_term)
+
+# Columns to hide
+columns_to_hide = [
+    'ClientId', 'OrderTypeId', 'StatusId', 'ShippingBoxId',
+    'LabelUrl', 'TrackingCode', 'CsvFileName'
+]
+
+# Apply global search to ColdCart data and hide specified columns
+if not cc_df.empty:
+    # Remove specified columns if they exist
+    filtered_cc_df = filter_dataframe(cc_df, search_term)
+    columns_to_show = [col for col in filtered_cc_df.columns if col not in columns_to_hide]
+    filtered_cc_df = filtered_cc_df[columns_to_show]
 
 # Calculate matching statistics
 if not cc_df.empty:

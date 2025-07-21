@@ -85,25 +85,19 @@ def main():
     """Start both applications"""
     logger.info("🌟 Starting Fulfillment App with API endpoints...")
     
-    # Default ports
-    fastapi_port = 8001
-    streamlit_port = 8501
+    # Get the port from Cloud Run environment variable or use default
+    port = int(os.environ.get('PORT', 8080))
+    logger.info(f"Cloud Run PORT environment variable: {port}")
     
-    # Check if default ports are available, find alternatives if needed
-    if is_port_in_use(fastapi_port):
-        fastapi_port = find_available_port(fastapi_port)
-    
-    if is_port_in_use(streamlit_port):
-        streamlit_port = find_available_port(streamlit_port)
-    
-    # Start FastAPI in a separate thread
-    api_thread = threading.Thread(target=run_fastapi, args=(fastapi_port,), daemon=True)
+    # Start FastAPI on the Cloud Run port
+    api_thread = threading.Thread(target=run_fastapi, args=(port,), daemon=True)
     api_thread.start()
     
     # Give FastAPI a moment to start
     time.sleep(2)
     
-    # Start Streamlit in the main thread
+    # Start Streamlit on a different port
+    streamlit_port = find_available_port(8501)
     run_streamlit(streamlit_port)
 
 if __name__ == "__main__":
