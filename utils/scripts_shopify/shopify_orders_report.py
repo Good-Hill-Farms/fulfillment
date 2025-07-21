@@ -10,11 +10,22 @@ logger = logging.getLogger(__name__)
 
 # Import SKU mapping functions
 try:
+    # Try relative import first (when running from project root)
     from utils.google_sheets import load_sku_mappings_from_sheets, load_sku_type_data
 except ImportError:
-    logger.warning("Could not import SKU mapping functions")
-    load_sku_mappings_from_sheets = None
-    load_sku_type_data = None
+    try:
+        # Try absolute import (when running from utils/scripts_shopify/)
+        import sys
+        import os
+        # Add the project root to the path
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+        if project_root not in sys.path:
+            sys.path.insert(0, project_root)
+        from utils.google_sheets import load_sku_mappings_from_sheets, load_sku_type_data
+    except ImportError:
+        logger.warning("Could not import SKU mapping functions")
+        load_sku_mappings_from_sheets = None
+        load_sku_type_data = None
 
 # Shopify setup
 SHOPIFY_ACCESS_TOKEN = os.getenv('SHOPIFY_ACCESS_TOKEN')

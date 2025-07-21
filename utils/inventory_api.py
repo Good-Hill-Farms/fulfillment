@@ -1,11 +1,12 @@
 import os
 import pandas as pd
-from io import StringIO
-import tempfile
-import pytz
-from datetime import datetime, timedelta
+import logging
 import re
-from coldcart_api import get_inventory_data
+import pytz
+import tempfile
+from datetime import datetime, timedelta
+from io import StringIO
+from utils.coldcart_api import get_inventory_data
 
 def save_as_excel(df, filename, colorful=False):
     """Save DataFrame as Excel file with optional colorful formatting"""

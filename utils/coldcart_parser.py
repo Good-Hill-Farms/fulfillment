@@ -170,7 +170,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     
     # Import the API function for testing
-    from coldcart_api import get_shipment_batch_summary
+    from utils.coldcart_api import get_shipment_batch_summary
     from datetime import date
     
     # Test the parsing functions
