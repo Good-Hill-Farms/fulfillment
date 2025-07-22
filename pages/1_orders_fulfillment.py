@@ -46,12 +46,77 @@ def get_coldcart_data(start_date, end_date):
         credentials=creds, 
         project='nca-toolkit-project-446011'
     )
+
+    # Wave Summaries Schema (cc_wave_summaries):
+    # - ShipmentID
+    # - TrackingCode
+    # - ColdcartID
+    # - BoxName
+    # - Sku
+    # - Description
+    # - Quantity
+    # - WarehouseLocations
+    # - BatchCodes
+    # - LabelUrl
+    # - Carrier
+    # - DestinationName
+    # - csv_filename
+    
+    # Shipment Stats Schema (cc_shipment_stats):
+    # - ShipmentId
+    # - ClientId
+    # - OrderId
+    # - ExternalOrderId
+    # - OrderNumber
+    # - OrderTypeId
+    # - Tags
+    # - StatusId
+    # - StatusName
+    # - CreatedDate
+    # - ShippedDate
+    # - DeliveredDate
+    # - EstimatedWeightLb
+    # - ShippingBoxId
+    # - LengthIn
+    # - DepthIn
+    # - WidthIn
+    # - TrackingCode
+    # - LabelUrl
+    # - ExternalCarrierAccountId
+    # - OriginCity
+    # - OriginState
+    # - OriginPostalCode
+    # - DestinationName
+    # - DestinationStreet
+    # - DestinationCity
+    # - DestinationState
+    # - DestinationPostalCode
+    # - CarrierName
+    # - ServiceName
+    # - FulfillmentWarehouseId
+    # - DaysInTransit
+    # - EstDaysInTransit
+    # - HasAnomaly
+    # - IsBatched
+    # - FulfillmentCost
+    # - ServiceFee
+    # - UnitOverageCost
+    # - LastMileCost
+    # - CoolantCost
+    # - InnerPackagingCost
+    # - MarketingInsertCost
+    # - BoxCost
+    # - Total
     
     query = f"""
-    SELECT *
-    FROM `nca-toolkit-project-446011.fulfillment_cc_shopify.cc_shipment_stats` s
-    LEFT JOIN `nca-toolkit-project-446011.fulfillment_cc_shopify.cc_wave_summaries` w
-        ON s.ShipmentId = w.ShipmentID
+    WITH filtered_waves AS (
+        SELECT *
+        FROM `nca-toolkit-project-446011.fulfillment_cc_shopify.cc_wave_summaries`
+    )
+    SELECT w.*, s.*
+    FROM filtered_waves w
+    LEFT JOIN `nca-toolkit-project-446011.fulfillment_cc_shopify.cc_shipment_stats` s
+        ON w.ShipmentID = s.ShipmentId
     WHERE DATE(PARSE_TIMESTAMP('%m/%d/%Y %H:%M:%S', s.CreatedDate)) 
         BETWEEN '{start_date}' AND '{end_date}'
     ORDER BY PARSE_TIMESTAMP('%m/%d/%Y %H:%M:%S', s.CreatedDate) DESC
@@ -125,15 +190,19 @@ if not cc_df.empty:
 
 # Calculate matching statistics
 if not cc_df.empty:
-    total_shipments = len(cc_df['ShipmentId'].unique())
-    matching_shipments = len(cc_df[cc_df['ShipmentID_1'].notna()]['ShipmentId'].unique())
-    match_rate = round((matching_shipments / total_shipments * 100), 1) if total_shipments > 0 else 0
+    print("Available columns:", cc_df.columns.tolist())  # Debug print to see actual columns
+    
+    # Count total unique wave ShipmentIDs
+    total_waves = len(cc_df['ShipmentID'].unique())  # From wave_summaries (w.*)
+    # Count waves that have matching shipment stats
+    matching_waves = len(cc_df[cc_df['ShipmentId_1'].notna()]['ShipmentID'].unique())  # ShipmentId_1 from shipment_stats (s.*)
+    match_rate = round((matching_waves / total_waves * 100), 1) if total_waves > 0 else 0
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Total Shipments", total_shipments)
+        st.metric("Total Wave Summaries", total_waves)
     with col2:
-        st.metric("Matched with Wave", matching_shipments)
+        st.metric("With Shipment Stats", matching_waves)
     with col3:
         st.metric("Match Rate", f"{match_rate}%")
 
