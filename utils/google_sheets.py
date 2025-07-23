@@ -35,37 +35,10 @@ INPUT_SKU_TYPE_NEEDED_COLUMNS = ["A", "B", "I"]
 GHF_AGGREGATION_DASHBOARD_ID = "1CdTTV8pMqq_wS9vu0qa8HMykNkqtOverrIsP0WLSUeM"
 AGG_ORDERS_SHEET_NAME = "Agg_Orders"
 ALL_PICKLIST_V2_SHEET_NAME = "ALL_Picklist_V2"  # Fixed capitalization to match actual sheet name
-ALL_PICKLIST_V2_NEEDED_COLUMNS = [
-    "A",  # Product Type
-    "N",  # Total Weight
-    "Q",  # Inventory
-    "T",  # Confirmed Agg
-    "W",  # Total
-    "Z",  # Total Needs (LBS)
-    # Oxnard 1 (OX1)
-    "AL",  # OX 1: Projection
-    "AM",  # OX 1: Weight
-    "AN",  # OX 1: Inventory + Confirmed Agg
-    "AO",  # OX 1: Needs
-    # Wheeling 1 (WH1)
-    "AT",  # WH: Projection 1
-    "AU",  # WH 1: Weight
-    "AV",  # WH 1: Inventory + Confirmed Agg
-    "AW",  # WH 1: Needs
-    # Oxnard 2 (OX2)
-    "BB",  # OX: Projection 2
-    "BC",  # OX 2: Weight
-    "BF",  # OX 2: Inventory
-    "BG",  # OX 2: Inventory + Confirmed Agg
-    "BH",  # OX 2: Needs
-    # Wheeling 2 (WH2)
-    "BI",  # WH: Projected orders per day 2
-    "BM",  # WH: Projection 2
-    "BN",  # WH 2: Weight
-    "BQ",  # WH 2: Inventory
-    "BR",  # WH 2: Inventory + Confirmed Agg
-    "BS",  # WH 2: Needs
-]
+
+# Projection Snapshots Folder
+PROJECTION_SNAPSHOTS_FOLDER_ID = "1k5S2YQJ5T_z6QtkB_u7jf-dFYbjhkjhg"  # Projection snapshots folder from user
+
 
 """
 Full column structure for ALL_Picklist_V2:
@@ -681,32 +654,21 @@ def load_all_picklist_v2() -> pd.DataFrame | None:
         logger.debug("Column letter to index mapping:")
         logger.debug(col_to_idx)
         
-        # Get indices for the columns we want
-        selected_indices = []
-        logger.debug(f"Looking for columns: {ALL_PICKLIST_V2_NEEDED_COLUMNS}")
-        for col in ALL_PICKLIST_V2_NEEDED_COLUMNS:
-            if col in col_to_idx:
-                selected_indices.append(col_to_idx[col])
-                logger.debug(f"Found column {col} -> {headers[col_to_idx[col]]}")
-            else:
-                logger.warning(f"Column {col} not found in the sheet")
-        
-        # Debug selected headers
-        selected_headers = [headers[i] for i in selected_indices if i < len(headers)]
-        logger.debug(f"Final selected headers: {selected_headers}")
+        # Use all available columns instead of selecting specific ones
+        logger.debug(f"Loading all {len(headers)} columns from the sheet")
         
         # Process data rows
         data = values[header_idx + 2:]  # Skip one more row after the header row
         
-        selected_data = []
+        processed_data = []
         for row in data:  # Process all rows
             # Pad short rows with None
             if len(row) < len(headers):
                 row = row + [None] * (len(headers) - len(row))
-            # Select only the columns we want
-            selected_row = []
-            for i in selected_indices:
-                value = row[i] if i < len(row) else None
+            
+            # Process all columns
+            processed_row = []
+            for i, value in enumerate(row[:len(headers)]):
                 # Clean up special values
                 if value in ['#DIV/0!', '#N/A', '#VALUE!', '#REF!', '#NAME?', '#NULL!', '#NUM!', '', None]:
                     value = '0'
@@ -719,10 +681,10 @@ def load_all_picklist_v2() -> pd.DataFrame | None:
                             value = str(float(value.replace('%', '')) / 100)
                         except ValueError:
                             value = '0'
-                selected_row.append(value)
-            selected_data.append(selected_row)
+                processed_row.append(value)
+            processed_data.append(processed_row)
         
-        df = pd.DataFrame(selected_data, columns=selected_headers)
+        df = pd.DataFrame(processed_data, columns=headers)
         
         # Debug initial data
         logger.debug("Initial column names:")
@@ -740,24 +702,44 @@ def load_all_picklist_v2() -> pd.DataFrame | None:
         projection_factor_cols = [col for col in df.columns if 'Projection Factor' in col]
         
         # Clean and convert numeric columns
-        for col in df.columns:
-            if col == product_type_col:
-                continue
+        columns_to_process = [col for col in df.columns if col != product_type_col]
+        
+        for col in columns_to_process:
+            try:
+                # Check if this column exists and is accessible
+                if col not in df.columns:
+                    continue
+                    
+                # Get the column as a Series - handle duplicate column names
+                column_data = df[col]
+                if isinstance(column_data, pd.DataFrame):
+                    # If we get a DataFrame (due to duplicate column names), take the first column
+                    column_data = column_data.iloc[:, 0]
                 
-            # Convert to string first to clean up
-            df[col] = df[col].astype(str)
-            
-            # Clean up the values
-            df[col] = df[col].apply(lambda x: '0' if x in ['#DIV/0!', '#N/A', '#VALUE!', '#REF!', '#NAME?', '#NULL!', '#NUM!', '', 'None'] else x)
-            df[col] = df[col].str.replace('$', '').str.replace(',', '')
-            
-            # Handle different column types
-            if col in adjustment_cols:
-                df[col] = df[col].apply(lambda x: float(1) if str(x).strip() == '1' else float(0.2))
-            elif col in projection_factor_cols:
-                df[col] = df[col].apply(lambda x: float(1) if str(x).strip() in ['1', '1.0'] else float(x))
-            else:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).round(2)
+                # Convert to string first to clean up
+                column_data = column_data.astype(str)
+                
+                # Clean up the values
+                column_data = column_data.apply(lambda x: '0' if str(x) in ['#DIV/0!', '#N/A', '#VALUE!', '#REF!', '#NAME?', '#NULL!', '#NUM!', '', 'None'] else x)
+                
+                # Remove currency symbols and commas
+                column_data = column_data.astype(str).str.replace('$', '', regex=False).str.replace(',', '', regex=False)
+                
+                # Handle different column types
+                if col in adjustment_cols:
+                    column_data = column_data.apply(lambda x: float(1) if str(x).strip() == '1' else float(0.2))
+                elif col in projection_factor_cols:
+                    column_data = column_data.apply(lambda x: float(1) if str(x).strip() in ['1', '1.0'] else float(x))
+                else:
+                    column_data = pd.to_numeric(column_data, errors='coerce').fillna(0).round(2)
+                
+                # Assign back to DataFrame
+                df[col] = column_data
+                
+            except Exception as e:
+                logger.error(f"Error processing column {col}: {e}")
+                # Set column to default values if processing fails
+                df[col] = 0
         
         # Remove empty rows
         df = df.dropna(how='all')
@@ -777,6 +759,319 @@ def load_all_picklist_v2() -> pd.DataFrame | None:
         logger.error(f"Failed to load All Picklist V2 data: {str(e)}")
         logger.exception("Full traceback:")
         return None
+
+
+def load_projection_snapshot(spreadsheet_id: str = None, latest: bool = True) -> pd.DataFrame | None:
+    """
+    Loads projection snapshot data from the projection snapshots folder.
+    
+    Args:
+        spreadsheet_id (str, optional): Specific spreadsheet ID to load from.
+                                       If None, will find the latest snapshot.
+        latest (bool): If True and spreadsheet_id is None, loads the most recent snapshot.
+                      If False, returns a list of available snapshots.
+    
+    Returns:
+        pd.DataFrame | None: DataFrame with projection data, or None if failed
+    """
+    logger.debug(f"Loading projection snapshot data...")
+    try:
+        creds = get_credentials()
+        
+        # If no specific spreadsheet ID provided, find the latest one
+        if spreadsheet_id is None:
+            drive_service = build("drive", "v3", credentials=creds)
+            
+            # Search for spreadsheets in the projection snapshots folder
+            query = f"'{PROJECTION_SNAPSHOTS_FOLDER_ID}' in parents and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false"
+            
+            # Get all files in the folder and subfolders
+            all_files = []
+            page_token = None
+            
+            while True:
+                results = drive_service.files().list(
+                    q=query,
+                    fields="nextPageToken, files(id, name, createdTime, parents)",
+                    orderBy="createdTime desc",
+                    pageToken=page_token
+                ).execute()
+                
+                files = results.get('files', [])
+                all_files.extend(files)
+                
+                page_token = results.get('nextPageToken')
+                if not page_token:
+                    break
+            
+            # Also search in year/month subfolders
+            # First get all folders in the projection snapshots folder
+            folder_query = f"'{PROJECTION_SNAPSHOTS_FOLDER_ID}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
+            folder_results = drive_service.files().list(
+                q=folder_query,
+                fields="files(id, name)"
+            ).execute()
+            
+            year_folders = folder_results.get('files', [])
+            
+            # Search in each year folder for month folders
+            for year_folder in year_folders:
+                month_folder_query = f"'{year_folder['id']}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
+                month_results = drive_service.files().list(
+                    q=month_folder_query,
+                    fields="files(id, name)"
+                ).execute()
+                
+                month_folders = month_results.get('files', [])
+                
+                # Search for spreadsheets in each month folder
+                for month_folder in month_folders:
+                    spreadsheet_query = f"'{month_folder['id']}' in parents and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false"
+                    spreadsheet_results = drive_service.files().list(
+                        q=spreadsheet_query,
+                        fields="files(id, name, createdTime, parents)",
+                        orderBy="createdTime desc"
+                    ).execute()
+                    
+                    spreadsheets = spreadsheet_results.get('files', [])
+                    all_files.extend(spreadsheets)
+            
+            if not all_files:
+                logger.warning("No projection snapshots found in the folder")
+                return None
+            
+            # Sort by creation time (most recent first)
+            all_files.sort(key=lambda x: x['createdTime'], reverse=True)
+            
+            if not latest:
+                logger.info("Available projection snapshots:")
+                for file in all_files[:10]:  # Show first 10
+                    logger.info(f"  - {file['name']} (ID: {file['id']}, Created: {file['createdTime']})")
+                return None
+            
+            # Use the most recent file
+            latest_file = all_files[0]
+            spreadsheet_id = latest_file['id']
+            logger.info(f"Loading latest projection snapshot: {latest_file['name']} (Created: {latest_file['createdTime']})")
+        
+        # Now load the data from the specific spreadsheet
+        sheets_service = build("sheets", "v4", credentials=creds)
+        sheet = sheets_service.spreadsheets()
+        
+        # Get ALL data from the ALL_Picklist_V2 sheet
+        result = (
+            sheet.values()
+            .get(
+                spreadsheetId=spreadsheet_id,
+                range=ALL_PICKLIST_V2_SHEET_NAME
+            )
+            .execute()
+        )
+        
+        values = result.get("values", [])
+        if not values:
+            logger.warning(f"No data found in {ALL_PICKLIST_V2_SHEET_NAME} of projection snapshot")
+            return None
+        
+        # Use the same processing logic as load_all_picklist_v2
+        # Find the first row that has the most columns - that's likely our real header row
+        max_cols = 0
+        header_idx = 0
+        for idx, row in enumerate(values[:10]):  # Check first 10 rows
+            if len(row) > max_cols:
+                max_cols = len(row)
+                header_idx = idx
+        
+        logger.debug(f"Selected header row {header_idx} with {max_cols} columns")
+        
+        headers = values[header_idx]
+        logger.debug(f"Headers: {headers[:10]}...")  # Show first 10 headers
+        
+        # Create a mapping of column letter to index
+        col_to_idx = {}
+        for i in range(len(headers)):
+            letter = chr(65 + i) if i < 26 else chr(64 + i//26) + chr(65 + i%26)
+            col_to_idx[letter] = i
+        
+        # Use all available columns instead of selecting specific ones
+        logger.debug(f"Loading all {len(headers)} columns from the projection snapshot")
+        
+        # Process data rows
+        data = values[header_idx + 2:]  # Skip one more row after the header row
+        
+        processed_data = []
+        for row in data:  # Process all rows
+            # Pad short rows with None
+            if len(row) < len(headers):
+                row = row + [None] * (len(headers) - len(row))
+            
+            # Process all columns
+            processed_row = []
+            for i, value in enumerate(row[:len(headers)]):
+                # Clean up special values
+                if value in ['#DIV/0!', '#N/A', '#VALUE!', '#REF!', '#NAME?', '#NULL!', '#NUM!', '', None]:
+                    value = '0'
+                elif isinstance(value, str):
+                    # Remove any currency symbols, commas and extra spaces
+                    value = value.replace('$', '').replace(',', '').strip()
+                    # Handle percentage values
+                    if '%' in value:
+                        try:
+                            value = str(float(value.replace('%', '')) / 100)
+                        except ValueError:
+                            value = '0'
+                processed_row.append(value)
+            processed_data.append(processed_row)
+        
+        df = pd.DataFrame(processed_data, columns=headers)
+        
+        # Define column groups (same as load_all_picklist_v2)
+        product_type_col = 'Product Type'
+        numeric_cols = [
+            'Total Weight', 'Inventory', 'Confirmed Agg', 'Total', 'Total Needs (LBS)',
+            'OX 1: Projection', 'OX 1: Weight', 'OX 1: Inventory + Confirmed Agg',
+            'WH: Projection 1', 'WH 1: Weight',
+            'OX: Projection 2', 'OX 2: Weight', 'OX 2: Inventory', 'OX 2: Inventory + Confirmed Agg', 'OX 2: Needs'
+        ]
+        adjustment_cols = [col for col in df.columns if 'Inventory Adjustment' in col]
+        projection_factor_cols = [col for col in df.columns if 'Projection Factor' in col]
+        
+        # Clean and convert numeric columns (same logic as load_all_picklist_v2)
+        columns_to_process = [col for col in df.columns if col != product_type_col]
+        
+        for col in columns_to_process:
+            try:
+                # Check if this column exists and is accessible
+                if col not in df.columns:
+                    continue
+                    
+                # Get the column as a Series - handle duplicate column names
+                column_data = df[col]
+                if isinstance(column_data, pd.DataFrame):
+                    # If we get a DataFrame (due to duplicate column names), take the first column
+                    column_data = column_data.iloc[:, 0]
+                
+                # Convert to string first to clean up
+                column_data = column_data.astype(str)
+                
+                # Clean up the values
+                column_data = column_data.apply(lambda x: '0' if str(x) in ['#DIV/0!', '#N/A', '#VALUE!', '#REF!', '#NAME?', '#NULL!', '#NUM!', '', 'None'] else x)
+                
+                # Remove currency symbols and commas
+                column_data = column_data.astype(str).str.replace('$', '', regex=False).str.replace(',', '', regex=False)
+                
+                # Handle different column types
+                if col in adjustment_cols:
+                    column_data = column_data.apply(lambda x: float(1) if str(x).strip() == '1' else float(0.2))
+                elif col in projection_factor_cols:
+                    column_data = column_data.apply(lambda x: float(1) if str(x).strip() in ['1', '1.0'] else float(x))
+                else:
+                    column_data = pd.to_numeric(column_data, errors='coerce').fillna(0).round(2)
+                
+                # Assign back to DataFrame
+                df[col] = column_data
+                
+            except Exception as e:
+                logger.error(f"Error processing column {col}: {e}")
+                # Set column to default values if processing fails
+                df[col] = 0
+        
+        # Remove empty rows
+        df = df.dropna(how='all')
+        
+        # Filter out rows where Product Type is empty or whitespace
+        if product_type_col in df.columns:
+            df = df[df[product_type_col].notna() & (df[product_type_col].astype(str).str.strip() != '')]
+        
+        # Filter out rows where all numeric columns are 0
+        numeric_mask = df[numeric_cols].ne(0).any(axis=1)
+        df = df[numeric_mask]
+        
+        logger.debug(f"Successfully loaded {len(df)} rows from projection snapshot")
+        return df
+        
+    except Exception as e:
+        logger.error(f"Failed to load projection snapshot data: {str(e)}")
+        logger.exception("Full traceback:")
+        return None
+
+
+def list_available_projection_snapshots() -> List[Dict[str, str]]:
+    """
+    Lists all available projection snapshots in the projection snapshots folder.
+    
+    Returns:
+        List[Dict[str, str]]: List of dictionaries with snapshot information
+                             Each dict contains: id, name, createdTime, folder_path
+    """
+    logger.debug("Listing available projection snapshots...")
+    try:
+        creds = get_credentials()
+        drive_service = build("drive", "v3", credentials=creds)
+        
+        all_snapshots = []
+        
+        # Search for spreadsheets directly in the projection snapshots folder
+        query = f"'{PROJECTION_SNAPSHOTS_FOLDER_ID}' in parents and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false"
+        results = drive_service.files().list(
+            q=query,
+            fields="files(id, name, createdTime, parents)",
+            orderBy="createdTime desc"
+        ).execute()
+        
+        files = results.get('files', [])
+        for file in files:
+            all_snapshots.append({
+                'id': file['id'],
+                'name': file['name'],
+                'createdTime': file['createdTime'],
+                'folder_path': 'Root'
+            })
+        
+        # Also search in year/month subfolders
+        folder_query = f"'{PROJECTION_SNAPSHOTS_FOLDER_ID}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
+        folder_results = drive_service.files().list(
+            q=folder_query,
+            fields="files(id, name)"
+        ).execute()
+        
+        year_folders = folder_results.get('files', [])
+        
+        for year_folder in year_folders:
+            month_folder_query = f"'{year_folder['id']}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
+            month_results = drive_service.files().list(
+                q=month_folder_query,
+                fields="files(id, name)"
+            ).execute()
+            
+            month_folders = month_results.get('files', [])
+            
+            for month_folder in month_folders:
+                spreadsheet_query = f"'{month_folder['id']}' in parents and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false"
+                spreadsheet_results = drive_service.files().list(
+                    q=spreadsheet_query,
+                    fields="files(id, name, createdTime, parents)",
+                    orderBy="createdTime desc"
+                ).execute()
+                
+                spreadsheets = spreadsheet_results.get('files', [])
+                for spreadsheet in spreadsheets:
+                    all_snapshots.append({
+                        'id': spreadsheet['id'],
+                        'name': spreadsheet['name'],
+                        'createdTime': spreadsheet['createdTime'],
+                        'folder_path': f"{year_folder['name']}/{month_folder['name']}"
+                    })
+        
+        # Sort by creation time (most recent first)
+        all_snapshots.sort(key=lambda x: x['createdTime'], reverse=True)
+        
+        logger.info(f"Found {len(all_snapshots)} projection snapshots")
+        return all_snapshots
+        
+    except Exception as e:
+        logger.error(f"Failed to list projection snapshots: {str(e)}")
+        return []
 
 def get_sku_info(df: pd.DataFrame, product_type: str) -> Dict[str, Any]:
     """
@@ -1434,66 +1729,85 @@ if __name__ == "__main__":
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
             
-        # 1. Load and save SKU mappings
-        sku_mappings = load_sku_mappings_from_sheets()
-        with open(f"{output_dir}/sku_mappings.json", "w") as f:
-            json.dump(sku_mappings, f, indent=2)
-        print(f"✓ Saved SKU mappings to {output_dir}/sku_mappings.json")
+        # # 1. Load and save SKU mappings
+        # sku_mappings = load_sku_mappings_from_sheets()
+        # with open(f"{output_dir}/sku_mappings.json", "w") as f:
+        #     json.dump(sku_mappings, f, indent=2)
+        # print(f"✓ Saved SKU mappings to {output_dir}/sku_mappings.json")
 
-        # 2. Load and save Agg Orders
-        agg_orders_df = load_agg_orders()
-        if agg_orders_df is not None:
-            agg_orders_df.to_csv(f"{output_dir}/agg_orders.csv", index=False)
-            print(f"✓ Saved {len(agg_orders_df)} rows to {output_dir}/agg_orders.csv")
+        # # 2. Load and save Agg Orders
+        # agg_orders_df = load_agg_orders()
+        # if agg_orders_df is not None:
+        #     agg_orders_df.to_csv(f"{output_dir}/agg_orders.csv", index=False)
+        #     print(f"✓ Saved {len(agg_orders_df)} rows to {output_dir}/agg_orders.csv")
 
-        # 3. Load and save All Picklist V2
+        # # 3. Load and save All Picklist V2
         picklist_df = load_all_picklist_v2()
         if picklist_df is not None:
             picklist_df.to_csv(f"{output_dir}/all_picklist_v2.csv", index=False)
             print(f"✓ Saved {len(picklist_df)} rows to {output_dir}/all_picklist_v2.csv")
 
-        # 4. Load and save Pieces vs LB Conversion
-        conversion_df = load_pieces_vs_lb_conversion()
-        if conversion_df is not None:
-            conversion_df.to_csv(f"{output_dir}/pieces_vs_lb_conversion.csv", index=False)
-            print(f"✓ Saved {len(conversion_df)} rows to {output_dir}/pieces_vs_lb_conversion.csv")
+        # # 4. Load and save Pieces vs LB Conversion
+        # conversion_df = load_pieces_vs_lb_conversion()
+        # if conversion_df is not None:
+        #     conversion_df.to_csv(f"{output_dir}/pieces_vs_lb_conversion.csv", index=False)
+        #     print(f"✓ Saved {len(conversion_df)} rows to {output_dir}/pieces_vs_lb_conversion.csv")
 
-        # 5. Load and save Oxnard Inventory
-        oxnard_inv_df = load_oxnard_inventory()
-        if oxnard_inv_df is not None:
-            oxnard_inv_df.to_csv(f"{output_dir}/oxnard_inventory.csv", index=False)
-            print(f"✓ Saved {len(oxnard_inv_df)} rows to {output_dir}/oxnard_inventory.csv")
+        # # 5. Load and save Oxnard Inventory
+        # oxnard_inv_df = load_oxnard_inventory()
+        # if oxnard_inv_df is not None:
+        #     oxnard_inv_df.to_csv(f"{output_dir}/oxnard_inventory.csv", index=False)
+        #     print(f"✓ Saved {len(oxnard_inv_df)} rows to {output_dir}/oxnard_inventory.csv")
 
-        # 6. Load and save Wheeling Inventory
-        wheeling_inv_df = load_wheeling_inventory()
-        if wheeling_inv_df is not None:
-            wheeling_inv_df.to_csv(f"{output_dir}/wheeling_inventory.csv", index=False)
-            print(f"✓ Saved {len(wheeling_inv_df)} rows to {output_dir}/wheeling_inventory.csv")
+        # # 6. Load and save Wheeling Inventory
+        # wheeling_inv_df = load_wheeling_inventory()
+        # if wheeling_inv_df is not None:
+        #     wheeling_inv_df.to_csv(f"{output_dir}/wheeling_inventory.csv", index=False)
+        #     print(f"✓ Saved {len(wheeling_inv_df)} rows to {output_dir}/wheeling_inventory.csv")
 
-        # 7. Load and save Orders New from Fruit Tracking
-        orders_new_df = load_orders_new()
-        if orders_new_df is not None:
-            orders_new_df.to_csv(f"{output_dir}/orders_new.csv", index=False)
-            print(f"✓ Saved {len(orders_new_df)} rows to {output_dir}/orders_new.csv")
+        # # 7. Load and save Orders New from Fruit Tracking
+        # orders_new_df = load_orders_new()
+        # if orders_new_df is not None:
+        #     orders_new_df.to_csv(f"{output_dir}/orders_new.csv", index=False)
+        #     print(f"✓ Saved {len(orders_new_df)} rows to {output_dir}/orders_new.csv")
 
-        # 8. Load and save Week over Week data
-        wow_df = load_wow_data()
-        if wow_df is not None:
-            wow_df.to_csv(f"{output_dir}/wow_data.csv", index=False)
-            print(f"✓ Saved {len(wow_df)} rows to {output_dir}/wow_data.csv")
+        # # 8. Load and save Week over Week data
+        # wow_df = load_wow_data()
+        # if wow_df is not None:
+        #     wow_df.to_csv(f"{output_dir}/wow_data.csv", index=False)
+        #     print(f"✓ Saved {len(wow_df)} rows to {output_dir}/wow_data.csv")
 
-        # 9. Load and save SKU Type data
-        sku_type_df = load_sku_type_data()
-        if sku_type_df is not None:
-            sku_type_df.to_csv(f"{output_dir}/sku_type.csv", index=False)
-            print(f"✓ Saved {len(sku_type_df)} rows to {output_dir}/sku_type.csv")
+        # # 9. Load and save SKU Type data
+        # sku_type_df = load_sku_type_data()
+        # if sku_type_df is not None:
+        #     sku_type_df.to_csv(f"{output_dir}/sku_type.csv", index=False)
+        #     print(f"✓ Saved {len(sku_type_df)} rows to {output_dir}/sku_type.csv")
 
-        print("\nAll data has been saved to the 'sheet_data' directory!")
-        print("Summary of files saved:")
-        print("------------------------")
-        for file in os.listdir(output_dir):
-            size = os.path.getsize(os.path.join(output_dir, file)) / 1024  # Convert to KB
-            print(f"{file:<30} {size:.1f} KB")
+        # List available projection snapshots
+        snapshots = list_available_projection_snapshots()
+        if snapshots:
+            print("\nAvailable Projection Snapshots:")
+            for snapshot in snapshots:
+                print(f"ID: {snapshot['id']}")
+                print(f"Name: {snapshot['name']}")
+                print(f"Created: {snapshot['createdTime']}")
+                print(f"Folder Path: {snapshot['folder_path']}")
+                print("------------------------")
+        else:
+            print("No projection snapshots found.")
+
+
+        projection_snapshot = load_projection_snapshot(spreadsheet_id="1vswH1dqlWR-aQcv6Bs9eZHV0jVZG8ONdbJr2YhVbyV4")
+        if projection_snapshot is not None:
+            projection_snapshot.to_csv(f"{output_dir}/projection_snapshot.csv", index=False)
+            print(f"✓ Saved {len(projection_snapshot)} rows to {output_dir}/projection_snapshot.csv")
+
+        # print("\nAll data has been saved to the 'sheet_data' directory!")
+        # print("Summary of files saved:")
+        # print("------------------------")
+        # for file in os.listdir(output_dir):
+        #     size = os.path.getsize(os.path.join(output_dir, file)) / 1024  # Convert to KB
+        #     print(f"{file:<30} {size:.1f} KB")
 
     except Exception as e:
         print(f"Error occurred: {str(e)}")
