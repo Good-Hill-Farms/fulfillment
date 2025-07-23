@@ -256,8 +256,17 @@ def deduplicate_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def load_agg_orders() -> pd.DataFrame | None:
-    """Fetches order data from the 'Agg_Orders' Google Sheet."""
+def load_agg_orders(filter_by_projection_period: bool = False, group_by_projection: bool = False) -> pd.DataFrame | None:
+    """
+    Fetches order data from the 'Agg_Orders' Google Sheet.
+    
+    Args:
+        filter_by_projection_period: If True, ensures data includes projection period information
+        group_by_projection: If True, groups data by projection period
+        
+    Returns:
+        DataFrame with order data, optionally filtered and grouped by projection period
+    """
     logger.info("Fetching data from Agg_Orders sheet...")
     try:
         values = get_agg_order_data(AGG_ORDERS_SHEET_NAME)
@@ -268,6 +277,64 @@ def load_agg_orders() -> pd.DataFrame | None:
         data = values[1:]
         df = pd.DataFrame(data, columns=headers)
         df = deduplicate_columns(df)
+        
+        if filter_by_projection_period:
+            # Convert date columns to datetime with explicit format
+            date_columns = ['Date', 'Date_1', 'Date_2']
+            for col in date_columns:
+                if col in df.columns:
+                    # Try common date formats
+                    for fmt in ['%Y-%m-%d', '%m/%d/%Y', '%m/%d/%y']:
+                        try:
+                            df[col] = pd.to_datetime(df[col], format=fmt, errors='coerce')
+                            break
+                        except:
+                            continue
+            
+            # Check if Projection Period exists and handle accordingly
+            if 'Projection Period' not in df.columns:
+                logger.warning("No Projection Period column found in data")
+                return df
+            
+            # Remove rows where Projection Period is empty or NaN
+            df = df[df['Projection Period'].notna()]
+            
+            # Sort by Date and Projection Period
+            sort_cols = ['Projection Period']
+            if 'Date' in df.columns:
+                sort_cols.insert(0, 'Date')
+            df = df.sort_values(by=sort_cols)
+            
+            # Group by Projection Period if requested
+            if group_by_projection:
+                df['Projection Period'] = df['Projection Period'].astype(str)
+                
+                # Define columns to aggregate
+                sum_columns = [
+                    'Moorpark Needs (LBS)', 'Wheeling Needs (LBS)', 
+                    'Oxnard Weight Needed', 'Wheeling Weight Needed',
+                    'Oxnard Order', 'Wheeling Order',
+                    'Oxnard Actual Order', 'Wheeling Actual Order'
+                ]
+                
+                # Create aggregation dictionary
+                agg_dict = {}
+                for col in df.columns:
+                    if col in sum_columns:
+                        agg_dict[col] = 'sum'
+                    elif col == 'Date':
+                        agg_dict[col] = 'first'
+                    else:
+                        agg_dict[col] = lambda x: ' | '.join(str(i) for i in x.unique() if pd.notna(i) and str(i).strip())
+                
+                # Group by Projection Period
+                df = df.groupby('Projection Period', as_index=False).agg(agg_dict)
+        
+        # Add P1 and P2 flags
+        if 'Projection Period' in df.columns:
+            df['is_p1'] = df['Projection Period'].astype(str).str.contains('1', na=False)
+            df['is_p2'] = df['Projection Period'].astype(str).str.contains('2', na=False)
+        
         return df
 
     except Exception as e:
@@ -1739,7 +1806,6 @@ def list_folder_contents(folder_id: str) -> list:
         logger.error(f"Failed to list folder contents: {str(e)}")
         return []
 
-
 if __name__ == "__main__":
     try:
         # Create a directory for the output files if it doesn't exist
@@ -1753,17 +1819,17 @@ if __name__ == "__main__":
         #     json.dump(sku_mappings, f, indent=2)
         # print(f"✓ Saved SKU mappings to {output_dir}/sku_mappings.json")
 
-        # # 2. Load and save Agg Orders
-        # agg_orders_df = load_agg_orders()
-        # if agg_orders_df is not None:
-        #     agg_orders_df.to_csv(f"{output_dir}/agg_orders.csv", index=False)
-        #     print(f"✓ Saved {len(agg_orders_df)} rows to {output_dir}/agg_orders.csv")
+        # 2. Load and save Agg Orders
+        agg_orders_df = load_agg_orders(filter_by_projection_period=True, group_by_projection=True)
+        if agg_orders_df is not None:
+            agg_orders_df.to_csv(f"{output_dir}/agg_orders.csv", index=False)
+            print(f"✓ Saved {len(agg_orders_df)} rows to {output_dir}/agg_orders.csv")
 
-        # # 3. Load and save All Picklist V2
-        picklist_df = load_all_picklist_v2()
-        if picklist_df is not None:
-            picklist_df.to_csv(f"{output_dir}/all_picklist_v2.csv", index=False)
-            print(f"✓ Saved {len(picklist_df)} rows to {output_dir}/all_picklist_v2.csv")
+        # # # 3. Load and save All Picklist V2
+        # picklist_df = load_all_picklist_v2()
+        # if picklist_df is not None:
+        #     picklist_df.to_csv(f"{output_dir}/all_picklist_v2.csv", index=False)
+        #     print(f"✓ Saved {len(picklist_df)} rows to {output_dir}/all_picklist_v2.csv")
 
         # # 4. Load and save Pieces vs LB Conversion
         # conversion_df = load_pieces_vs_lb_conversion()
@@ -1801,24 +1867,23 @@ if __name__ == "__main__":
         #     sku_type_df.to_csv(f"{output_dir}/sku_type.csv", index=False)
         #     print(f"✓ Saved {len(sku_type_df)} rows to {output_dir}/sku_type.csv")
 
-        # List available projection snapshots
-        snapshots = list_available_projection_snapshots()
-        if snapshots:
-            print("\nAvailable Projection Snapshots:")
-            for snapshot in snapshots:
-                print(f"ID: {snapshot['id']}")
-                print(f"Name: {snapshot['name']}")
-                print(f"Created: {snapshot['createdTime']}")
-                print(f"Folder Path: {snapshot['folder_path']}")
-                print("------------------------")
-        else:
-            print("No projection snapshots found.")
+        # # List available projection snapshots
+        # snapshots = list_available_projection_snapshots()
+        # if snapshots:
+        #     print("\nAvailable Projection Snapshots:")
+        #     for snapshot in snapshots:
+        #         print(f"ID: {snapshot['id']}")
+        #         print(f"Name: {snapshot['name']}")
+        #         print(f"Created: {snapshot['createdTime']}")
+        #         print(f"Folder Path: {snapshot['folder_path']}")
+        #         print("------------------------")
+        # else:
+        #     print("No projection snapshots found.")
 
-
-        projection_snapshot = load_projection_snapshot(spreadsheet_id="1vswH1dqlWR-aQcv6Bs9eZHV0jVZG8ONdbJr2YhVbyV4")
-        if projection_snapshot is not None:
-            projection_snapshot.to_csv(f"{output_dir}/projection_snapshot.csv", index=False)
-            print(f"✓ Saved {len(projection_snapshot)} rows to {output_dir}/projection_snapshot.csv")
+        # projection_snapshot = load_projection_snapshot(spreadsheet_id="1vswH1dqlWR-aQcv6Bs9eZHV0jVZG8ONdbJr2YhVbyV4")
+        # if projection_snapshot is not None:
+        #     projection_snapshot.to_csv(f"{output_dir}/projection_snapshot.csv", index=False)
+        #     print(f"✓ Saved {len(projection_snapshot)} rows to {output_dir}/projection_snapshot.csv")
 
         # print("\nAll data has been saved to the 'sheet_data' directory!")
         # print("Summary of files saved:")

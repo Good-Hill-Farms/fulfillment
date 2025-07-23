@@ -416,7 +416,7 @@ def main():
     if 'agg_orders_df' not in st.session_state:
         message_placeholder = st.empty()
         with st.spinner("Loading fruit data..."):
-            df_orders = load_agg_orders()
+            df_orders = load_agg_orders(filter_by_projection_period=True, group_by_projection=True)
             if df_orders is not None:
                 # Convert order columns to numeric when loading data
                 if 'Oxnard Actual Order' in df_orders.columns:
@@ -490,10 +490,15 @@ def main():
         """
         
         try:
+            # Initialize product summary dictionary
+            product_summary = {}
+            
             # Define numeric columns for formatting and conversion
             numeric_cols = ['Unfulfilled LB', 'Inventory (lbs)', 'Inventory Coldcart (ea)', 
-                          'In Transit (lbs)', 'In Transit (ea)', 'Total Inventory (lbs)', 
-                          'Total Inventory (ea)', 'Weight per Unit (lbs)', 'Cost ($)', 'Latest Price ($/lb)',
+                          'P1 In Transit (lbs)', 'P1 In Transit (ea)',
+                          'P2 In Transit (lbs)', 'P2 In Transit (ea)',
+                          'Total Inventory (lbs)', 'Total Inventory (ea)',
+                          'Weight per Unit (lbs)', 'Cost ($)', 'Latest Price ($/lb)',
                           'Projection 1', 'Projection 2', 'Difference Proj1', 'Difference Proj2']
             
             # 1. Get SKU mappings from session state (already loaded in main function)
@@ -710,8 +715,10 @@ def main():
                                 'Needs (ea)': 0,
                                 'Inventory (lbs)': 0,
                                 'Inventory Coldcart (ea)': 0,
-                                'In Transit (lbs)': 0,
-                                'In Transit (ea)': 0,
+                                'P1 In Transit (lbs)': 0,
+                                'P1 In Transit (ea)': 0,
+                                'P2 In Transit (lbs)': 0,
+                                'P2 In Transit (ea)': 0,
                                 'Total Inventory (lbs)': 0,
                                 'Total Inventory (ea)': 0,
                                 'Cost ($)': 0,
@@ -769,8 +776,10 @@ def main():
                             'Needs (ea)': 0,
                             'Inventory (lbs)': 0,
                             'Inventory Coldcart (ea)': 0,
-                            'In Transit (lbs)': 0,
-                            'In Transit (ea)': 0,
+                            'P1 In Transit (lbs)': 0,
+                            'P1 In Transit (ea)': 0,
+                            'P2 In Transit (lbs)': 0,
+                            'P2 In Transit (ea)': 0,
                             'Total Inventory (lbs)': 0,
                             'Total Inventory (ea)': 0,
                             'Cost ($)': 0,
@@ -824,6 +833,8 @@ def main():
             in_transit_processed = 0
             for _, row in recent_orders.iterrows():
                 fruit_type = row.get('Fruit', '')
+                is_p1 = row.get('is_p1', False)
+                is_p2 = row.get('is_p2', False)
                 
                 # Process Oxnard orders
                 oxnard_status = row.get('Oxnard Status', '')
@@ -863,8 +874,10 @@ def main():
                             'Needs (ea)': 0,
                             'Inventory (lbs)': 0,
                             'Inventory Coldcart (ea)': 0,
-                            'In Transit (lbs)': 0,
-                            'In Transit (ea)': 0,
+                            'P1 In Transit (lbs)': 0,
+                            'P1 In Transit (ea)': 0,
+                            'P2 In Transit (lbs)': 0,
+                            'P2 In Transit (ea)': 0,
                             'Total Inventory (lbs)': 0,
                             'Total Inventory (ea)': 0,
                             'Cost ($)': 0,
@@ -878,8 +891,14 @@ def main():
                     if oxnard_sku:
                         oxnard_pieces = get_pieces_from_weight_conversion(oxnard_sku, oxnard_weight)
                     
-                    product_summary[product_type]['In Transit (lbs)'] += oxnard_weight
-                    product_summary[product_type]['In Transit (ea)'] += oxnard_pieces
+                    # Add to appropriate projection period
+                    if is_p1:
+                        product_summary[product_type]['P1 In Transit (lbs)'] += oxnard_weight
+                        product_summary[product_type]['P1 In Transit (ea)'] += oxnard_pieces
+                    elif is_p2:
+                        product_summary[product_type]['P2 In Transit (lbs)'] += oxnard_weight
+                        product_summary[product_type]['P2 In Transit (ea)'] += oxnard_pieces
+                    
                     product_summary[product_type]['Picklist SKUs'].add(f"OX-{oxnard_sku or fruit_type}")
                     in_transit_processed += 1
                 
@@ -921,8 +940,10 @@ def main():
                             'Needs (ea)': 0,
                             'Inventory (lbs)': 0,
                             'Inventory Coldcart (ea)': 0,
-                            'In Transit (lbs)': 0,
-                            'In Transit (ea)': 0,
+                            'P1 In Transit (lbs)': 0,
+                            'P1 In Transit (ea)': 0,
+                            'P2 In Transit (lbs)': 0,
+                            'P2 In Transit (ea)': 0,
                             'Total Inventory (lbs)': 0,
                             'Total Inventory (ea)': 0,
                             'Cost ($)': 0,
@@ -936,8 +957,14 @@ def main():
                     if wheeling_sku:
                         wheeling_pieces = get_pieces_from_weight_conversion(wheeling_sku, wheeling_weight)
                     
-                    product_summary[product_type]['In Transit (lbs)'] += wheeling_weight
-                    product_summary[product_type]['In Transit (ea)'] += wheeling_pieces
+                    # Add to appropriate projection period
+                    if is_p1:
+                        product_summary[product_type]['P1 In Transit (lbs)'] += wheeling_weight
+                        product_summary[product_type]['P1 In Transit (ea)'] += wheeling_pieces
+                    elif is_p2:
+                        product_summary[product_type]['P2 In Transit (lbs)'] += wheeling_weight
+                        product_summary[product_type]['P2 In Transit (ea)'] += wheeling_pieces
+                    
                     product_summary[product_type]['Picklist SKUs'].add(f"WH-{wheeling_sku or fruit_type}")
                     in_transit_processed += 1
 
@@ -975,8 +1002,10 @@ def main():
                         'Needs (ea)': 0,
                         'Inventory (lbs)': 0,
                         'Inventory Coldcart (ea)': 0,
-                        'In Transit (lbs)': 0,
-                        'In Transit (ea)': 0,
+                        'P1 In Transit (lbs)': 0,
+'P1 In Transit (ea)': 0,
+'P2 In Transit (lbs)': 0,
+'P2 In Transit (ea)': 0,
                         'Total Inventory (lbs)': 0,
                         'Total Inventory (ea)': 0,
                         'Cost ($)': 0,
@@ -1025,8 +1054,10 @@ def main():
                             'Needs (ea)': 0,
                             'Inventory (lbs)': 0,
                             'Inventory Coldcart (ea)': 0,
-                            'In Transit (lbs)': 0,
-                            'In Transit (ea)': 0,
+                            'P1 In Transit (lbs)': 0,
+                            'P1 In Transit (ea)': 0,
+                            'P2 In Transit (lbs)': 0,
+                            'P2 In Transit (ea)': 0,
                             'Total Inventory (lbs)': 0,
                             'Total Inventory (ea)': 0,
                             'Cost ($)': 0,
@@ -1135,98 +1166,108 @@ def main():
             needs_ea = product_summary[product_type]['Needs (ea)']
             inventory_lbs = product_summary[product_type]['Inventory (lbs)']
             inventory_ea = product_summary[product_type]['Inventory Coldcart (ea)']
-            in_transit_lbs = product_summary[product_type]['In Transit (lbs)']
-            in_transit_ea = product_summary[product_type]['In Transit (ea)']
+            p1_in_transit_lbs = product_summary[product_type]['P1 In Transit (lbs)']
+            p1_in_transit_ea = product_summary[product_type]['P1 In Transit (ea)']
+            p2_in_transit_lbs = product_summary[product_type]['P2 In Transit (lbs)']
+            p2_in_transit_ea = product_summary[product_type]['P2 In Transit (ea)']
             projection_1 = product_summary[product_type]['Projection 1']
             projection_2 = product_summary[product_type]['Projection 2']
             
-            total_inventory_lbs = inventory_lbs + in_transit_lbs
-            total_inventory_ea = inventory_ea + in_transit_ea
+            # Calculate total inventory including both P1 and P2
+            total_inventory_lbs = inventory_lbs + p1_in_transit_lbs + p2_in_transit_lbs
+            total_inventory_ea = inventory_ea + p1_in_transit_ea + p2_in_transit_ea
             
-            # Calculate differences
+            # Calculate differences against projections
             diff_proj1 = total_inventory_lbs - projection_1
             diff_proj2 = total_inventory_lbs - projection_2
-            difference_ea = total_inventory_ea - needs_ea  # Calculate difference in units
             
-            # Properly format numbers - integers for ea, clean decimals for weights
-            product_summary[product_type]['Unfulfilled LB'] = round(needs_lbs, 1) if needs_lbs % 1 != 0 else int(needs_lbs)
-            product_summary[product_type]['Projection 1'] = round(projection_1, 1) if projection_1 % 1 != 0 else int(projection_1)
-            product_summary[product_type]['Projection 2'] = round(projection_2, 1) if projection_2 % 1 != 0 else int(projection_2)
-            product_summary[product_type]['Needs (ea)'] = int(round(needs_ea, 0))
-            product_summary[product_type]['Inventory (lbs)'] = round(inventory_lbs, 1) if inventory_lbs % 1 != 0 else int(inventory_lbs)
-            product_summary[product_type]['Inventory Coldcart (ea)'] = int(round(inventory_ea, 0))
-            product_summary[product_type]['In Transit (lbs)'] = round(in_transit_lbs, 1) if in_transit_lbs % 1 != 0 else int(in_transit_lbs)
-            product_summary[product_type]['In Transit (ea)'] = int(round(in_transit_ea, 0))
-            product_summary[product_type]['Total Inventory (lbs)'] = round(total_inventory_lbs, 1) if total_inventory_lbs % 1 != 0 else int(total_inventory_lbs)
-            product_summary[product_type]['Total Inventory (ea)'] = int(round(total_inventory_ea, 0))
-            product_summary[product_type]['Difference Proj1'] = round(diff_proj1, 1) if diff_proj1 % 1 != 0 else int(diff_proj1)
-            product_summary[product_type]['Difference Proj2'] = round(diff_proj2, 1) if diff_proj2 % 1 != 0 else int(diff_proj2)
-            product_summary[product_type]['Cost ($)'] = round(product_summary[product_type]['Cost ($)'], 2)
+            # Update all values in the summary
+            product_summary[product_type].update({
+                'Unfulfilled LB': round(needs_lbs, 1) if needs_lbs % 1 != 0 else int(needs_lbs),
+                'Projection 1': round(projection_1, 1) if projection_1 % 1 != 0 else int(projection_1),
+                'Projection 2': round(projection_2, 1) if projection_2 % 1 != 0 else int(projection_2),
+                'Needs (ea)': int(round(needs_ea, 0)),
+                'Inventory (lbs)': round(inventory_lbs, 1) if inventory_lbs % 1 != 0 else int(inventory_lbs),
+                'Inventory Coldcart (ea)': int(round(inventory_ea, 0)),
+                'P1 In Transit (lbs)': round(p1_in_transit_lbs, 1) if p1_in_transit_lbs % 1 != 0 else int(p1_in_transit_lbs),
+                'P1 In Transit (ea)': int(round(p1_in_transit_ea, 0)),
+                'P2 In Transit (lbs)': round(p2_in_transit_lbs, 1) if p2_in_transit_lbs % 1 != 0 else int(p2_in_transit_lbs),
+                'P2 In Transit (ea)': int(round(p2_in_transit_ea, 0)),
+                'Total Inventory (lbs)': round(total_inventory_lbs, 1) if total_inventory_lbs % 1 != 0 else int(total_inventory_lbs),
+                'Total Inventory (ea)': int(round(total_inventory_ea, 0)),
+                'Difference Proj1': round(diff_proj1, 1) if diff_proj1 % 1 != 0 else int(diff_proj1),
+                'Difference Proj2': round(diff_proj2, 1) if diff_proj2 % 1 != 0 else int(diff_proj2)
+            })
 
-            # Style the dataframe - work with numeric values
-            def color_difference(val):
-                try:
-                    # Values are already numeric
-                    if val > 0:
-                        return 'background-color: #d4edda; color: #155724'  # Green background for positive (surplus)
-                    elif val < 0:
-                        return 'background-color: #f8d7da; color: #721c24'  # Red background for negative (shortage)
-                    else:
-                        return 'background-color: #fff3e0; color: #f57c00'  # Orange background for zero
-                except:
-                    return ''
+        # Style the dataframe - work with numeric values
+        def color_difference(val):
+            try:
+                # Values are already numeric
+                if val > 0:
+                    return 'background-color: #d4edda; color: #155724'  # Green background for positive (surplus)
+                elif val < 0:
+                    return 'background-color: #f8d7da; color: #721c24'  # Red background for negative (shortage)
+                else:
+                    return 'background-color: #fff3e0; color: #f57c00'  # Orange background for zero
+            except:
+                return ''
 
-            # Show all columns except SKU columns in the correct order
-            all_columns = [
-                'Product Type',
-                'Inventory (lbs)', 
-                'Inventory Coldcart (ea)',
-                'In Transit (lbs)',
-                'In Transit (ea)',
-                'Total Inventory (lbs)',
-                'Total Inventory (ea)',
-                'Unfulfilled LB',
-                'Projection 1',
-                'Difference Proj1',
-                'Projection 2',
-                'Difference Proj2',
-                'Weight per Unit (lbs)',
-                'Cost ($)',
-                'Latest Price ($/lb)'
-            ]
-            column_config = {
-                'Product Type': st.column_config.TextColumn('Product Type', width=200),
-                'Unfulfilled LB': st.column_config.NumberColumn('Unfulfilled LB'),
-                'Projection 1': st.column_config.NumberColumn('Projection 1 (OX1+WH1)'),
-                'Difference Proj1': st.column_config.NumberColumn('Total vs Proj1'),
-                'Projection 2': st.column_config.NumberColumn('Projection 2 (OX2+WH2)'),
-                'Difference Proj2': st.column_config.NumberColumn('Total vs Proj2'),
-                'Inventory (lbs)': st.column_config.NumberColumn('Inventory Coldcart LB'),
-                'Inventory Coldcart (ea)': st.column_config.NumberColumn('Inventory Coldcart (ea)'),
-                'In Transit (lbs)': st.column_config.NumberColumn('Inventory In Transit LB'),
-                'In Transit (ea)': st.column_config.NumberColumn('In Transit (ea)'),
-                'Total Inventory (lbs)': st.column_config.NumberColumn('Total Inventory LB'),
-                'Total Inventory (ea)': st.column_config.NumberColumn('Total Inventory (ea)'),
-                'Weight per Unit (lbs)': st.column_config.NumberColumn('Weight per Unit (lbs)'),
-                'Cost ($)': st.column_config.NumberColumn('Cost', format="$%.0f"),
-                'Latest Price ($/lb)': st.column_config.NumberColumn('Latest Price ($/lb)', format="$%.0f")
-            }
+        # Show all columns except SKU columns in the correct order
+        all_columns = [
+            'Product Type',
+            'Inventory (lbs)', 
+            'Inventory Coldcart (ea)',
+            'P1 In Transit (lbs)',
+            'P1 In Transit (ea)',
+            'P2 In Transit (lbs)',
+            'P2 In Transit (ea)',
+            'Total Inventory (lbs)',
+            'Total Inventory (ea)',
+            'Unfulfilled LB',
+            'Projection 1',
+            'Difference Proj1',
+            'Projection 2',
+            'Difference Proj2',
+            'Weight per Unit (lbs)',
+            'Cost ($)',
+            'Latest Price ($/lb)'
+        ]
+        column_config = {
+            'Product Type': st.column_config.TextColumn('Product Type', width=200),
+            'Unfulfilled LB': st.column_config.NumberColumn('Unfulfilled LB'),
+            'Projection 1': st.column_config.NumberColumn('Projection 1 (OX1+WH1)'),
+            'Difference Proj1': st.column_config.NumberColumn('Total vs Proj1'),
+            'Projection 2': st.column_config.NumberColumn('Projection 2 (OX2+WH2)'),
+            'Difference Proj2': st.column_config.NumberColumn('Total vs Proj2'),
+            'Inventory (lbs)': st.column_config.NumberColumn('Inventory Coldcart LB', format="%.0f"),
+            'Inventory Coldcart (ea)': st.column_config.NumberColumn('Inventory Coldcart (ea)', format="%d"),
+            'P1 In Transit (lbs)': st.column_config.NumberColumn('P1 In Transit LB', format="%.0f"),
+            'P1 In Transit (ea)': st.column_config.NumberColumn('P1 In Transit (ea)', format="%d"),
+            'P2 In Transit (lbs)': st.column_config.NumberColumn('P2 In Transit LB', format="%.0f"),
+            'P2 In Transit (ea)': st.column_config.NumberColumn('P2 In Transit (ea)', format="%d"),
+            'Total Inventory (lbs)': st.column_config.NumberColumn('Total Inventory LB', format="%.0f"),
+            'Total Inventory (ea)': st.column_config.NumberColumn('Total Inventory (ea)', format="%d"),
+            'Weight per Unit (lbs)': st.column_config.NumberColumn('Weight per Unit (lbs)'),
+            'Cost ($)': st.column_config.NumberColumn('Cost', format="$%.0f"),
+            'Latest Price ($/lb)': st.column_config.NumberColumn('Latest Price ($/lb)', format="$%.0f")
+        }
 
-            # Update essential columns list
-            essential_columns = [
-                'Product Type',
-                'Unfulfilled LB',
-                'Projection 1',
-                'Difference Proj1',
-                'Projection 2', 
-                'Difference Proj2',
-                'Inventory (lbs)',
-                'In Transit (lbs)',
-                'Total Inventory (lbs)'
-            ]
+        # Update essential columns list
+        essential_columns = [
+            'Product Type',
+            'Unfulfilled LB',
+            'Projection 1',
+            'Difference Proj1',
+            'Projection 2', 
+            'Difference Proj2',
+            'Inventory (lbs)',
+            'P1 In Transit (lbs)',
+            'P2 In Transit (lbs)',
+            'Total Inventory (lbs)'
+        ]
 
-            # Apply color styling to all difference columns
-            difference_cols = ['Difference Proj1', 'Difference Proj2']
+        # Apply color styling to all difference columns
+        difference_cols = ['Difference Proj1', 'Difference Proj2']
 
         # Convert to DataFrame
         if product_summary:
@@ -1239,18 +1280,11 @@ def main():
             df.reset_index(inplace=True)
             df.rename(columns={'index': 'Product Type'}, inplace=True)
             
-            # First convert all to numeric and ensure float type
+            # Convert only non-numeric values to numeric, preserving the clean formatting from the update section
             for col in numeric_cols:
                 if col in df.columns:
-                    # Convert to numeric and keep as float (not int) for consistent formatting
-                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0).astype(float)
-            
-            # Keep ALL numeric columns as float for consistent formatting - no rounding to int
-            # The formatting will be handled by Streamlit's NumberColumn format parameter
-            for col in numeric_cols:
-                if col in df.columns:
-                    # Convert to float to ensure consistent 2-decimal precision formatting
-                    df[col] = df[col].astype(float)
+                    # Only convert if there are any non-numeric values, but preserve the integer/decimal formatting
+                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
             
             return df
         else:
@@ -1313,8 +1347,10 @@ def main():
                     'Product Type',
                     'Inventory (lbs)', 
                     'Inventory Coldcart (ea)',
-                    'In Transit (lbs)',
-                    'In Transit (ea)',
+                    'P1 In Transit (lbs)',
+                    'P1 In Transit (ea)',
+                    'P2 In Transit (lbs)',
+                    'P2 In Transit (ea)',
                     'Total Inventory (lbs)',
                     'Total Inventory (ea)',
                     'Unfulfilled LB',
@@ -1331,7 +1367,8 @@ def main():
                 essential_columns = [
                     'Product Type',
                     'Inventory (lbs)',
-                    'In Transit (lbs)',
+                    'P1 In Transit (lbs)',
+                    'P2 In Transit (lbs)',
                     'Total Inventory (lbs)',
                     'Projection 1',
                     'Difference Proj1',
@@ -1350,8 +1387,10 @@ def main():
                     'Difference Proj2': st.column_config.NumberColumn('Total vs Proj2'),
                     'Inventory (lbs)': st.column_config.NumberColumn('Inventory Coldcart LB'),
                     'Inventory Coldcart (ea)': st.column_config.NumberColumn('Inventory Coldcart (ea)'),
-                    'In Transit (lbs)': st.column_config.NumberColumn('Inventory In Transit LB'),
-                    'In Transit (ea)': st.column_config.NumberColumn('In Transit (ea)'),
+                    'P1 In Transit (lbs)': st.column_config.NumberColumn('P1 In Transit LB'),
+                    'P1 In Transit (ea)': st.column_config.NumberColumn('P1 In Transit (ea)'),
+                    'P2 In Transit (lbs)': st.column_config.NumberColumn('P2 In Transit LB'),
+                    'P2 In Transit (ea)': st.column_config.NumberColumn('P2 In Transit (ea)'),
                     'Total Inventory (lbs)': st.column_config.NumberColumn('Total Inventory LB'),
                     'Total Inventory (ea)': st.column_config.NumberColumn('Total Inventory (ea)'),
                     'Weight per Unit (lbs)': st.column_config.NumberColumn('Weight per Unit (lbs)'),
@@ -1400,49 +1439,217 @@ def main():
                     hide_index=True,
                     column_config=column_config
                 )
-                
-                # Summary metrics
-                col1, col2, col3, col4, col5 = st.columns(5)
-                
-                with col1:
-                    total_products = len(display_df)
-                    st.metric("Product Types", f"{total_products:,}")
-                
-                with col2:
-                    # Values are already numeric for sum
-                    total_needs = display_df['Unfulfilled LB'].sum()
-                    st.metric("Total Unfulfilled", f"{total_needs:,.0f} lbs")
-                
-                with col3:
-                    # Values are already numeric for sum
-                    total_needs = display_df['Unfulfilled LB'].sum()
-                    st.metric("Total Unfulfilled", f"{total_needs:,.0f} lbs")
-                
-                with col4:
-                    # Values are already numeric for sum
-                    total_inventory = display_df['Total Inventory (lbs)'].sum()
-                    st.metric("Total Available", f"{total_inventory:,.0f} lbs")
-                
-                with col5:
-                    # Count unfulfilled orders (unique orders, not line items)
-                    unfulfilled_df = st.session_state.get('unfulfilled_orders_df')
-                    if unfulfilled_df is not None and not unfulfilled_df.empty:
-                        # Filter out digital items (same logic as in fast summary)
-                        def is_specific_digital_item(row):
-                            sku = str(row.get('SKU', '')).lower()
-                            return sku in ['e.ripening_guide', 'expedited-shipping']
                         
-                        physical_orders = unfulfilled_df[~unfulfilled_df.apply(is_specific_digital_item, axis=1)]
-                        # Count unique orders, not line items
-                        if 'Order Name' in physical_orders.columns:
-                            total_unfulfilled = physical_orders['Order Name'].nunique()
-                        else:
-                            total_unfulfilled = len(physical_orders)
-                    else:
-                        total_unfulfilled = 0
-                    st.metric("Unfulfilled Orders", f"{total_unfulfilled:,}")          
             else:
                 st.warning("⚠️ No data available for Need/Have summary.")
+                
+                # Info section to help identify the issue
+                st.subheader("🔍 Data Status")
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.markdown("**📦 Unfulfilled Orders**")
+                    unfulfilled_df = st.session_state.get('unfulfilled_orders_df')
+                    if unfulfilled_df is not None and not unfulfilled_df.empty:
+                        st.success(f"✅ {len(unfulfilled_df)} order line items")
+                    else:
+                        st.error("❌ No unfulfilled orders data")
+                        st.markdown("Try using the refresh button above")
+                
+                with col2:
+                    st.markdown("**🏪 Inventory Data**")
+                    inventory_count = 0
+                    sources = []
+                    
+                    coldcart_df = st.session_state.get('coldcart_inventory')
+                    if coldcart_df is not None and not coldcart_df.empty:
+                        inventory_count += len(coldcart_df)
+                        sources.append("ColdCart")
+                    
+                    oxnard_df = st.session_state.get('inventory_data', {}).get('oxnard')
+                    if oxnard_df is not None and not oxnard_df.empty:
+                        inventory_count += len(oxnard_df)
+                        sources.append("Oxnard")
+                    
+                    wheeling_df = st.session_state.get('inventory_data', {}).get('wheeling')
+                    if wheeling_df is not None and not wheeling_df.empty:
+                        inventory_count += len(wheeling_df)
+                        sources.append("Wheeling")
+                    
+                    if inventory_count > 0:
+                        st.success(f"✅ {inventory_count} items from {', '.join(sources)}")
+                    else:
+                        st.error("❌ No inventory data")
+                
+                with col3:
+                    st.markdown("**🚛 In Transit Orders**")
+                    agg_orders_df = st.session_state.get('agg_orders_df')
+                    if agg_orders_df is not None and not agg_orders_df.empty:
+                        st.success(f"✅ {len(agg_orders_df)} vendor orders")
+                    else:
+                        st.error("❌ No vendor orders data")
+                
+                with col4:
+                    st.markdown("**🗂️ SKU Mappings**")
+                    sku_mappings = st.session_state.get('sku_mappings')
+                    if sku_mappings and isinstance(sku_mappings, dict):
+                        st.success(f"✅ {len(sku_mappings)} mappings")
+                    else:
+                        st.error("❌ No SKU mappings")
+                        
+        except Exception as e:
+            st.error(f"Error creating summary: {str(e)}")
+            logging.error(f"Error in create_fast_product_type_summary: {e}")
+    # Display the FAST Product Type Summary
+    with st.container():
+        st.subheader("🚀 Need/Have Summary")
+        
+        # Get projection dates from session state
+        projection_dates = st.session_state.get('projection_dates', {})
+        
+        # Create projection dates description
+        proj1_dates = ""
+        proj2_dates = ""
+        
+        if projection_dates.get('proj1_start_date', 'N/A') != 'N/A' and projection_dates.get('proj1_end_date', 'N/A') != 'N/A':
+            proj1_dates = f" ({projection_dates['proj1_start_date']} to {projection_dates['proj1_end_date'].split()[-1] if ' ' in projection_dates['proj1_end_date'] else projection_dates['proj1_end_date']})"
+        
+        if projection_dates.get('proj2_start_date', 'N/A') != 'N/A' and projection_dates.get('proj2_end_date', 'N/A') != 'N/A':
+            proj2_dates = f" ({projection_dates['proj2_start_date']} to {projection_dates['proj2_end_date'].split()[-1] if ' ' in projection_dates['proj2_end_date'] else projection_dates['proj2_end_date']})"
+        
+        # Display description with projection dates
+        description = f"""
+        ⚡ **Real-time calculation**
+        - Projection 1: OX1+WH1{proj1_dates} & Projection 2: OX2+WH2{proj2_dates}
+        - Total Inventory: ColdCart + Vendor orders (Confirmed, In Transit, Delivered)
+        """
+        
+        if proj1_dates == "" and proj2_dates == "":
+            description += "\n        - Projection dates: Not currently populated in the data"
+        
+        st.markdown(description)
+        
+        try:
+            product_summary_df = create_fast_product_type_summary()
+            
+            if not product_summary_df.empty:
+                # Add filters
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    product_search = st.text_input("🔍 Search Product Type", placeholder="Type to search...", key="fast_summary_search_2")
+                
+                with col2:
+                    show_all_columns = st.checkbox("Show all columns", value=False, key="fast_summary_all_columns_2")
+                
+                # Apply filters
+                display_df = product_summary_df.copy()
+                
+                if product_search:
+                    mask = display_df['Product Type'].str.contains(product_search, case=False, na=False)
+                    display_df = display_df[mask]
+                
+                # Sort by Unfulfilled LB (7d) descending (highest needs first) - values are already numeric
+                display_df = display_df.sort_values('Unfulfilled LB', ascending=False)
+
+                # Define all possible columns and their configurations
+                all_columns = [
+                    'Product Type',
+                    'Inventory (lbs)', 
+                    'Inventory Coldcart (ea)',
+                    'P1 In Transit (lbs)',
+                    'P1 In Transit (ea)',
+                    'P2 In Transit (lbs)',
+                    'P2 In Transit (ea)',
+                    'Total Inventory (lbs)',
+                    'Total Inventory (ea)',
+                    'Unfulfilled LB',
+                    'Projection 1',
+                    'Difference Proj1',
+                    'Projection 2',
+                    'Difference Proj2',
+                    'Weight per Unit (lbs)',
+                    'Cost ($)',
+                    'Latest Price ($/lb)'
+                ]
+
+                # Essential columns for compact view
+                essential_columns = [
+                    'Product Type',
+                    'Inventory (lbs)',
+                    'P1 In Transit (lbs)',
+                    'P2 In Transit (lbs)',
+                    'Total Inventory (lbs)',
+                    'Projection 1',
+                    'Difference Proj1',
+                    'Projection 2', 
+                    'Difference Proj2',
+                    'Unfulfilled LB',
+                ]
+
+                # Column configuration
+                column_config = {
+                    'Product Type': st.column_config.TextColumn('Product Type', width=200),
+                    'Unfulfilled LB': st.column_config.NumberColumn('Unfulfilled LB'),
+                    'Projection 1': st.column_config.NumberColumn('Projection 1 (OX1+WH1)'),
+                    'Difference Proj1': st.column_config.NumberColumn('Total vs Proj1'),
+                    'Projection 2': st.column_config.NumberColumn('Projection 2 (OX2+WH2)'),
+                    'Difference Proj2': st.column_config.NumberColumn('Total vs Proj2'),
+                    'Inventory (lbs)': st.column_config.NumberColumn('Inventory Coldcart LB'),
+                    'Inventory Coldcart (ea)': st.column_config.NumberColumn('Inventory Coldcart (ea)'),
+                    'P1 In Transit (lbs)': st.column_config.NumberColumn('P1 In Transit LB'),
+                    'P1 In Transit (ea)': st.column_config.NumberColumn('P1 In Transit (ea)'),
+                    'P2 In Transit (lbs)': st.column_config.NumberColumn('P2 In Transit LB'),
+                    'P2 In Transit (ea)': st.column_config.NumberColumn('P2 In Transit (ea)'),
+                    'Total Inventory (lbs)': st.column_config.NumberColumn('Total Inventory LB'),
+                    'Total Inventory (ea)': st.column_config.NumberColumn('Total Inventory (ea)'),
+                    'Weight per Unit (lbs)': st.column_config.NumberColumn('Weight per Unit (lbs)'),
+                    'Cost ($)': st.column_config.NumberColumn('Cost', format="$%.0f"),
+                    'Latest Price ($/lb)': st.column_config.NumberColumn('Latest Price ($/lb)', format="$%.0f")
+                }
+
+                # Style the dataframe - work with numeric values
+                def color_difference(val):
+                    try:
+                        # Values are already numeric
+                        if val > 0:
+                            return 'background-color: #d4edda; color: #155724'  # Green background for positive (surplus)
+                        elif val < 0:
+                            return 'background-color: #f8d7da; color: #721c24'  # Red background for negative (shortage)
+                        else:
+                            return 'background-color: #fff3e0; color: #f57c00'  # Orange background for zero
+                    except:
+                        return ''
+
+                # Select columns based on view mode
+                columns_to_show = all_columns if show_all_columns else essential_columns
+                columns_to_show = [col for col in columns_to_show if col in display_df.columns]
+
+                # Filter display dataframe to show only selected columns
+                display_df_filtered = display_df[columns_to_show]
+                
+                # Apply color styling to all difference columns
+                difference_cols = ['Difference Proj1', 'Difference Proj2']
+                
+                # Define numeric columns for formatting
+                numeric_cols = ['Unfulfilled LB', 'Inventory (lbs)', 'Inventory Coldcart (ea)', 
+                              'In Transit (lbs)', 'In Transit (ea)', 'Total Inventory (lbs)', 
+                              'Total Inventory (ea)', 'Weight per Unit (lbs)', 'Cost ($)', 'Latest Price ($/lb)',
+                              'Projection 1', 'Projection 2', 'Difference Proj1', 'Difference Proj2']
+                
+                styled_df = display_df_filtered.style
+                if difference_cols:
+                    styled_df = styled_df.map(color_difference, subset=difference_cols)
+                styled_df = styled_df.format(precision=0, subset=[col for col in numeric_cols if col in columns_to_show])
+
+                # Display the dataframe
+                st.dataframe(
+                    styled_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config=column_config
+                )
+
                 
                 # Info section to help identify the issue
                 st.subheader("🔍 Data Status")
