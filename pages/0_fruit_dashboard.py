@@ -1435,11 +1435,36 @@ def main():
             numeric_cols = display_df.columns.difference(['Product Type'])
             
             for col in numeric_cols:
-                # First convert to string to handle any potential formatting
-                display_df[col] = display_df[col].astype(str).str.replace(',', '')
-                # Then convert to numeric
-                display_df[col] = pd.to_numeric(display_df[col], errors='coerce').fillna(0)
-                # Do NOT round - keep original values
+                try:
+                    # Get the column data
+                    column_data = display_df[col]
+                    
+                    # Handle case where column selection returns DataFrame instead of Series
+                    # This can happen with duplicate column names
+                    if isinstance(column_data, pd.DataFrame):
+                        # Take the first column if it's a DataFrame
+                        column_data = column_data.iloc[:, 0]
+                    
+                    # First convert to string to handle any potential formatting
+                    column_data = column_data.astype(str).str.replace(',', '')
+                    # Then convert to numeric
+                    display_df[col] = pd.to_numeric(column_data, errors='coerce').fillna(0)
+                    # Do NOT round - keep original values
+                except Exception as e:
+                    logger.error(f"Error processing column {col}: {e}")
+                    # Set to 0 if there's an error
+                    display_df[col] = 0
+            
+            # Fix duplicate column names before styling
+            # This is necessary because pandas Styler doesn't work with duplicate column names
+            if not display_df.columns.is_unique:
+                logger.warning(f"Found duplicate column names: {display_df.columns[display_df.columns.duplicated()].tolist()}")
+                # Make column names unique by adding suffixes
+                cols = pd.Series(display_df.columns)
+                for dup in cols[cols.duplicated()].unique():
+                    cols[cols[cols == dup].index.values.tolist()] = [dup + '_' + str(i) if i != 0 else dup for i in range(sum(cols == dup))]
+                display_df.columns = cols
+                logger.info(f"Fixed duplicate columns. New columns: {display_df.columns.tolist()}")
             
             # Apply styling to needs columns
             needs_cols = [col for col in display_df.columns if 'Needs' in col]
@@ -1457,7 +1482,12 @@ def main():
                     return ''
                 return ''
             
-            styled_df = display_df.style.map(color_needs, subset=needs_cols)
+            # Only apply styling if we have needs columns and unique column names
+            if needs_cols and display_df.columns.is_unique:
+                styled_df = display_df.style.map(color_needs, subset=needs_cols)
+            else:
+                # If no needs columns or duplicate columns, just use plain DataFrame
+                styled_df = display_df
             
             # Create column configuration for all numeric columns with renamed labels
             column_config = {
