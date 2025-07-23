@@ -11,7 +11,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 
 # Set up logging
-logging.basicConfig(level=logging.WARNING)  # Changed from INFO to WARNING
+logging.basicConfig(level=logging.INFO)  # Changed from DEBUG to INFO
 logger = logging.getLogger(__name__)
 
 # If modifying these scopes, delete the file token.pickle.
@@ -37,46 +37,110 @@ AGG_ORDERS_SHEET_NAME = "Agg_Orders"
 ALL_PICKLIST_V2_SHEET_NAME = "ALL_Picklist_V2"  # Fixed capitalization to match actual sheet name
 ALL_PICKLIST_V2_NEEDED_COLUMNS = [
     "A",  # Product Type
-    "N", "Q", "T",  # Weight related metrics
-    "W", "Z",  # Inventory and Confirmed Aggregation
+    "N",  # Total Weight
+    "Q",  # Inventory
+    "T",  # Confirmed Agg
+    "W",  # Total
+    "Z",  # Total Needs (LBS)
     # Oxnard 1 (OX1)
-    "AL", "AM", "AN", "AO",  # Projection, Weight, Inventory + Confirmed Agg, Needs
+    "AL",  # OX 1: Projection
+    "AM",  # OX 1: Weight
+    "AN",  # OX 1: Inventory + Confirmed Agg
+    "AO",  # OX 1: Needs
     # Wheeling 1 (WH1)
-    "AT", "AU", "AV", "AW",  # Projection, Weight, Inventory + Confirmed Agg, Needs
+    "AT",  # WH: Projection 1
+    "AU",  # WH 1: Weight
+    "AV",  # WH 1: Inventory + Confirmed Agg
+    "AW",  # WH 1: Needs
     # Oxnard 2 (OX2)
-    "BC", "BG", "BF", "BH",  # Weight, Inventory + Confirmed Agg, Inventory, Needs
+    "BB",  # OX: Projection 2
+    "BC",  # OX 2: Weight
+    "BF",  # OX 2: Inventory
+    "BG",  # OX 2: Inventory + Confirmed Agg
+    "BH",  # OX 2: Needs
     # Wheeling 2 (WH2)
-    "BM", "BO", "BR", "BS"   # Weight, Inventory + Confirmed Agg, Inventory, Needs
+    "BI",  # WH: Projected orders per day 2
+    "BM",  # WH: Projection 2
+    "BN",  # WH 2: Weight
+    "BQ",  # WH 2: Inventory
+    "BR",  # WH 2: Inventory + Confirmed Agg
+    "BS",  # WH 2: Needs
 ]
 
 """
-A: Product Type - Type of product being tracked
-N, Q, T: Weight related metrics - Product weight measurements
-W, Z: Inventory and Confirmed Aggregation - Current inventory levels and confirmed aggregated amounts
+Full column structure for ALL_Picklist_V2:
 
-Oxnard 1 (OX1) - First Projection Period:
-AL: OX1: Projection - Projected values for Oxnard 1
-AM: OX1: Weight - Weight measurements for Oxnard 1
-AN: OX1: Inventory + Confirmed Agg - Combined inventory and confirmed aggregation for Oxnard 1
-AO: OX1: Needs - Required inventory needs for Oxnard 1
-
-Wheeling 1 (WH1) - First Projection Period:
-AT: WH1: Projection 1 - Projected values for Wheeling 1
-AU: WH1: Weight - Weight measurements for Wheeling 1
-AV: WH1: Inventory + Confirmed Agg - Combined inventory and confirmed aggregation for Wheeling 1
-AW: WH1: Needs - Required inventory needs for Wheeling 1
-
-Oxnard 2 (OX2) - Second Projection Period:
-BC: OX2: Weight - Weight measurements for Oxnard 2
-BG: OX2: Inventory + Confirmed Agg - Combined inventory and confirmed aggregation for Oxnard 2
-BF: OX2: Inventory - Current inventory levels for Oxnard 2
-BH: OX2: Needs - Required inventory needs for Oxnard 2
-
-Wheeling 2 (WH2) - Second Projection Period:
-BM: WH2: Weight - Weight measurements for Wheeling 2
-BO: WH2: Inventory + Confirmed Agg - Combined inventory and confirmed aggregation for Wheeling 2
-BR: WH2: Inventory - Current inventory levels for Wheeling 2
-BS: WH2: Needs - Required inventory needs for Wheeling 2
+A: Product Type
+B: Fulfillable Weight
+C: Moorpark Fulfillable
+D: Wheeling Fulfillable
+E: Trailing X Days Order Volume
+F: Moorpark Volume
+G: Wheeling Volume
+H: Total Projection
+I: Moorpark Projection
+J: Wheeling Projection
+K: Padded Weight
+L: Moorpark Padded
+M: Wheeling Padded
+N: Total Weight
+O: Moorpark Weight
+P: Wheeling Weight
+Q: Inventory
+R: Moorpark Inventory
+S: Wheeling Inventory
+T: Confirmed Agg
+U: Moorpark Confirmed Agg
+V: Wheeling Confirmed Agg
+W: Total
+X: Moorpark Total
+Y: Wheeling Total
+Z: Total Needs (LBS)
+AA: Moorpark Needs (LBS)
+AB: Wheeling Needs (LBS)
+AC: Trailing Days
+AD: Volume Start Date
+AE: Volume End Date
+AF: Trailing orders per day
+AG: Projected orders per day
+AH: Projection. Days
+AI: Projection End Date
+AJ: Projection Factor
+AK: Inventory Adjustment
+AL: OX 1: Projection
+AM: OX 1: Weight
+AN: OX 1: Inventory + Confirmed Agg
+AO: OX 1: Needs
+AP: Projection. Days
+AQ: Projection End Date
+AR: Projection Factor
+AS: Inventory Adjustment | MP
+AT: WH: Projection 1
+AU: WH 1: Weight
+AV: WH 1: Inventory + Confirmed Agg
+AW: WH 1: Needs
+AX: OX: Projected orders per day 2
+AY: OX: Projection. Days 2
+AZ: OX: Projection End Date
+BA: OX: Projection Factor
+BB: OX: Projection 2
+BC: OX 2: Weight
+BD: OX 2: Inventory Carry
+BE: OX 2: Inventory Adjustment
+BF: OX 2: Inventory
+BG: OX 2: Inventory + Confirmed Agg
+BH: OX 2: Needs
+BI: WH: Projected orders per day 2
+BJ: WH: Projection. Days 2
+BK: WH: Projection End Date
+BL: WH: Projection Factor
+BM: WH: Projection 2
+BN: WH 2: Weight
+BO: WH 2: Inventory Carry
+BP: WH 2: Inventory Adjustment
+BQ: WH 2: Inventory
+BR: WH 2: Inventory + Confirmed Agg
+BS: WH 2: Needs
 """
 
 # GHF AGG/FRUIT Table
@@ -551,15 +615,12 @@ def load_all_picklist_v2() -> pd.DataFrame | None:
         
         sheet = service.spreadsheets()
         
-        # Create range string like "A:BR" to get all needed columns
-        last_column = max(ALL_PICKLIST_V2_NEEDED_COLUMNS, key=lambda x: ord(x[0]) if len(x) == 1 else ord(x[0]) * 26 + ord(x[1]))
-        range_string = f"{ALL_PICKLIST_V2_SHEET_NAME}!A:{last_column}"
-        
+        # Get ALL data from the sheet without range restriction
         result = (
             sheet.values()
             .get(
                 spreadsheetId=GHF_AGGREGATION_DASHBOARD_ID,
-                range=range_string
+                range=ALL_PICKLIST_V2_SHEET_NAME
             )
             .execute()
         )
@@ -569,16 +630,46 @@ def load_all_picklist_v2() -> pd.DataFrame | None:
             logger.warning(f"No data found in {ALL_PICKLIST_V2_SHEET_NAME}")
             return None
             
+        # Debug raw data structure
+        logger.debug("\n=== DETAILED DATA INSPECTION ===")
+        if values and len(values) > 0:
+            logger.debug("\nAll Headers:")
+            for idx, header in enumerate(values[0]):
+                col_letter = chr(65 + idx) if idx < 26 else chr(64 + idx//26) + chr(65 + idx%26)
+                logger.debug(f"Column {col_letter} ({idx}): {header}")
+            
+            logger.debug("\nFirst 10 Rows of Data:")
+            for row_idx, row in enumerate(values[1:11]):  # Skip header, show next 10 rows
+                logger.debug(f"\nRow {row_idx + 1}:")
+                for col_idx, value in enumerate(row):
+                    if col_idx < len(values[0]):  # Only show columns that have headers
+                        col_letter = chr(65 + col_idx) if col_idx < 26 else chr(64 + col_idx//26) + chr(65 + col_idx%26)
+                        header = values[0][col_idx]
+                        logger.debug(f"  {col_letter} ({header}): {value}")
+            
+            logger.debug("\n=== END DATA INSPECTION ===\n")
+        
+        # Create range string to get all data from the sheet
+        range_string = f"{ALL_PICKLIST_V2_SHEET_NAME}!A:BZ"  # Using BZ to ensure we get all columns
+            
+        # Debug raw data
+        logger.debug("First few rows of raw data:")
+        for i, row in enumerate(values[:5]):
+            logger.debug(f"Row {i}: {row}")
+            
         # Find the first row that has the most columns - that's likely our real header row
         max_cols = 0
         header_idx = 0
         for idx, row in enumerate(values[:10]):  # Check first 10 rows
+            logger.debug(f"Row {idx} length: {len(row)}")
             if len(row) > max_cols:
                 max_cols = len(row)
                 header_idx = idx
         
+        logger.debug(f"Selected header row {header_idx} with {max_cols} columns")
+        
         headers = values[header_idx]
-        data = values[header_idx + 2:]  # Skip one more row after the header row
+        logger.debug(f"Headers: {headers}")
         
         # Create a mapping of column letter to index
         col_to_idx = {}
@@ -586,18 +677,29 @@ def load_all_picklist_v2() -> pd.DataFrame | None:
             letter = chr(65 + i) if i < 26 else chr(64 + i//26) + chr(65 + i%26)
             col_to_idx[letter] = i
             
+        # Debug column mapping
+        logger.debug("Column letter to index mapping:")
+        logger.debug(col_to_idx)
+        
         # Get indices for the columns we want
         selected_indices = []
+        logger.debug(f"Looking for columns: {ALL_PICKLIST_V2_NEEDED_COLUMNS}")
         for col in ALL_PICKLIST_V2_NEEDED_COLUMNS:
             if col in col_to_idx:
                 selected_indices.append(col_to_idx[col])
+                logger.debug(f"Found column {col} -> {headers[col_to_idx[col]]}")
             else:
                 logger.warning(f"Column {col} not found in the sheet")
         
-        # Select only the columns we want
+        # Debug selected headers
         selected_headers = [headers[i] for i in selected_indices if i < len(headers)]
+        logger.debug(f"Final selected headers: {selected_headers}")
+        
+        # Process data rows
+        data = values[header_idx + 2:]  # Skip one more row after the header row
+        
         selected_data = []
-        for row in data:
+        for row in data:  # Process all rows
             # Pad short rows with None
             if len(row) < len(headers):
                 row = row + [None] * (len(headers) - len(row))
@@ -605,7 +707,7 @@ def load_all_picklist_v2() -> pd.DataFrame | None:
             selected_row = []
             for i in selected_indices:
                 value = row[i] if i < len(row) else None
-                # Clean up special values (expanded to include all common Excel/Sheets errors)
+                # Clean up special values
                 if value in ['#DIV/0!', '#N/A', '#VALUE!', '#REF!', '#NAME?', '#NULL!', '#NUM!', '', None]:
                     value = '0'
                 elif isinstance(value, str):
@@ -620,32 +722,52 @@ def load_all_picklist_v2() -> pd.DataFrame | None:
                 selected_row.append(value)
             selected_data.append(selected_row)
         
-        logger.debug(f"Found {len(selected_data)} rows with {len(selected_headers)} columns")
-        
         df = pd.DataFrame(selected_data, columns=selected_headers)
         
-        # Convert numeric columns to float
-        numeric_columns = df.columns.difference(['Product Type'])  # All columns except Product Type should be numeric
+        # Debug initial data
+        logger.debug("Initial column names:")
+        logger.debug(df.columns.tolist())
         
-        # First handle inventory adjustment columns
-        adjustment_cols = [col for col in numeric_columns if 'Inventory Adjustment' in col]
-        for col in adjustment_cols:
-            df[col] = df[col].apply(lambda x: float(1) if str(x).strip() == '1' else float(0.2))
+        # Define column groups
+        product_type_col = 'Product Type'
+        numeric_cols = [
+            'Total Weight', 'Inventory', 'Confirmed Agg', 'Total', 'Total Needs (LBS)',
+            'OX 1: Projection', 'OX 1: Weight', 'OX 1: Inventory + Confirmed Agg',
+            'WH: Projection 1', 'WH 1: Weight',
+            'OX: Projection 2', 'OX 2: Weight', 'OX 2: Inventory', 'OX 2: Inventory + Confirmed Agg', 'OX 2: Needs'
+        ]
+        adjustment_cols = [col for col in df.columns if 'Inventory Adjustment' in col]
+        projection_factor_cols = [col for col in df.columns if 'Projection Factor' in col]
         
-        # Then handle all other numeric columns
-        other_cols = [col for col in numeric_columns if col not in adjustment_cols]
-        for col in other_cols:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).round(2)
+        # Clean and convert numeric columns
+        for col in df.columns:
+            if col == product_type_col:
+                continue
+                
+            # Convert to string first to clean up
+            df[col] = df[col].astype(str)
+            
+            # Clean up the values
+            df[col] = df[col].apply(lambda x: '0' if x in ['#DIV/0!', '#N/A', '#VALUE!', '#REF!', '#NAME?', '#NULL!', '#NUM!', '', 'None'] else x)
+            df[col] = df[col].str.replace('$', '').str.replace(',', '')
+            
+            # Handle different column types
+            if col in adjustment_cols:
+                df[col] = df[col].apply(lambda x: float(1) if str(x).strip() == '1' else float(0.2))
+            elif col in projection_factor_cols:
+                df[col] = df[col].apply(lambda x: float(1) if str(x).strip() in ['1', '1.0'] else float(x))
+            else:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).round(2)
         
-        # Remove empty rows and columns
-        df = df.dropna(how='all')  # Drop rows where all values are NA
-        df = df.dropna(axis=1, how='all')  # Drop columns where all values are NA
+        # Remove empty rows
+        df = df.dropna(how='all')
         
-        # Filter out rows where Product Type is empty, null, or just whitespace
-        df = df[df['Product Type'].notna() & (df['Product Type'].str.strip() != '')]
+        # Filter out rows where Product Type is empty or whitespace
+        if product_type_col in df.columns:
+            df = df[df[product_type_col].notna() & (df[product_type_col].astype(str).str.strip() != '')]
         
         # Filter out rows where all numeric columns are 0
-        numeric_mask = df[numeric_columns].ne(0).any(axis=1)
+        numeric_mask = df[numeric_cols].ne(0).any(axis=1)
         df = df[numeric_mask]
         
         logger.debug(f"Successfully loaded {len(df)} rows from {ALL_PICKLIST_V2_SHEET_NAME}")
@@ -676,6 +798,10 @@ def get_sku_info(df: pd.DataFrame, product_type: str) -> Dict[str, Any]:
             'inventory': {
                 'current_level': float,    # Column W
                 'confirmed_agg': float     # Column Z
+            },
+            'projections': {
+                'projection_1': float,     # AL (OX 1: Projection) + AT (WH: Projection 1)
+                'projection_2': float,     # BB (OX: Projection 2) + BM (WH: Projection 2)
             },
             'oxnard_1': {
                 'projection': float,       # Column AL
@@ -716,8 +842,10 @@ def get_sku_info(df: pd.DataFrame, product_type: str) -> Dict[str, Any]:
     # A: Product Type
     # N, Q, T: Weight metrics
     # W: Inventory, Z: Confirmed Agg
-    # AL-AO: Oxnard 1 data
-    # AT-AW: Wheeling 1 data
+    # AL: OX 1: Projection
+    # AT: WH: Projection 1
+    # BB: OX: Projection 2
+    # BM: WH: Projection 2
     
     # Get column indices (0-based)
     col_indices = {
@@ -726,15 +854,21 @@ def get_sku_info(df: pd.DataFrame, product_type: str) -> Dict[str, Any]:
         'T': 19,  # T is the 20th column
         'W': 22,  # W is the 23rd column
         'Z': 25,  # Z is the 26th column
-        'AL': 37, # AL is the 38th column
+        'AL': 37, # AL is the 38th column (OX 1: Projection)
         'AM': 38, # AM is the 39th column
         'AN': 39, # AN is the 40th column
         'AO': 40, # AO is the 41st column
-        'AT': 45, # AT is the 46th column
+        'AT': 45, # AT is the 46th column (WH: Projection 1)
         'AU': 46, # AU is the 47th column
         'AV': 47, # AV is the 48th column
-        'AW': 48  # AW is the 49th column
+        'AW': 48, # AW is the 49th column
+        'BB': 53, # BB is the 54th column (OX: Projection 2)
+        'BM': 64  # BM is the 65th column (WH: Projection 2)
     }
+    
+    # Calculate combined projections
+    projection_1 = safe_float(row.iloc[col_indices['AL']]) + safe_float(row.iloc[col_indices['AT']])
+    projection_2 = safe_float(row.iloc[col_indices['BB']]) + safe_float(row.iloc[col_indices['BM']])
     
     return {
         'product_type': str(row.iloc[0]),  # Column A
@@ -746,6 +880,10 @@ def get_sku_info(df: pd.DataFrame, product_type: str) -> Dict[str, Any]:
         'inventory': {
             'current_level': safe_float(row.iloc[col_indices['W']]),
             'confirmed_agg': safe_float(row.iloc[col_indices['Z']])
+        },
+        'projections': {
+            'projection_1': projection_1,  # AL + AT
+            'projection_2': projection_2   # BB + BM
         },
         'oxnard_1': {
             'projection': safe_float(row.iloc[col_indices['AL']]),
