@@ -1292,7 +1292,7 @@ def main():
                 )
                 
                 # Summary metrics
-                col1, col2, col3, col4, col5, col6 = st.columns(6)
+                col1, col2, col3, col4, col5 = st.columns(5)
                 
                 with col1:
                     total_products = len(display_df)
@@ -1330,19 +1330,7 @@ def main():
                             total_unfulfilled = len(physical_orders)
                     else:
                         total_unfulfilled = 0
-                    st.metric("Unfulfilled Orders", f"{total_unfulfilled:,}")
-                
-                with col6:
-                    # Use the calculated Total Latest Cost column (Total Inventory × Latest Price)
-                    if 'Total Latest Cost ($)' in display_df.columns:
-                        total_cost = display_df['Total Latest Cost ($)'].sum()
-                    elif 'Cost ($)' in display_df.columns:
-                        # Fallback to old cost column if new one doesn't exist
-                        total_cost = display_df['Cost ($)'].sum()
-                    else:
-                        total_cost = 0
-                    st.metric("Total Value at Latest Prices", f"${total_cost:,.0f}")
-                    
+                    st.metric("Unfulfilled Orders", f"{total_unfulfilled:,}")          
             else:
                 st.warning("⚠️ No data available for Need/Have summary.")
                 
