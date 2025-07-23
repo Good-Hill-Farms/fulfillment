@@ -247,6 +247,92 @@ def calculate_wow_change(prev_value, current_value):
 
 
 
+def extract_projection_dates(df):
+    """Extract projection start and end dates from the picklist data."""
+    if df is None or df.empty:
+        return {}
+    
+    try:
+        # Get the first row of data (all rows should have the same projection dates)
+        first_row = df.iloc[0]
+        
+        # Extract projection end dates from the correct columns
+        proj1_end_date = first_row.get('Projection End Date', '')
+        proj2_ox_end_date = str(first_row.get('OX: Projection End Date', '')).strip()
+        proj2_wh_end_date = str(first_row.get('WH: Projection End Date', '')).strip()
+        
+        # Get projection days to calculate start dates
+        proj1_days = pd.to_numeric(first_row.get('Projection. Days', 0), errors='coerce')
+        proj2_days = pd.to_numeric(first_row.get('OX: Projection. Days 2', 0), errors='coerce')
+        
+        # Handle duplicate columns by checking if we got a Series instead of a string
+        if isinstance(proj1_end_date, pd.Series):
+            proj1_end_date = str(proj1_end_date.iloc[0]).strip()
+            print(f"DEBUG: Converted proj1_end_date from Series: '{proj1_end_date}'")
+        else:
+            proj1_end_date = str(proj1_end_date).strip()
+        
+        # Calculate start dates by subtracting projection days from end dates
+        proj1_start_date = ''
+        proj2_start_date = ''
+        
+        if proj1_end_date and proj1_end_date not in ['0', '0.0', 'nan', 'None', 'NaN', '']:
+            try:
+                from datetime import datetime, timedelta
+                print(f"DEBUG: Raw proj1_end_date: '{proj1_end_date}' (type: {type(proj1_end_date)})")
+                print(f"DEBUG: Raw proj2_ox_end_date: '{proj2_ox_end_date}' (type: {type(proj2_ox_end_date)})")
+                print(f"DEBUG: proj1_days: {proj1_days}, proj2_ox_days: {proj2_days}")
+                
+                # Handle proj1_days if it's a Series
+                if isinstance(proj1_days, pd.Series):
+                    proj1_days = float(proj1_days.iloc[0])
+                    print(f"DEBUG: Converted proj1_days from Series: {proj1_days}")
+                
+                # Parse the end date (format like "Thu 7/24/25")
+                if '/' in proj1_end_date:
+                    date_part = proj1_end_date.split()[-1]  # Get "7/24/25" part
+                    end_date_obj = datetime.strptime(date_part, '%m/%d/%y')
+                    start_date_obj = end_date_obj - timedelta(days=int(proj1_days))
+                    proj1_start_date = start_date_obj.strftime('%m/%d/%y')
+            except Exception as e:
+                logger.debug(f"Error calculating proj1 start date: {e}")
+                proj1_start_date = 'N/A'
+        
+        # Use OX projection 2 end date as the primary proj2 end date
+        proj2_end_date = proj2_ox_end_date if proj2_ox_end_date and proj2_ox_end_date not in ['0', '0.0', 'nan', 'None', 'NaN', ''] else proj2_wh_end_date
+        
+        if proj2_end_date and proj2_end_date not in ['0', '0.0', 'nan', 'None', 'NaN', '']:
+            try:
+                from datetime import datetime, timedelta
+                # Parse the end date
+                if '/' in proj2_end_date:
+                    date_part = proj2_end_date.split()[-1]  # Get date part
+                    end_date_obj = datetime.strptime(date_part, '%m/%d/%y')
+                    start_date_obj = end_date_obj - timedelta(days=int(proj2_days))
+                    proj2_start_date = start_date_obj.strftime('%m/%d/%y')
+            except Exception as e:
+                logger.debug(f"Error calculating proj2 start date: {e}")
+                proj2_start_date = 'N/A'
+        
+        # Print final calculated dates for debugging
+        print(f"DEBUG: Final projection dates - P1: {proj1_start_date} to {proj1_end_date}, P2: {proj2_start_date} to {proj2_end_date}")
+        
+        return {
+            'proj1_start_date': proj1_start_date if proj1_start_date else 'N/A',
+            'proj1_end_date': proj1_end_date if proj1_end_date and proj1_end_date not in ['0', '0.0', 'nan', 'None', 'NaN', ''] else 'N/A',
+            'proj2_start_date': proj2_start_date if proj2_start_date else 'N/A',
+            'proj2_end_date': proj2_end_date if proj2_end_date and proj2_end_date not in ['0', '0.0', 'nan', 'None', 'NaN', ''] else 'N/A'
+        }
+        
+    except Exception as e:
+        logger.error(f"Error extracting projection dates: {e}")
+        return {
+            'proj1_start_date': 'N/A',
+            'proj1_end_date': 'N/A',
+            'proj2_start_date': 'N/A',
+            'proj2_end_date': 'N/A'
+        }
+
 def load_inventory_and_picklist_data():
     """Load inventory and picklist data individually with progress messages"""
     if 'inventory_data' not in st.session_state:
@@ -267,6 +353,10 @@ def load_inventory_and_picklist_data():
             }
             
             st.session_state['picklist_data'] = picklist_df
+            
+            # Extract projection dates from picklist data
+            projection_dates = extract_projection_dates(picklist_df)
+            st.session_state['projection_dates'] = projection_dates
             
             if all(df is not None for df in [oxnard_df, wheeling_df]):
                 message_placeholder.success("✅ Inventory data loaded successfully!")
@@ -1169,11 +1259,31 @@ def main():
     # Display the FAST Product Type Summary
     with st.container():
         st.subheader("🚀 Need/Have Summary")
-        st.markdown("""
+        
+        # Get projection dates from session state
+        projection_dates = st.session_state.get('projection_dates', {})
+        
+        # Create projection dates description
+        proj1_dates = ""
+        proj2_dates = ""
+        
+        if projection_dates.get('proj1_start_date', 'N/A') != 'N/A' and projection_dates.get('proj1_end_date', 'N/A') != 'N/A':
+            proj1_dates = f" ({projection_dates['proj1_start_date']} to {projection_dates['proj1_end_date'].split()[-1] if ' ' in projection_dates['proj1_end_date'] else projection_dates['proj1_end_date']})"
+        
+        if projection_dates.get('proj2_start_date', 'N/A') != 'N/A' and projection_dates.get('proj2_end_date', 'N/A') != 'N/A':
+            proj2_dates = f" ({projection_dates['proj2_start_date']} to {projection_dates['proj2_end_date'].split()[-1] if ' ' in projection_dates['proj2_end_date'] else projection_dates['proj2_end_date']})"
+        
+        # Display description with projection dates
+        description = f"""
         ⚡ **Real-time calculation**
-        - Projection 1: OX1+WH1 & Projection 2: OX2+WH2
+        - Projection 1: OX1+WH1{proj1_dates} & Projection 2: OX2+WH2{proj2_dates}
         - Total Inventory: ColdCart + Vendor orders (Confirmed, In Transit, Delivered)
-        """)
+        """
+        
+        if proj1_dates == "" and proj2_dates == "":
+            description += "\n        - Projection dates: Not currently populated in the data"
+        
+        st.markdown(description)
         
         try:
             product_summary_df = create_fast_product_type_summary()

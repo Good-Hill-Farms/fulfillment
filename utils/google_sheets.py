@@ -701,6 +701,12 @@ def load_all_picklist_v2() -> pd.DataFrame | None:
         adjustment_cols = [col for col in df.columns if 'Inventory Adjustment' in col]
         projection_factor_cols = [col for col in df.columns if 'Projection Factor' in col]
         
+        # Define date columns that should NOT be converted to numeric
+        date_cols = [
+            'Volume Start Date', 'Volume End Date', 'Projection End Date',
+            'OX: Projection End Date', 'WH: Projection End Date'
+        ]
+        
         # Clean and convert numeric columns
         columns_to_process = [col for col in df.columns if col != product_type_col]
         
@@ -730,6 +736,9 @@ def load_all_picklist_v2() -> pd.DataFrame | None:
                     column_data = column_data.apply(lambda x: float(1) if str(x).strip() == '1' else float(0.2))
                 elif col in projection_factor_cols:
                     column_data = column_data.apply(lambda x: float(1) if str(x).strip() in ['1', '1.0'] else float(x))
+                elif col in date_cols:
+                    # Keep date columns as strings, just clean them up
+                    column_data = column_data.apply(lambda x: '' if str(x).strip() in ['0', '0.0', 'nan', 'None', 'NaN'] else str(x).strip())
                 else:
                     column_data = pd.to_numeric(column_data, errors='coerce').fillna(0).round(2)
                 
@@ -936,6 +945,12 @@ def load_projection_snapshot(spreadsheet_id: str = None, latest: bool = True) ->
         adjustment_cols = [col for col in df.columns if 'Inventory Adjustment' in col]
         projection_factor_cols = [col for col in df.columns if 'Projection Factor' in col]
         
+        # Define date columns that should NOT be converted to numeric
+        date_cols = [
+            'Volume Start Date', 'Volume End Date', 'Projection End Date',
+            'OX: Projection End Date', 'WH: Projection End Date'
+        ]
+        
         # Clean and convert numeric columns (same logic as load_all_picklist_v2)
         columns_to_process = [col for col in df.columns if col != product_type_col]
         
@@ -965,6 +980,9 @@ def load_projection_snapshot(spreadsheet_id: str = None, latest: bool = True) ->
                     column_data = column_data.apply(lambda x: float(1) if str(x).strip() == '1' else float(0.2))
                 elif col in projection_factor_cols:
                     column_data = column_data.apply(lambda x: float(1) if str(x).strip() in ['1', '1.0'] else float(x))
+                elif col in date_cols:
+                    # Keep date columns as strings, just clean them up
+                    column_data = column_data.apply(lambda x: '' if str(x).strip() in ['0', '0.0', 'nan', 'None', 'NaN'] else str(x).strip())
                 else:
                     column_data = pd.to_numeric(column_data, errors='coerce').fillna(0).round(2)
                 
