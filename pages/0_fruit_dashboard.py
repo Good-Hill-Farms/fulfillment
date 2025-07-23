@@ -1089,17 +1089,17 @@ def main():
             # Show all columns except SKU columns in the correct order
             all_columns = [
                 'Product Type',
-                'Unfulfilled LB',
-                'Projection 1',
-                'Difference Proj1',
-                'Projection 2',
-                'Difference Proj2',
                 'Inventory (lbs)', 
                 'Inventory Coldcart (ea)',
                 'In Transit (lbs)',
                 'In Transit (ea)',
                 'Total Inventory (lbs)',
                 'Total Inventory (ea)',
+                'Unfulfilled LB',
+                'Projection 1',
+                'Difference Proj1',
+                'Projection 2',
+                'Difference Proj2',
                 'Weight per Unit (lbs)',
                 'Cost ($)',
                 'Latest Price ($/lb)'
@@ -1201,17 +1201,17 @@ def main():
                 # Define all possible columns and their configurations
                 all_columns = [
                     'Product Type',
-                    'Unfulfilled LB',
-                    'Projection 1',
-                    'Difference Proj1',
-                    'Projection 2',
-                    'Difference Proj2',
                     'Inventory (lbs)', 
                     'Inventory Coldcart (ea)',
                     'In Transit (lbs)',
                     'In Transit (ea)',
                     'Total Inventory (lbs)',
                     'Total Inventory (ea)',
+                    'Unfulfilled LB',
+                    'Projection 1',
+                    'Difference Proj1',
+                    'Projection 2',
+                    'Difference Proj2',
                     'Weight per Unit (lbs)',
                     'Cost ($)',
                     'Latest Price ($/lb)'
@@ -1220,14 +1220,14 @@ def main():
                 # Essential columns for compact view
                 essential_columns = [
                     'Product Type',
-                    'Unfulfilled LB',
+                    'Inventory (lbs)',
+                    'In Transit (lbs)',
+                    'Total Inventory (lbs)',
                     'Projection 1',
                     'Difference Proj1',
                     'Projection 2', 
                     'Difference Proj2',
-                    'Inventory (lbs)',
-                    'In Transit (lbs)',
-                    'Total Inventory (lbs)'
+                    'Unfulfilled LB',
                 ]
 
                 # Column configuration
