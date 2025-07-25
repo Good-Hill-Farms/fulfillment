@@ -4453,8 +4453,8 @@ if __name__ == "__main__":
 
     # Load actual data from docs
     orders_df = data_processor.load_orders("Shopify Matrixify Master 12_1_24 - all_order_pivot - 2025-07-23T081414.501.csv")
-    inventory_df = data_processor.load_inventory("Shopify Matrixify Master 12_1_24 - XFORM_cc_inv_balance.csv")
-    inventory_cc_df = data_processor.load_inventory(coldcart=True)
+    inventory_df = data_processor.load_inventory("Shopify Matrixify Master 12_1_24 - XFORM_cc_inv_balance.csv", source="file")
+    inventory_cc_df = data_processor.load_inventory(source="coldcart")
     sku_mappings = data_processor.load_sku_mappings()
 
     # Temporary override of SKU mappings for bundles
