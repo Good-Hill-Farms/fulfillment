@@ -28,8 +28,13 @@ ENV PORT=8080
 EXPOSE ${PORT}
 
 # Health check for Streamlit
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:${PORT}/_stcore/health || exit 1
 
-# Command to run Streamlit
-CMD ["python", "start.py"]
+# Command to run Streamlit - properly configured for Cloud Run
+CMD streamlit run app.py \
+    --server.port=${PORT} \
+    --server.address=0.0.0.0 \
+    --server.baseUrlPath="" \
+    --browser.serverAddress="0.0.0.0" \
+    --server.headless=true
