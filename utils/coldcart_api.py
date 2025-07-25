@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 def get_api_headers():
     """Get standard headers for ColdCart API requests"""
-    api_token = os.getenv('COLDCART_API_TOKEN')
+    api_token = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6Ilh3b3hVSnR5MlJiZGpGWm9mcTQzUCJ9.eyJjbGllbnRJZCI6IjI0MiIsInVzZXJJZCI6NDI2LCJpc3MiOiJodHRwczovL2F1dGguY29sZGNhcnRmdWxmaWxsLmNvbS8iLCJzdWIiOiJhdXRoMHw2ODY2NWNkZDQ4MDZiMGI4Yjk5ZjU3ZmEiLCJhdWQiOlsiaHR0cHM6Ly9hcGkuY29sZGNhcnRmdWxmaWxsLmNvbS8iLCJodHRwczovL2NvbGRjYXJ0LnVzLmF1dGgwLmNvbS91c2VyaW5mbyJdLCJpYXQiOjE3NTI4NjM4OTksImV4cCI6MTc1MzQ2ODY5OSwic2NvcGUiOiJvcGVuaWQgcHJvZmlsZSBvZmZsaW5lX2FjY2VzcyIsImF6cCI6IklJTXZha2haUzdGbVBtTE1URGNQeEV4R0M4VDBxNGZxIiwicGVybWlzc2lvbnMiOlsiY2xpZW50OmdldCIsImludGVncmF0aW9uczpzaG9waWZ5IiwiaW52ZW50b3J5OmdldCIsImludmVudG9yeTpwb3N0Iiwib3JkZXI6Z2V0Iiwib3JkZXI6cG9zdCIsInNoaXBtZW50YmF0Y2g6Z2V0Iiwic2hpcG1lbnRiYXRjaDpwb3N0Iiwic2hpcG1lbnQ6ZXN0aW1hdGUiLCJzaGlwbWVudDpnZXQiLCJzaGlwbWVudDpwb3N0IiwidXNlcnM6aW52aXRlIl19.Y029OV_wzrFvUP9As7_JHz_kc4jAcF46pHvCdrTfZBueb4lhezHNQ-OoLSbol_iz_HxlieTL_Svr9hT2mv9WWXAAyjp19no7Pd2o_PSUru_xb19vhKX6pXrZsaOjc25pESERjxrJzBtDv0UUWIN-pqN9FA9tyVzTVP4LREuD6DgnkfAWmOt1P4j7zp1B0bIDin5_JHC04stkZDD-iR3pitnFueE-kYrniqLtXHQtncj3VCndGid2Dato_mJzx3Q983MBLFzf8Ef3MvPwvLKk1lrCB0dL_RXDxonglHufR-XKP_I7LxvAdrieZRM4R2zLRcZdf7Qei8HAagT6aS7y4g"
     if not api_token:
         raise ValueError("COLDCART_API_TOKEN not found in environment variables")
     
@@ -214,7 +214,7 @@ def get_inventory_data():
     Fetch inventory data from the ColdCart API
     Returns a pandas DataFrame with the inventory data or None if the API token is missing
     """
-    api_token = os.getenv('COLDCART_API_TOKEN')
+    api_token = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6Ilh3b3hVSnR5MlJiZGpGWm9mcTQzUCJ9.eyJjbGllbnRJZCI6IjI0MiIsInVzZXJJZCI6NDI2LCJpc3MiOiJodHRwczovL2F1dGguY29sZGNhcnRmdWxmaWxsLmNvbS8iLCJzdWIiOiJhdXRoMHw2ODY2NWNkZDQ4MDZiMGI4Yjk5ZjU3ZmEiLCJhdWQiOlsiaHR0cHM6Ly9hcGkuY29sZGNhcnRmdWxmaWxsLmNvbS8iLCJodHRwczovL2NvbGRjYXJ0LnVzLmF1dGgwLmNvbS91c2VyaW5mbyJdLCJpYXQiOjE3NTI4NjM4OTksImV4cCI6MTc1MzQ2ODY5OSwic2NvcGUiOiJvcGVuaWQgcHJvZmlsZSBvZmZsaW5lX2FjY2VzcyIsImF6cCI6IklJTXZha2haUzdGbVBtTE1URGNQeEV4R0M4VDBxNGZxIiwicGVybWlzc2lvbnMiOlsiY2xpZW50OmdldCIsImludGVncmF0aW9uczpzaG9waWZ5IiwiaW52ZW50b3J5OmdldCIsImludmVudG9yeTpwb3N0Iiwib3JkZXI6Z2V0Iiwib3JkZXI6cG9zdCIsInNoaXBtZW50YmF0Y2g6Z2V0Iiwic2hpcG1lbnRiYXRjaDpwb3N0Iiwic2hpcG1lbnQ6ZXN0aW1hdGUiLCJzaGlwbWVudDpnZXQiLCJzaGlwbWVudDpwb3N0IiwidXNlcnM6aW52aXRlIl19.Y029OV_wzrFvUP9As7_JHz_kc4jAcF46pHvCdrTfZBueb4lhezHNQ-OoLSbol_iz_HxlieTL_Svr9hT2mv9WWXAAyjp19no7Pd2o_PSUru_xb19vhKX6pXrZsaOjc25pESERjxrJzBtDv0UUWIN-pqN9FA9tyVzTVP4LREuD6DgnkfAWmOt1P4j7zp1B0bIDin5_JHC04stkZDD-iR3pitnFueE-kYrniqLtXHQtncj3VCndGid2Dato_mJzx3Q983MBLFzf8Ef3MvPwvLKk1lrCB0dL_RXDxonglHufR-XKP_I7LxvAdrieZRM4R2zLRcZdf7Qei8HAagT6aS7y4g"
     if not api_token:
         logger.warning("COLDCART_API_TOKEN not found in environment variables")
         return None
@@ -263,69 +263,71 @@ if __name__ == "__main__":
     # Set up logging for testing
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     
-    # Test with Python date objects
-    from datetime import date
+    # # Test with Python date objects
+    # from datetime import date
     
-    # Test with date objects - using the same dates as the working curl command
-    test_from_date = date(2025, 6, 19)
-    test_to_date = date(2025, 7, 19)
+    # # Test with date objects - using the same dates as the working curl command
+    # test_from_date = date(2025, 6, 19)
+    # test_to_date = date(2025, 7, 19)
     
-    logger.info("Testing with date objects")
-    df = get_shipment_batch_summary(from_date=test_from_date, to_date=test_to_date)
-    print(f"Date objects test result: {len(df.get('data', [])) if df else 0} records")
+    # logger.info("Testing with date objects")
+    # df = get_shipment_batch_summary(from_date=test_from_date, to_date=test_to_date)
+    # print(f"Date objects test result: {len(df.get('data', [])) if df else 0} records")
     
-    # Test pagination to get ALL batches
-    logger.info("Testing pagination to get ALL batches...")
-    all_batches = get_all_shipment_batch_summaries(from_date=test_from_date, to_date=test_to_date)
-    print(f"Pagination test result: {len(all_batches)} total batches across all pages")
+    # # Test pagination to get ALL batches
+    # logger.info("Testing pagination to get ALL batches...")
+    # all_batches = get_all_shipment_batch_summaries(from_date=test_from_date, to_date=test_to_date)
+    # print(f"Pagination test result: {len(all_batches)} total batches across all pages")
     
-    # Test single page with nextId to verify format
-    logger.info("Testing single page with nextId to verify URL format...")
-    first_page = get_shipment_batch_summary(from_date=test_from_date, to_date=test_to_date)
-    if first_page and 'nextId' in first_page:
-        next_id = first_page['nextId']
-        logger.info(f"First page nextId: {next_id}")
-        second_page = get_shipment_batch_summary(from_date=test_from_date, to_date=test_to_date, next_id=next_id)
-        if second_page:
-            print(f"Second page test successful: {len(second_page.get('data', []))} records")
-        else:
-            print("Second page test failed")
-    else:
-        print("No pagination data found in first page")
+    # # Test single page with nextId to verify format
+    # logger.info("Testing single page with nextId to verify URL format...")
+    # first_page = get_shipment_batch_summary(from_date=test_from_date, to_date=test_to_date)
+    # if first_page and 'nextId' in first_page:
+    #     next_id = first_page['nextId']
+    #     logger.info(f"First page nextId: {next_id}")
+    #     second_page = get_shipment_batch_summary(from_date=test_from_date, to_date=test_to_date, next_id=next_id)
+    #     if second_page:
+    #         print(f"Second page test successful: {len(second_page.get('data', []))} records")
+    #     else:
+    #         print("Second page test failed")
+    # else:
+    #     print("No pagination data found in first page")
     
-    # Test download functionality
-    if all_batches:
-        # Get the first batch for testing
-        first_batch = all_batches[0]
-        pdf_url = first_batch.get('pdfUrl')
-        if pdf_url:
-            csv_filename = pdf_url.replace('.pdf', '.csv')
-            logger.info(f"Testing download of: {csv_filename}")
+    # # Test download functionality
+    # if all_batches:
+    #     # Get the first batch for testing
+    #     first_batch = all_batches[0]
+    #     pdf_url = first_batch.get('pdfUrl')
+    #     if pdf_url:
+    #         csv_filename = pdf_url.replace('.pdf', '.csv')
+    #         logger.info(f"Testing download of: {csv_filename}")
             
-            # Test 1: Download locally
-            downloaded_content = get_batch_csv_content(csv_filename)
-            if downloaded_content:
-                print(f"Successfully downloaded locally: {len(downloaded_content)} bytes")
-            else:
-                print("Local download failed")
+    #         # Test 1: Download locally
+    #         downloaded_content = get_batch_csv_content(csv_filename)
+    #         if downloaded_content:
+    #             print(f"Successfully downloaded locally: {len(downloaded_content)} bytes")
+    #         else:
+    #             print("Local download failed")
             
-            # Test 2: Fetch shipment stats
-            logger.info("Testing shipment stats...")
-            stats_content = get_shipment_stats(test_from_date, test_to_date)
-            if stats_content:
-                print(f"Successfully fetched shipment stats: {len(stats_content)} bytes")
-            else:
-                print("Shipment stats failed")
+    #         # Test 2: Fetch shipment stats
+    #         logger.info("Testing shipment stats...")
+    #         stats_content = get_shipment_stats(test_from_date, test_to_date)
+    #         if stats_content:
+    #             print(f"Successfully fetched shipment stats: {len(stats_content)} bytes")
+    #         else:
+    #             print("Shipment stats failed")
             
-            # Test 3: Upload multiple batches with dates and times (first 3 for testing)
-            logger.info("Testing multiple batch uploads with dates and times...")
-            # Take first 3 batches for testing to avoid overwhelming the API
-            test_batches = all_batches[:3]
-            # The original code had Google Drive specific logic here, which is removed.
-            # This test will now just print the number of batches processed.
-            print(f"Processed {len(test_batches)} batches for upload test.")
+    #         # Test 3: Upload multiple batches with dates and times (first 3 for testing)
+    #         logger.info("Testing multiple batch uploads with dates and times...")
+    #         # Take first 3 batches for testing to avoid overwhelming the API
+    #         test_batches = all_batches[:3]
+    #         # The original code had Google Drive specific logic here, which is removed.
+    #         # This test will now just print the number of batches processed.
+    #         print(f"Processed {len(test_batches)} batches for upload test.")
             
-            # Test 4: Fetch ALL batches
-            logger.info("Testing fetch of ALL batches...")
-            all_fetched_batches = get_all_shipment_batch_summaries(test_from_date, test_to_date)
-            print(f"Pagination test result: {len(all_fetched_batches)} total batches across all pages")
+    #         # Test 4: Fetch ALL batches
+    #         logger.info("Testing fetch of ALL batches...")
+    #         all_fetched_batches = get_all_shipment_batch_summaries(test_from_date, test_to_date)
+    #         print(f"Pagination test result: {len(all_fetched_batches)} total batches across all pages")
+    df = get_inventory_data()
+    df.to_csv("inventory_cc.csv", index=False)

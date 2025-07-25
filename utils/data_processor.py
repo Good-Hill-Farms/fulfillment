@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 import traceback
+import tempfile
 
 import pandas as pd
 import streamlit as st
@@ -14,14 +15,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from constants.schemas import SchemaManager
 from utils.airtable_handler import AirtableHandler
 from utils.data_parser import DataParser
-
-# Import ColdCart inventory API functions
-try:
-    from utils.inventory_api import get_inventory_data, get_formatted_inventory
-    COLDCART_API_AVAILABLE = True
-except ImportError as e:
-    logger.warning(f"ColdCart API integration not available: {e}")
-    COLDCART_API_AVAILABLE = False
 
 # Optional Google Sheets import - make it conditional
 try:
@@ -296,118 +289,47 @@ class DataProcessor:
             logger.error(f"Error loading SKU mappings from Google Sheets: {e}")
             return default_data
 
-    def load_inventory_from_coldcart(self):
-        """
-        Load inventory data directly from ColdCart API
-        
-        Returns:
-            pandas.DataFrame: Processed inventory dataframe with normalized columns
-        """
-        if not COLDCART_API_AVAILABLE:
-            raise Exception("ColdCart API integration not available. Please install required dependencies.")
-        
-        try:
-            logger.info("Fetching inventory data from ColdCart API...")
-            
-            # Get raw inventory data from ColdCart
-            inventory_df = get_inventory_data()
-            
-            if inventory_df is None:
-                logger.error("No inventory data received from ColdCart API")
-                return pd.DataFrame(columns=["WarehouseName", "Sku", "Name", "Type", "Balance"])
-            
-            logger.info(f"Retrieved {len(inventory_df)} inventory items from ColdCart API")
-            
-            # Process ColdCart data directly (no temp file needed)
-            processed_df = inventory_df.copy()
-            
-            # Normalize warehouse names for consistency 
-            if 'WarehouseName' in processed_df.columns:
-                warehouse_mapping = {
-                    'CA-Moorpark-93021': 'Oxnard',
-                    'CA-Oxnard-93030': 'Oxnard', 
-                    'IL-Wheeling-60090': 'Wheeling'
-                }
-                processed_df['WarehouseName'] = processed_df['WarehouseName'].replace(warehouse_mapping)
-            
-            # Ensure required columns and basic cleanup
-            required_cols = ["WarehouseName", "Sku", "Name", "Balance"]
-            for col in required_cols:
-                if col not in processed_df.columns:
-                    if col == "Balance":
-                        # For ColdCart, use AvailableQty as Balance if Balance column doesn't exist
-                        if "AvailableQty" in processed_df.columns:
-                            processed_df[col] = processed_df["AvailableQty"]
-                        else:
-                            processed_df[col] = 0
-                    else:
-                        processed_df[col] = ""
-            
-            # Add Type column if missing
-            if "Type" not in processed_df.columns:
-                processed_df["Type"] = "Product"
-            
-            # Convert Balance column to numeric (same as file parser)
-            if "Balance" in processed_df.columns:
-                processed_df["Balance"] = pd.to_numeric(
-                    processed_df["Balance"].astype(str).str.replace(",", ""), errors="coerce"
-                ).fillna(0)
-            
-            # Add tracking key for SKU and warehouse (same as file parser)
-            if "tracking_key" not in processed_df.columns:
-                processed_df["tracking_key"] = (
-                    processed_df["WarehouseName"] + "|" + processed_df["Sku"]
-                )
-                logger.info(
-                    f"ColdCart inventory has {len(processed_df)} rows with {processed_df['tracking_key'].nunique()} unique SKU-warehouse combinations"
-                )
-            
-            # Keep all rows as-is (same behavior as file parser)
-            logger.info(f"Processed ColdCart inventory: {len(processed_df)} rows")
-            return processed_df
-            
-        except Exception as e:
-            logger.error(f"Error loading inventory from ColdCart API: {str(e)}")
-            raise
-
-
-
     def load_inventory(self, file=None, source="file"):
         """
-        Load and preprocess inventory from file or ColdCart API
+        Load and preprocess inventory data from either a file or ColdCart API.
 
         Args:
-            file: Uploaded CSV file object or file path (required if source="file")
-            source: Source of inventory data ("file" or "coldcart")
-
-        Returns:
-            pandas.DataFrame: Processed inventory dataframe with normalized columns
-        """
-        if source == "coldcart":
-            return self.load_inventory_from_coldcart()
-        elif source == "file":
-            if file is None:
-                raise ValueError("File parameter is required when source='file'")
-            return self._load_inventory_from_file(file)
-        else:
-            raise ValueError(f"Invalid source '{source}'. Must be 'file' or 'coldcart'")
-
-    def _load_inventory_from_file(self, file):
-        """
-        Load and preprocess inventory CSV file
-
-        Args:
-            file: Uploaded CSV file object or file path
+            file: Uploaded CSV file object or file path. Only used when source="file".
+            source: Source of inventory data. Either "file" or "coldcart".
 
         Returns:
             pandas.DataFrame: Processed inventory dataframe with normalized columns
         """
         try:
-            # Use DataParser to parse the inventory file
-            inventory_df = self._data_parser.parse_inventory(file)
+            inventory_df = None
+            
+            if source == "coldcart":
+                # Try to get inventory from ColdCart API
+                from utils.coldcart_api import get_inventory_data
+                logger.info("Fetching inventory from ColdCart API")
+                try:
+                    inventory_df = get_inventory_data()
+                    # Use specialized ColdCart parser to process inventory data
+                    inventory_df = self._data_parser.parse_coldcart_inventory(inventory_df)
+                    if inventory_df is None:
+                        logger.warning("Failed to get inventory from ColdCart API")
+                        return pd.DataFrame(columns=["WarehouseName", "Sku", "Name", "Type", "Balance"])
+                    logger.info(f"Successfully fetched {len(inventory_df)} records from ColdCart API")
+                except Exception as e:
+                    logger.error(f"Error fetching from ColdCart API: {str(e)}")
+                    return pd.DataFrame(columns=["WarehouseName", "Sku", "Name", "Type", "Balance"])
+            elif source == "file":
+                if file is None:
+                    logger.error("No file provided for file source")
+                    return pd.DataFrame(columns=["WarehouseName", "Sku", "Name", "Type", "Balance"])
+                # Use DataParser to parse the inventory file
+                inventory_df = self._data_parser.parse_inventory(file)
+            else:
+                logger.error(f"Invalid source: {source}. Must be either 'file' or 'coldcart'")
+                return pd.DataFrame(columns=["WarehouseName", "Sku", "Name", "Type", "Balance"])
 
             # Check if the DataFrame is empty
-            if inventory_df.empty:
+            if inventory_df is None or inventory_df.empty:
                 logger.warning("Empty inventory DataFrame after initial parsing")
                 return pd.DataFrame(columns=["WarehouseName", "Sku", "Name", "Type", "Balance"])
 
@@ -455,9 +377,6 @@ class DataProcessor:
                 logger.info(
                     f"Inventory has {len(inventory_df)} rows with {inventory_df['tracking_key'].nunique()} unique SKU-warehouse combinations"
                 )
-
-            # We do NOT group or sum balances as per requirement - keep all rows as is
-            # This preserves the individual Balance values for each SKU and warehouse combination
 
             return inventory_df
 
@@ -1596,7 +1515,7 @@ class DataProcessor:
             # Store in running balances for order processing
             running_balances[composite_key] = balance
 
-            # If we've seen this key before, sum the balance (like file inventory does)
+            # If we've seen this key before, update the balance
             if composite_key in initial_inventory_state:
                 initial_inventory_state[composite_key]["balance"] = balance
             else:
@@ -1679,9 +1598,6 @@ class DataProcessor:
         for old_col, new_col in column_mapping.items():
             if old_col in orders_df.columns and new_col not in orders_df.columns:
                 orders_df[new_col] = orders_df[old_col]
-                # Ensure zip codes stay as strings after mapping
-                if new_col == "shiptopostalcode":
-                    orders_df[new_col] = orders_df[new_col].astype(str)
 
     def _extract_shopify_sku(self, row, columns):
         """Extract Shopify SKU from order row"""
@@ -1731,27 +1647,6 @@ class DataProcessor:
                         order_data[field] = row[field]
                 else:
                     order_data[field] = row[field]
-
-        # Handle special field mappings (original column names to output column names)
-        field_mappings = {
-            "Shipping: Zip": "shiptopostalcode",
-            "Customer: First Name": "CustomerFirstName", 
-            "Customer: Last Name": "customerLastname",
-            "Email": "customeremail",
-            "Shipping: Name": "shiptoname",
-            "Shipping: Address 1": "shiptostreet1", 
-            "Shipping: Address 2": "shiptostreet2",
-            "Shipping: City": "shiptocity",
-            "Shipping: Province Code": "shiptostate"
-        }
-        
-        for original_field, output_field in field_mappings.items():
-            if original_field in row and pd.notna(row[original_field]) and output_field in output_columns:
-                if output_field == "shiptopostalcode":
-                    # Ensure zip code stays as string
-                    order_data[output_field] = str(row[original_field]).strip()
-                else:
-                    order_data[output_field] = row[original_field]
 
         # Add SKU information
         order_data["shopsku"] = shopify_sku
@@ -1917,12 +1812,9 @@ class DataProcessor:
                 order_data["shopsku"],
             )
 
-                    # Add to output
-        component_df = pd.DataFrame([component_order_data])
-        if not component_df.empty:
-            if output_df.empty:
-                output_df = component_df.copy()
-            else:
+            # Add to output
+            component_df = pd.DataFrame([component_order_data])
+            if not component_df.empty:
                 output_df = pd.concat([output_df, component_df], ignore_index=True)
 
         return output_df
@@ -2030,10 +1922,7 @@ class DataProcessor:
         # Add to output
         order_df = pd.DataFrame([order_data])
         if not order_df.empty:
-            if output_df.empty:
-                output_df = order_df.copy()
-            else:
-                output_df = pd.concat([output_df, order_df], ignore_index=True)
+            output_df = pd.concat([output_df, order_df], ignore_index=True)
 
         return output_df
 
@@ -3279,8 +3168,8 @@ class DataProcessor:
             return default_service
 
         # Get the first 3 digits of the ZIP code for matching
-        # Keep as string to preserve leading zeros (e.g., "001", "010")
-        zip_short = str(zip_code[:3]).zfill(3)
+        # Extract first 3 digits without leading zeros to match the format in the CSV
+        zip_short = str(int(zip_code[:3]))
 
         # Determine origin ZIP code based on fulfillment center
         # Convert to integer to match the format in the CSV
@@ -3350,8 +3239,8 @@ class DataProcessor:
                 delivery_df = pd.read_csv(delivery_services_path, sep=";", encoding="utf-8")
                 logger.info(f"Loaded {len(delivery_df)} delivery service entries from CSV")
 
-            # Ensure destination zip short column is string type and preserve leading zeros
-            delivery_df["destination zip short"] = delivery_df["destination zip short"].astype(str).str.zfill(3)
+            # Ensure destination zip short column is string type and remove leading zeros
+            delivery_df["destination zip short"] = delivery_df["destination zip short"].astype(str)
 
             # Ensure origin column is integer type
             delivery_df["origin"] = delivery_df["origin"].astype(int)
@@ -3492,7 +3381,7 @@ class DataProcessor:
 
         # Add to staged orders
         if self.staged_orders.empty:
-            self.staged_orders = orders_to_stage.copy()
+            self.staged_orders = orders_to_stage
         elif not orders_to_stage.empty:
             self.staged_orders = pd.concat([self.staged_orders, orders_to_stage], ignore_index=True)
 
@@ -3625,7 +3514,7 @@ class DataProcessor:
 
         # Add back to orders in processing
         if self.orders_in_processing.empty:
-            self.orders_in_processing = orders_to_unstage.copy()
+            self.orders_in_processing = orders_to_unstage
         elif not orders_to_unstage.empty:
             self.orders_in_processing = pd.concat(
                 [self.orders_in_processing, orders_to_unstage], ignore_index=True
@@ -3663,7 +3552,7 @@ class DataProcessor:
 
         # Add all staged orders back to processing
         if self.orders_in_processing.empty:
-            self.orders_in_processing = orders_to_unstage.copy()
+            self.orders_in_processing = orders_to_unstage
         elif not orders_to_unstage.empty:
             self.orders_in_processing = pd.concat(
                 [self.orders_in_processing, orders_to_unstage], ignore_index=True
@@ -4553,7 +4442,6 @@ class DataProcessor:
 
 if __name__ == "__main__":
     import sys
-    import json
 
     logging.basicConfig(level=logging.INFO)
     data_processor = DataProcessor()
@@ -4563,65 +4451,29 @@ if __name__ == "__main__":
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    print("Testing ColdCart for plum_cherry-BG01x01...")
-    
-    # Load data - orders from file, inventory from ColdCart API
-    orders_df = data_processor.load_orders("/Users/olenaliubynetska/fulfillment-mixy-matchi/Shopify Matrixify Master 12_1_24 - all_order_pivot - 2025-07-17T043130.102.csv")
-    inventory_df = data_processor.load_inventory(source="coldcart")  # Use ColdCart API
+    # Load actual data from docs
+    orders_df = data_processor.load_orders("Shopify Matrixify Master 12_1_24 - all_order_pivot - 2025-07-23T081414.501.csv")
+    inventory_df = data_processor.load_inventory("Shopify Matrixify Master 12_1_24 - XFORM_cc_inv_balance.csv")
+    inventory_cc_df = data_processor.load_inventory(coldcart=True)
     sku_mappings = data_processor.load_sku_mappings()
-    
-    # Save SKU mappings for reference
-    json.dump(sku_mappings, open(f"sku_mappings_{timestamp}.json", "w"), indent=4)
-    
-    # Clean empty bundle components
-    if sku_mappings:
-        for warehouse, mappings in sku_mappings.items():
-            if 'bundles' in mappings:
-                for bundle_sku, components in list(mappings['bundles'].items()):
-                    if isinstance(components, list):
-                        cleaned = [c for c in components if c.get('component_sku', '').strip()]
-                        if cleaned:
-                            mappings['bundles'][bundle_sku] = cleaned
-                        else:
-                            del mappings['bundles'][bundle_sku]
-    
-    # Save ColdCart inventory for inspection
-    inventory_df.to_csv(f"coldcart_inventory_{timestamp}.csv", index=False)
-    print(f"Saved ColdCart inventory to coldcart_inventory_{timestamp}.csv")
-    
-    # Process orders with ColdCart inventory
+
+    # Temporary override of SKU mappings for bundles
+    # This allows custom bundle component mappings that override Airtable data
+    json.dump(sku_mappings, open("sku_mappings.json", "w"), indent=4)
+
+    # Process orders with coldcart inventory
+    logger.info("Processing orders with coldcart inventory...")
+    processed_data_cc = data_processor.process_orders(orders_df, inventory_cc_df, sku_mappings)
+
+    # Process orders with initial inventory
+    logger.info("Processing orders with initial inventory...")
     processed_data = data_processor.process_orders(orders_df, inventory_df, sku_mappings)
-    
-    # Save all processed data to CSV files
+
+    # Save all processed data to CSV
     for data_key in processed_data:
-        if isinstance(processed_data[data_key], pd.DataFrame):
-            processed_data[data_key].to_csv(f"{data_key}_{timestamp}.csv", index=False)
-            print(f"Saved {data_key} data to {data_key}_{timestamp}.csv")
-    
-    # Check specific test SKU
-    test_sku = "plum_cherry-BG01x01"
-    inventory_check = inventory_df[inventory_df['Sku'].str.contains(test_sku, na=False)]
-    print(f"\nInventory for {test_sku}: {len(inventory_check)} entries, {inventory_check['Balance'].sum()} total units")
-    
-    if len(inventory_check) > 0:
-        print("Inventory details:")
-        for _, row in inventory_check.iterrows():
-            print(f"  {row['WarehouseName']}: {row['Balance']} units - {row.get('Name', 'N/A')}")
-    
-    orders_check = processed_data['orders'][processed_data['orders']['sku'].str.contains(test_sku, na=False)]
-    print(f"Processed orders: {len(orders_check)} entries")
-    
-    if len(orders_check) > 0:
-        print(f"Sample: Balance {orders_check.iloc[0]['Starting Balance']} -> {orders_check.iloc[0]['Ending Balance']}")
-        print(f"Transaction Qty: {orders_check.iloc[0]['Transaction Quantity']}")
-    
-    # Check if there are any shortages
-    if 'shortage_summary' in processed_data and not processed_data['shortage_summary'].empty:
-        test_shortages = processed_data['shortage_summary'][
-            processed_data['shortage_summary']['component_sku'].str.contains(test_sku, na=False)
-        ]
-        if len(test_shortages) > 0:
-            print(f"Shortages for {test_sku}: {len(test_shortages)} entries")
-    
-    print(f"\nTest complete. Check files with timestamp {timestamp}")
-    print("ColdCart data processing verified!")
+        processed_data[data_key].to_csv(f"{data_key}_{timestamp}.csv", index=False)
+        logger.info(f"Saved {data_key} data to {data_key}_{timestamp}.csv")
+
+    for data_key in processed_data_cc:
+        processed_data_cc[data_key].to_csv(f"{data_key}_cc_{timestamp}.csv", index=False)
+        logger.info(f"Saved {data_key} data to {data_key}_cc_{timestamp}.csv")

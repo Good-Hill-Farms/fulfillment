@@ -47,6 +47,70 @@ class DataParser:
         """Initialize the DataParser with required tracking variables."""
         self._logged_issues = set()
 
+    def parse_coldcart_inventory(self, inventory_df) -> pd.DataFrame:
+        """Parse ColdCart inventory data and calculate running balances.
+        
+        Args:
+            inventory_df: DataFrame from ColdCart API with columns:
+                - WarehouseName
+                - ItemId
+                - Sku 
+                - Name
+                - Type
+                - BatchCode
+                - AvailableQty
+                - DaysOnHand
+                
+        Returns:
+            pandas.DataFrame: Processed inventory with calculated balances
+        """
+        # Group by Warehouse and SKU to calculate balances
+        balance_df = inventory_df.groupby(['WarehouseName', 'Sku']).agg({
+            'AvailableQty': 'sum',  # Sum all quantities for each warehouse-sku pair
+            'ItemId': 'first',      # Keep other fields for reference
+            'Name': 'first',
+            'Type': 'first'
+        }).reset_index()
+        
+        # Rename AvailableQty sum to Balance
+        balance_df = balance_df.rename(columns={'AvailableQty': 'Balance'})
+
+        # Calculate minimum balances by warehouse
+        wheeling_min = balance_df[balance_df['WarehouseName'] == 'IL-Wheeling-60090'].groupby('Sku')['Balance'].min()
+        oxnard_min = balance_df[balance_df['WarehouseName'] == 'CA-Oxnard-93030'].groupby('Sku')['Balance'].min()
+
+        # Create the final dataframe by merging back with original data
+        result_df = pd.merge(
+            inventory_df,
+            balance_df[['WarehouseName', 'Sku', 'Balance']],
+            on=['WarehouseName', 'Sku'],
+            how='left'
+        )
+
+        # Add warehouse-specific minimum balance columns
+        result_df = pd.merge(
+            result_df,
+            wheeling_min.reset_index().rename(columns={'Balance': 'Wheeling_Min'}),
+            on='Sku',
+            how='left'
+        )
+        
+        result_df = pd.merge(
+            result_df,
+            oxnard_min.reset_index().rename(columns={'Balance': 'Oxnard_Min'}),
+            on='Sku',
+            how='left'
+        )
+
+        # Ensure columns are in the right order
+        columns = [
+            'WarehouseName', 'ItemId', 'Sku', 'Name', 'Type', 'BatchCode',
+            'AvailableQty', 'DaysOnHand', 'Balance', 'Oxnard_Min', 'Wheeling_Min'
+        ]
+        result_df = result_df[columns]
+
+        return result_df
+
     def parse_orders(self, orders_file) -> pd.DataFrame:
         """Load and preprocess orders CSV file.
 
