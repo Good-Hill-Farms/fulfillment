@@ -487,6 +487,12 @@ def main():
         - ColdCart inventory: pieces → lbs (using pieces_df conversion table)
         - In Transit orders: lbs → pieces (using pieces_df conversion table)
         - This ensures consistent unit tracking across different data sources
+        
+        PROJECTION LOGIC:
+        - Projection 1 & 2 use WEIGHT values instead of quantity values from picklist
+        - Sources: 'OX 1: Weight' + 'WH 1: Weight' for Projection 1
+        - Sources: 'OX 2: Weight' + 'WH 2: Weight' for Projection 2
+        - All projection values are in pounds (lbs) for consistency with other weight metrics
         """
         
         try:
@@ -710,8 +716,8 @@ def main():
                         if component_product_type not in product_summary:
                             product_summary[component_product_type] = {
                                 'Unfulfilled LB': 0,
-                                'Projection 1': 0,  # Combined OX1+WH1 projections
-                                'Projection 2': 0,  # Combined OX2+WH2 projections
+                                'Projection 1': 0,  # Combined OX1+WH1 projection weights (lbs)
+                                'Projection 2': 0,  # Combined OX2+WH2 projection weights (lbs)
                                 'Needs (ea)': 0,
                                 'Inventory (lbs)': 0,
                                 'Inventory Coldcart (ea)': 0,
@@ -771,8 +777,8 @@ def main():
                     if product_type not in product_summary:
                         product_summary[product_type] = {
                             'Unfulfilled LB': 0,
-                            'Projection 1': 0,  # Combined OX1+WH1 projections
-                            'Projection 2': 0,  # Combined OX2+WH2 projections
+                            'Projection 1': 0,  # Combined OX1+WH1 projection weights (lbs)
+                            'Projection 2': 0,  # Combined OX2+WH2 projection weights (lbs)
                             'Needs (ea)': 0,
                             'Inventory (lbs)': 0,
                             'Inventory Coldcart (ea)': 0,
@@ -869,8 +875,8 @@ def main():
                     if product_type not in product_summary:
                         product_summary[product_type] = {
                             'Unfulfilled LB': 0,
-                            'Projection 1': 0,  # Combined OX1+WH1 projections
-                            'Projection 2': 0,  # Combined OX2+WH2 projections
+                            'Projection 1': 0,  # Combined OX1+WH1 projection weights (lbs)
+                            'Projection 2': 0,  # Combined OX2+WH2 projection weights (lbs)
                             'Needs (ea)': 0,
                             'Inventory (lbs)': 0,
                             'Inventory Coldcart (ea)': 0,
@@ -935,8 +941,8 @@ def main():
                     if product_type not in product_summary:
                         product_summary[product_type] = {
                             'Unfulfilled LB': 0,
-                            'Projection 1': 0,  # Combined OX1+WH1 projections
-                            'Projection 2': 0,  # Combined OX2+WH2 projections
+                            'Projection 1': 0,  # Combined OX1+WH1 projection weights (lbs)
+                            'Projection 2': 0,  # Combined OX2+WH2 projection weights (lbs)
                             'Needs (ea)': 0,
                             'Inventory (lbs)': 0,
                             'Inventory Coldcart (ea)': 0,
@@ -1019,23 +1025,25 @@ def main():
                 product_summary[product_type]['Picklist SKUs'].add(sku)
 
         # Process PROJECTED NEEDS: From Current Projections Data (picklist)
+        # NOTE: Using WEIGHT columns instead of projection quantity columns for better accuracy
+        # This gives us projections in lbs which matches our other weight-based metrics
         if picklist_df is not None and not picklist_df.empty:
             processed_count = 0
             for _, row in picklist_df.iterrows():
                 product_type = row.get('Product Type', '')
                 
-                # Get projections from columns
-                ox_projection_1 = pd.to_numeric(row.get('OX 1: Projection', 0), errors='coerce')
-                wh_projection_1 = pd.to_numeric(row.get('WH: Projection 1', 0), errors='coerce')
-                ox_projection_2 = pd.to_numeric(row.get('OX: Projection 2', 0), errors='coerce')
-                wh_projection_2 = pd.to_numeric(row.get('WH: Projection 2', 0), errors='coerce')
+                # Get weight values for projections (using weight instead of quantities)
+                ox_weight_1 = pd.to_numeric(row.get('OX 1: Weight', 0), errors='coerce')
+                wh_weight_1 = pd.to_numeric(row.get('WH 1: Weight', 0), errors='coerce')
+                ox_weight_2 = pd.to_numeric(row.get('OX 2: Weight', 0), errors='coerce')
+                wh_weight_2 = pd.to_numeric(row.get('WH 2: Weight', 0), errors='coerce')
                 
-                # Calculate combined projections
-                projection_1 = (ox_projection_1 if not pd.isna(ox_projection_1) else 0) + (wh_projection_1 if not pd.isna(wh_projection_1) else 0)
-                projection_2 = (ox_projection_2 if not pd.isna(ox_projection_2) else 0) + (wh_projection_2 if not pd.isna(wh_projection_2) else 0)
+                # Calculate combined projection weights
+                projection_weight_1 = (ox_weight_1 if not pd.isna(ox_weight_1) else 0) + (wh_weight_1 if not pd.isna(wh_weight_1) else 0)
+                projection_weight_2 = (ox_weight_2 if not pd.isna(ox_weight_2) else 0) + (wh_weight_2 if not pd.isna(wh_weight_2) else 0)
                 
-                # Use projection_1 as the projected need
-                projected_need = projection_1  # We're using Projection 1 (could be changed to projection_2 if needed)
+                # Use projection_weight_1 as the projected need (in lbs)
+                projected_need = projection_weight_1  # Using Weight for Projections in Fast summary
                 
                 if product_type and projected_need != 0:
                     # Use robust matching to find existing product type
@@ -1049,8 +1057,8 @@ def main():
                     if matching_type not in product_summary:
                         product_summary[matching_type] = {
                             'Unfulfilled LB': 0,
-                            'Projection 1': 0,  # Combined OX1+WH1 projections
-                            'Projection 2': 0,  # Combined OX2+WH2 projections
+                            'Projection 1': 0,  # Combined OX1+WH1 projection weights (lbs)
+                            'Projection 2': 0,  # Combined OX2+WH2 projection weights (lbs)
                             'Needs (ea)': 0,
                             'Inventory (lbs)': 0,
                             'Inventory Coldcart (ea)': 0,
@@ -1073,8 +1081,8 @@ def main():
                     product_summary[matching_type]['Projection 1'] = projected_need
                     processed_count += 1
                     
-                    # Store both projections for reference (optional)
-                    product_summary[matching_type]['Projection 2'] = projection_2
+                    # Store both projection weights for reference (optional)
+                    product_summary[matching_type]['Projection 2'] = projection_weight_2
 
         # DISABLED: Process Oxnard static inventory 
         # Commented out to prevent double-counting since ColdCart API already includes all warehouses

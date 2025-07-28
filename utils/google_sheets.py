@@ -825,8 +825,13 @@ def load_all_picklist_v2() -> pd.DataFrame | None:
             df = df[df[product_type_col].notna() & (df[product_type_col].astype(str).str.strip() != '')]
         
         # Filter out rows where all numeric columns are 0
-        numeric_mask = df[numeric_cols].ne(0).any(axis=1)
-        df = df[numeric_mask]
+        # Only use numeric columns that actually exist in the DataFrame
+        existing_numeric_cols = [col for col in numeric_cols if col in df.columns]
+        if existing_numeric_cols:
+            numeric_mask = df[existing_numeric_cols].ne(0).any(axis=1)
+            df = df[numeric_mask]
+        else:
+            logger.warning("No numeric columns found for filtering, keeping all rows")
         
         logger.debug(f"Successfully loaded {len(df)} rows from {ALL_PICKLIST_V2_SHEET_NAME}")
         return df
@@ -1069,8 +1074,13 @@ def load_projection_snapshot(spreadsheet_id: str = None, latest: bool = True) ->
             df = df[df[product_type_col].notna() & (df[product_type_col].astype(str).str.strip() != '')]
         
         # Filter out rows where all numeric columns are 0
-        numeric_mask = df[numeric_cols].ne(0).any(axis=1)
-        df = df[numeric_mask]
+        # Only use numeric columns that actually exist in the DataFrame
+        existing_numeric_cols = [col for col in numeric_cols if col in df.columns]
+        if existing_numeric_cols:
+            numeric_mask = df[existing_numeric_cols].ne(0).any(axis=1)
+            df = df[numeric_mask]
+        else:
+            logger.warning("No numeric columns found for filtering, keeping all rows")
         
         logger.debug(f"Successfully loaded {len(df)} rows from projection snapshot")
         return df
@@ -1813,11 +1823,11 @@ if __name__ == "__main__":
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
             
-        # # 1. Load and save SKU mappings
-        # sku_mappings = load_sku_mappings_from_sheets()
-        # with open(f"{output_dir}/sku_mappings.json", "w") as f:
-        #     json.dump(sku_mappings, f, indent=2)
-        # print(f"✓ Saved SKU mappings to {output_dir}/sku_mappings.json")
+        # 1. Load and save SKU mappings
+        sku_mappings = load_sku_mappings_from_sheets()
+        with open(f"{output_dir}/sku_mappings.json", "w") as f:
+            json.dump(sku_mappings, f, indent=2)
+        print(f"✓ Saved SKU mappings to {output_dir}/sku_mappings.json")
 
         # 2. Load and save Agg Orders
         agg_orders_df = load_agg_orders(filter_by_projection_period=True, group_by_projection=True)
@@ -1825,72 +1835,72 @@ if __name__ == "__main__":
             agg_orders_df.to_csv(f"{output_dir}/agg_orders.csv", index=False)
             print(f"✓ Saved {len(agg_orders_df)} rows to {output_dir}/agg_orders.csv")
 
-        # # # 3. Load and save All Picklist V2
-        # picklist_df = load_all_picklist_v2()
-        # if picklist_df is not None:
-        #     picklist_df.to_csv(f"{output_dir}/all_picklist_v2.csv", index=False)
-        #     print(f"✓ Saved {len(picklist_df)} rows to {output_dir}/all_picklist_v2.csv")
+        # # 3. Load and save All Picklist V2
+        picklist_df = load_all_picklist_v2()
+        if picklist_df is not None:
+            picklist_df.to_csv(f"{output_dir}/all_picklist_v2.csv", index=False)
+            print(f"✓ Saved {len(picklist_df)} rows to {output_dir}/all_picklist_v2.csv")
 
-        # # 4. Load and save Pieces vs LB Conversion
-        # conversion_df = load_pieces_vs_lb_conversion()
-        # if conversion_df is not None:
-        #     conversion_df.to_csv(f"{output_dir}/pieces_vs_lb_conversion.csv", index=False)
-        #     print(f"✓ Saved {len(conversion_df)} rows to {output_dir}/pieces_vs_lb_conversion.csv")
+        # 4. Load and save Pieces vs LB Conversion
+        conversion_df = load_pieces_vs_lb_conversion()
+        if conversion_df is not None:
+            conversion_df.to_csv(f"{output_dir}/pieces_vs_lb_conversion.csv", index=False)
+            print(f"✓ Saved {len(conversion_df)} rows to {output_dir}/pieces_vs_lb_conversion.csv")
 
-        # # 5. Load and save Oxnard Inventory
-        # oxnard_inv_df = load_oxnard_inventory()
-        # if oxnard_inv_df is not None:
-        #     oxnard_inv_df.to_csv(f"{output_dir}/oxnard_inventory.csv", index=False)
-        #     print(f"✓ Saved {len(oxnard_inv_df)} rows to {output_dir}/oxnard_inventory.csv")
+        # 5. Load and save Oxnard Inventory
+        oxnard_inv_df = load_oxnard_inventory()
+        if oxnard_inv_df is not None:
+            oxnard_inv_df.to_csv(f"{output_dir}/oxnard_inventory.csv", index=False)
+            print(f"✓ Saved {len(oxnard_inv_df)} rows to {output_dir}/oxnard_inventory.csv")
 
-        # # 6. Load and save Wheeling Inventory
-        # wheeling_inv_df = load_wheeling_inventory()
-        # if wheeling_inv_df is not None:
-        #     wheeling_inv_df.to_csv(f"{output_dir}/wheeling_inventory.csv", index=False)
-        #     print(f"✓ Saved {len(wheeling_inv_df)} rows to {output_dir}/wheeling_inventory.csv")
+        # 6. Load and save Wheeling Inventory
+        wheeling_inv_df = load_wheeling_inventory()
+        if wheeling_inv_df is not None:
+            wheeling_inv_df.to_csv(f"{output_dir}/wheeling_inventory.csv", index=False)
+            print(f"✓ Saved {len(wheeling_inv_df)} rows to {output_dir}/wheeling_inventory.csv")
 
-        # # 7. Load and save Orders New from Fruit Tracking
-        # orders_new_df = load_orders_new()
-        # if orders_new_df is not None:
-        #     orders_new_df.to_csv(f"{output_dir}/orders_new.csv", index=False)
-        #     print(f"✓ Saved {len(orders_new_df)} rows to {output_dir}/orders_new.csv")
+        # 7. Load and save Orders New from Fruit Tracking
+        orders_new_df = load_orders_new()
+        if orders_new_df is not None:
+            orders_new_df.to_csv(f"{output_dir}/orders_new.csv", index=False)
+            print(f"✓ Saved {len(orders_new_df)} rows to {output_dir}/orders_new.csv")
 
-        # # 8. Load and save Week over Week data
-        # wow_df = load_wow_data()
-        # if wow_df is not None:
-        #     wow_df.to_csv(f"{output_dir}/wow_data.csv", index=False)
-        #     print(f"✓ Saved {len(wow_df)} rows to {output_dir}/wow_data.csv")
+        # 8. Load and save Week over Week data
+        wow_df = load_wow_data()
+        if wow_df is not None:
+            wow_df.to_csv(f"{output_dir}/wow_data.csv", index=False)
+            print(f"✓ Saved {len(wow_df)} rows to {output_dir}/wow_data.csv")
 
-        # # 9. Load and save SKU Type data
-        # sku_type_df = load_sku_type_data()
-        # if sku_type_df is not None:
-        #     sku_type_df.to_csv(f"{output_dir}/sku_type.csv", index=False)
-        #     print(f"✓ Saved {len(sku_type_df)} rows to {output_dir}/sku_type.csv")
+        # 9. Load and save SKU Type data
+        sku_type_df = load_sku_type_data()
+        if sku_type_df is not None:
+            sku_type_df.to_csv(f"{output_dir}/sku_type.csv", index=False)
+            print(f"✓ Saved {len(sku_type_df)} rows to {output_dir}/sku_type.csv")
 
-        # # List available projection snapshots
-        # snapshots = list_available_projection_snapshots()
-        # if snapshots:
-        #     print("\nAvailable Projection Snapshots:")
-        #     for snapshot in snapshots:
-        #         print(f"ID: {snapshot['id']}")
-        #         print(f"Name: {snapshot['name']}")
-        #         print(f"Created: {snapshot['createdTime']}")
-        #         print(f"Folder Path: {snapshot['folder_path']}")
-        #         print("------------------------")
-        # else:
-        #     print("No projection snapshots found.")
+        # List available projection snapshots
+        snapshots = list_available_projection_snapshots()
+        if snapshots:
+            print("\nAvailable Projection Snapshots:")
+            for snapshot in snapshots:
+                print(f"ID: {snapshot['id']}")
+                print(f"Name: {snapshot['name']}")
+                print(f"Created: {snapshot['createdTime']}")
+                print(f"Folder Path: {snapshot['folder_path']}")
+                print("------------------------")
+        else:
+            print("No projection snapshots found.")
 
-        # projection_snapshot = load_projection_snapshot(spreadsheet_id="1vswH1dqlWR-aQcv6Bs9eZHV0jVZG8ONdbJr2YhVbyV4")
-        # if projection_snapshot is not None:
-        #     projection_snapshot.to_csv(f"{output_dir}/projection_snapshot.csv", index=False)
-        #     print(f"✓ Saved {len(projection_snapshot)} rows to {output_dir}/projection_snapshot.csv")
+        projection_snapshot = load_projection_snapshot(spreadsheet_id="1vswH1dqlWR-aQcv6Bs9eZHV0jVZG8ONdbJr2YhVbyV4")
+        if projection_snapshot is not None:
+            projection_snapshot.to_csv(f"{output_dir}/projection_snapshot.csv", index=False)
+            print(f"✓ Saved {len(projection_snapshot)} rows to {output_dir}/projection_snapshot.csv")
 
-        # print("\nAll data has been saved to the 'sheet_data' directory!")
-        # print("Summary of files saved:")
-        # print("------------------------")
-        # for file in os.listdir(output_dir):
-        #     size = os.path.getsize(os.path.join(output_dir, file)) / 1024  # Convert to KB
-        #     print(f"{file:<30} {size:.1f} KB")
+        print("\nAll data has been saved to the 'sheet_data' directory!")
+        print("Summary of files saved:")
+        print("------------------------")
+        for file in os.listdir(output_dir):
+            size = os.path.getsize(os.path.join(output_dir, file)) / 1024  # Convert to KB
+            print(f"{file:<30} {size:.1f} KB")
 
     except Exception as e:
         print(f"Error occurred: {str(e)}")
