@@ -24,3 +24,4 @@ fastapi==0.104.1
 uvicorn==0.24.0
 db-dtypes==1.2.0
 pyarrow>=10.0.0
+pytest>=8.0.0
