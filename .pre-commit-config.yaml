@@ -30,3 +30,13 @@ repos:
             "--in-place",
             "--recursive"
         ]
+
+-   repo: local
+    hooks:
+    -   id: pytest
+        name: pytest
+        entry: python -m pytest
+        language: system
+        args: ["tests/", "-v"]
+        pass_filenames: false
+        always_run: true
