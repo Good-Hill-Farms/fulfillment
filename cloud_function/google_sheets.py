@@ -19,6 +19,176 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive.file"     # Access to files created by the app
 ]
 
+def get_sheets_service():
+    """Gets the Google Sheets service."""
+    creds = get_credentials()
+    return build('sheets', 'v4', credentials=creds)
+
+def get_drive_service():
+    """Gets the Google Drive service."""
+    creds = get_credentials()
+    return build('drive', 'v3', credentials=creds)
+
+def create_folder_if_not_exists(folder_name: str, parent_folder_id: str) -> str:
+    """
+    Creates a folder in Google Drive if it doesn't exist.
+    
+    Args:
+        folder_name: Name of the folder to create
+        parent_folder_id: ID of the parent folder
+        
+    Returns:
+        str: ID of the created or existing folder
+    """
+    try:
+        service = get_drive_service()
+        
+        # Check if folder already exists
+        query = f"name='{folder_name}' and '{parent_folder_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
+        results = service.files().list(q=query, spaces='drive', fields='files(id)').execute()
+        files = results.get('files', [])
+        
+        if files:
+            return files[0]['id']
+        
+        # Create new folder
+        file_metadata = {
+            'name': folder_name,
+            'mimeType': 'application/vnd.google-apps.folder',
+            'parents': [parent_folder_id]
+        }
+        
+        folder = service.files().create(
+            body=file_metadata,
+            fields='id'
+        ).execute()
+        
+        return folder['id']
+        
+    except Exception as e:
+        logger.error(f"Error creating folder: {str(e)}")
+        raise
+
+def create_spreadsheet(filename: str, df: pd.DataFrame, parent_folder_id: str, sheet_name: str = "Sheet1") -> str:
+    """
+    Creates a new Google Sheet and writes DataFrame data to it.
+    
+    Args:
+        filename: Name of the spreadsheet
+        df: DataFrame to write
+        parent_folder_id: ID of the parent folder
+        sheet_name: Name of the sheet (default: "Sheet1")
+        
+    Returns:
+        str: ID of the created spreadsheet
+    """
+    try:
+        sheets_service = get_sheets_service()
+        drive_service = get_drive_service()
+        
+        # Create new spreadsheet
+        spreadsheet = {
+            'properties': {
+                'title': filename
+            }
+        }
+        
+        spreadsheet = sheets_service.spreadsheets().create(
+            body=spreadsheet,
+            fields='spreadsheetId'
+        ).execute()
+        
+        spreadsheet_id = spreadsheet.get('spreadsheetId')
+        
+        # Move file to correct folder
+        file = drive_service.files().get(
+            fileId=spreadsheet_id,
+            fields='parents'
+        ).execute()
+        
+        previous_parents = ",".join(file.get('parents', []))
+        
+        # Move the file to the new folder
+        drive_service.files().update(
+            fileId=spreadsheet_id,
+            addParents=parent_folder_id,
+            removeParents=previous_parents,
+            fields='id, parents'
+        ).execute()
+        
+        # Rename the default sheet
+        sheets_service.spreadsheets().batchUpdate(
+            spreadsheetId=spreadsheet_id,
+            body={
+                "requests": [{
+                    "updateSheetProperties": {
+                        "properties": {
+                            "sheetId": 0,
+                            "title": sheet_name
+                        },
+                        "fields": "title"
+                    }
+                }]
+            }
+        ).execute()
+        
+        # Write data to sheet
+        values = [df.columns.tolist()] + df.values.tolist()
+        body = {
+            'values': values
+        }
+        
+        sheets_service.spreadsheets().values().update(
+            spreadsheetId=spreadsheet_id,
+            range=f"{sheet_name}!A1",
+            valueInputOption='RAW',
+            body=body
+        ).execute()
+        
+        return spreadsheet_id
+        
+    except Exception as e:
+        logger.error(f"Error creating spreadsheet: {str(e)}")
+        raise
+
+def share_spreadsheet(spreadsheet_id: str, email: str, role: str = 'writer'):
+    """
+    Shares a Google Sheet with a specific email address.
+    
+    Args:
+        spreadsheet_id: ID of the spreadsheet to share
+        email: Email address to share with
+        role: Access role ('writer', 'reader', or 'commenter')
+    """
+    try:
+        service = get_drive_service()
+        
+        def callback(request_id, response, exception):
+            if exception:
+                logger.error(f"Error sharing file: {str(exception)}")
+            else:
+                logger.info(f"Permission Id: {response.get('id')}")
+        
+        batch = service.new_batch_http_request(callback=callback)
+        user_permission = {
+            'type': 'user',
+            'role': role,
+            'emailAddress': email
+        }
+        
+        batch.add(service.permissions().create(
+            fileId=spreadsheet_id,
+            body=user_permission,
+            fields='id',
+            sendNotificationEmail=False
+        ))
+        
+        batch.execute()
+        
+    except Exception as e:
+        logger.error(f"Error sharing spreadsheet: {str(e)}")
+        raise
+
 # GHF Inventory Table
 GHF_INVENTORY_ID = "19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY"
 PIECES_VS_LB_CONVERSION_SHEET_NAME = "INPUT_picklist_sku"

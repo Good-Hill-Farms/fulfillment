@@ -13,7 +13,9 @@ def get_inventory_data():
     Returns a pandas DataFrame with the inventory data or None if the API token is missing
     """
     api_token = os.getenv('COLDCART_API_TOKEN')
+    print(f"Debug: API token exists: {bool(api_token)}")
     if not api_token:
+        print("❌ COLDCART_API_TOKEN environment variable is not set")
         return None
         
     api_url = "https://api-direct.coldcartfulfill.com/inventory/242/items/export"
@@ -27,26 +29,35 @@ def get_inventory_data():
     }
     
     try:
+        print("Debug: Making API request...")
         response = requests.get(api_url, headers=headers)
+        print(f"Debug: Response status code: {response.status_code}")
         response.raise_for_status()
         
         if not response.text.strip():
+            print("Debug: Response text is empty")
             return None
         
+        print("Debug: Converting response to DataFrame...")
         # Convert response to DataFrame
         df = pd.read_csv(StringIO(response.text))
         
         # Check if DataFrame is empty
         if df.empty:
+            print("Debug: DataFrame is empty")
             return None
             
+        print(f"Debug: DataFrame shape: {df.shape}")
         return df
     except requests.exceptions.RequestException as e:
-        raise Exception(f"Failed to fetch inventory data: {str(e)}")
+        print(f"❌ Failed to fetch inventory data: {str(e)}")
+        return None
     except pd.errors.EmptyDataError:
+        print("❌ Received empty data from API")
         return None
     except Exception as e:
-        raise Exception(f"Error processing inventory data: {str(e)}")
+        print(f"❌ Error processing inventory data: {str(e)}")
+        return None
 
 def save_as_excel(df, filename, colorful=False):
     """Save DataFrame as Excel file with optional colorful formatting"""

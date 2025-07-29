@@ -5,6 +5,7 @@ from google.cloud import bigquery
 from google.oauth2 import service_account
 from utils.google_sheets import get_credentials
 from utils.scripts_shopify.shopify_orders_report import update_fulfilled_orders_data
+from utils.data_processor import DataProcessor
 
 st.set_page_config(layout="wide")
 
@@ -175,19 +176,6 @@ def filter_dataframe(df, search):
 st.subheader("ColdCart Data")
 st.caption("ColdCart Wave Summaries and Orders Shipment Stats joined on ShipmentID, showing detailed fulfillment information")
 
-# Columns to hide
-columns_to_hide = [
-    'ClientId', 'OrderTypeId', 'StatusId', 'ShippingBoxId',
-    'LabelUrl', 'TrackingCode', 'CsvFileName'
-]
-
-# Apply global search to ColdCart data and hide specified columns
-if not cc_df.empty:
-    # Remove specified columns if they exist
-    filtered_cc_df = filter_dataframe(cc_df, search_term)
-    columns_to_show = [col for col in filtered_cc_df.columns if col not in columns_to_hide]
-    filtered_cc_df = filtered_cc_df[columns_to_show]
-
 # Calculate matching statistics
 if not cc_df.empty:
     print("Available columns:", cc_df.columns.tolist())  # Debug print to see actual columns
@@ -206,48 +194,189 @@ if not cc_df.empty:
     with col3:
         st.metric("Match Rate", f"{match_rate}%")
 
-# Show ColdCart row count and data
-st.text(f"Showing {len(filtered_cc_df)} ColdCart rows")
-st.dataframe(filtered_cc_df, use_container_width=True)
-
-# Add separator
-st.markdown("---")
-
-# Shopify Data section
-st.subheader("Shopify Fulfilled Orders")
-st.caption("Completed orders from Shopify with order details, products, and delivery information")
-if not shopify_df.empty:
-    # Apply global search to Shopify data
-    filtered_shopify_df = filter_dataframe(shopify_df, search_term)
+# Separate Wave Summaries Table
+st.subheader("🌊 Wave Summaries")
+st.caption("Wave summaries data from cc_wave_summaries table")
+if not cc_df.empty:
+    # Get wave summaries columns (those from the w.* part of the join)
+    wave_columns = [
+        'ShipmentID', 'TrackingCode', 'ColdcartID', 'BoxName', 'Sku', 
+        'Description', 'Quantity', 'WarehouseLocations', 'BatchCodes', 
+        'LabelUrl', 'Carrier', 'DestinationName', 'csv_filename'
+    ]
     
-    # Show Shopify row count and data
-    st.text(f"Showing {len(filtered_shopify_df)} Shopify orders")
-    st.dataframe(filtered_shopify_df, use_container_width=True)
+    # Filter to only existing columns
+    available_wave_columns = [col for col in wave_columns if col in cc_df.columns]
+    wave_only_df = cc_df[available_wave_columns].drop_duplicates()
+    
+    # Apply search filter
+    filtered_wave_df = filter_dataframe(wave_only_df, search_term)
+    
+    st.text(f"Showing {len(filtered_wave_df)} wave summary rows")
+    st.dataframe(filtered_wave_df, use_container_width=True)
 else:
-    st.warning("No Shopify data available.")
+    st.warning("No wave summaries data available.")
 
-# Add download buttons
 st.markdown("---")
-col1, col2 = st.columns(2)
 
-with col1:
-    if not filtered_cc_df.empty:
-        csv = cc_df.to_csv(index=False)
-        st.download_button(
-            "Download ColdCart Data",
-            csv,
-            "coldcart_data.csv",
-            "text/csv",
-            key='download-cc'
-        )
+# Separate Shipment Stats Table
+st.subheader("📊 Shipment Stats")
+st.caption("Shipment stats data from cc_shipment_stats table (delivery tracking and costs)")
+if not cc_df.empty:
+    # Get rows that have shipment stats data (non-null ShipmentId_1)
+    stats_df = cc_df[cc_df['ShipmentId_1'].notna()].copy()
+    
+    if not stats_df.empty:
+        # Get shipment stats columns (those from the s.* part of the join)
+        # Note: BigQuery adds _1 suffix to duplicate column names from the second table
+        stats_columns = [
+            'ShipmentId_1', 'ClientId', 'OrderId', 'ExternalOrderId', 'OrderNumber',
+            'OrderTypeId', 'Tags', 'StatusId', 'StatusName', 'CreatedDate',
+            'ShippedDate', 'DeliveredDate', 'EstimatedWeightLb', 'ShippingBoxId',
+            'LengthIn', 'DepthIn', 'WidthIn', 'TrackingCode_1', 'LabelUrl_1',
+            'ExternalCarrierAccountId', 'OriginCity', 'OriginState', 'OriginPostalCode',
+            'DestinationName_1', 'DestinationStreet', 'DestinationCity', 'DestinationState',
+            'DestinationPostalCode', 'CarrierName', 'ServiceName', 'FulfillmentWarehouseId',
+            'DaysInTransit', 'EstDaysInTransit', 'HasAnomaly', 'IsBatched',
+            'FulfillmentCost', 'ServiceFee', 'UnitOverageCost', 'LastMileCost',
+            'CoolantCost', 'InnerPackagingCost', 'MarketingInsertCost', 'BoxCost', 'Total'
+        ]
+        
+        # Filter to only existing columns
+        available_stats_columns = [col for col in stats_columns if col in stats_df.columns]
+        stats_only_df = stats_df[available_stats_columns].drop_duplicates()
+        
+        # Apply search filter
+        filtered_stats_df = filter_dataframe(stats_only_df, search_term)
+        
+        st.text(f"Showing {len(filtered_stats_df)} shipment stats rows")
+        st.dataframe(filtered_stats_df, use_container_width=True)
+    else:
+        st.warning("No shipment stats data available for the selected date range.")
+else:
+    st.warning("No shipment stats data available.")
 
-with col2:
-    if not filtered_shopify_df.empty:
-        csv = shopify_df.to_csv(index=False)
-        st.download_button(
-            "Download Shopify Data",
-            csv,
-            "shopify_orders.csv",
-            "text/csv",
-            key='download-shopify'
-        )
+st.markdown("---")
+
+# Create comprehensive join with Shopify orders
+st.subheader("🔗 Complete Order Analysis")
+st.caption("ColdCart data joined with Shopify orders by SKU and Order ID")
+
+if not cc_df.empty and not shopify_df.empty:
+    # Initialize DataProcessor for SKU mapping
+    data_processor = DataProcessor()
+    data_processor.load_sku_mappings()
+    
+    # First join by order ID to get fulfillment center info
+    cc_for_join = cc_df.copy()
+    shopify_for_join = shopify_df.copy()
+    
+    # Clean order IDs for joining
+    cc_for_join['ExternalOrderId_clean'] = cc_for_join['ExternalOrderId'].astype(str).str.strip()
+    shopify_for_join['Order Name_clean'] = shopify_for_join['Order Name'].astype(str).str.strip()
+    
+    # Join on order ID
+    merged_df = pd.merge(
+        cc_for_join,
+        shopify_for_join,
+        left_on='ExternalOrderId_clean',
+        right_on='Order Name_clean',
+        how='outer',
+        suffixes=('_cc', '_shopify')
+    )
+    
+    # Add match type column
+    merged_df['match_type'] = 'No Match'
+    
+    # For each row, check if Shopify SKU matches inventory SKU using proper mapping
+    for idx, row in merged_df.iterrows():
+        cc_sku = row['Sku'] if pd.notna(row['Sku']) else None
+        shopify_sku = row['SKU'] if pd.notna(row['SKU']) else None
+        fc = row.get('OriginCity', 'Oxnard')  # Default to Oxnard if not specified
+        
+        if cc_sku and shopify_sku:
+            # Get inventory SKU for this Shopify SKU
+            mapped_sku = data_processor.map_shopify_to_inventory_sku(
+                shopify_sku=shopify_sku,
+                fulfillment_center=fc
+            )
+            
+            if mapped_sku and mapped_sku.lower() == cc_sku.lower():
+                merged_df.at[idx, 'match_type'] = 'SKU Match'
+            elif pd.notna(row['ExternalOrderId']) and pd.notna(row['Order Name']):
+                merged_df.at[idx, 'match_type'] = 'Order ID Match Only'
+    
+    # Calculate statistics
+    stats = {
+        'total_cc_orders': len(cc_df['ExternalOrderId'].dropna().unique()),
+        'total_shopify_orders': len(shopify_df['Order Name'].dropna().unique()),
+        'sku_matches': len(merged_df[merged_df['match_type'] == 'SKU Match']),
+        'order_matches': len(merged_df[merged_df['match_type'] == 'Order ID Match Only']),
+        'unmatched': len(merged_df[merged_df['match_type'] == 'No Match'])
+    }
+    
+    # Display statistics
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("SKU Matches", stats['sku_matches'])
+        st.metric("Total ColdCart Orders", stats['total_cc_orders'])
+    
+    with col2:
+        st.metric("Order ID Only Matches", stats['order_matches'])
+        st.metric("Total Shopify Orders", stats['total_shopify_orders'])
+    
+    with col3:
+        st.metric("Unmatched Records", stats['unmatched'])
+        match_rate = round((stats['sku_matches'] / max(stats['total_cc_orders'], stats['total_shopify_orders']) * 100), 1)
+        st.metric("Match Rate", f"{match_rate}%")
+    
+    # Show match type distribution
+    match_type_counts = merged_df['match_type'].value_counts()
+    st.write("**Match Type Distribution:**")
+    st.write(match_type_counts)
+    
+    # Apply search filter
+    filtered_df = filter_dataframe(merged_df, search_term)
+    
+    st.text(f"Showing {len(filtered_df)} rows")
+    st.dataframe(filtered_df, use_container_width=True)
+    
+    # Add download buttons
+    st.markdown("---")
+    st.subheader("Download Data")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if not cc_df.empty:
+            csv = cc_df.to_csv(index=False)
+            st.download_button(
+                "Download ColdCart Data",
+                csv,
+                "coldcart_data.csv",
+                "text/csv",
+                key='download-cc'
+            )
+    
+    with col2:
+        if not shopify_df.empty:
+            csv = shopify_df.to_csv(index=False)
+            st.download_button(
+                "Download Shopify Data",
+                csv,
+                "shopify_orders.csv",
+                "text/csv",
+                key='download-shopify'
+            )
+    
+    with col3:
+        if not filtered_df.empty:
+            csv = filtered_df.to_csv(index=False)
+            st.download_button(
+                "Download Merged Data",
+                csv,
+                "merged_data.csv",
+                "text/csv",
+                key='download-merged'
+            )
+else:
+    st.warning("Need both ColdCart and Shopify data to create analysis.")
