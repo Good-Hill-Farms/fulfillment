@@ -352,34 +352,27 @@ def generate_inventory_sheet(warehouse_name, parent_folder_id):
         
         # Prepare and write Dry Inventory sheet
         dry_items = [
-            "Branded Tape-OG Design",
-            "Branded Tape-Newer Design",
-            "Branded Tape-Christmas",
-            "Mother's Day Tape",
-            "Ethylene Absorbent bags",
-            "8x8x8\" Corrugated Box",
-            "10x10x10 Vented Box",
-            "10x10x10\" Corrugated Box",
-            "12x12x12 Vented Box",
-            "12x12x12\" Corrugated Box",
-            "Valentine's Gift Notes",
-            "mother day inserts",
-            "Insert Cards-New Version",
-            "Golden Spoons",
-            "Kraft Bags-Small",
-            "Kraft Bags-Large",
-            "Bubble Wrap",
-            "Netting",
-            "Hex Paper",
-            "Layer Pads",
-            "Honey Comb Paper",
-            "woods baskets",
-            "absorbent pads",
-            "platic container"
+            "Box: 8x8x8",
+            "Box: 10x10x10",
+            "Vented Box: 10x10x10",
+            "Box: 12x12x12",
+            "Vented Box: 12x12x12",
+            "Honeycomb paper",
+            "Wood Shavings",
+            "Ethelyne bags, 20g",
+            "Cardboard Pads",
+            "Clamshell",
+            "Regular Inserts (Get to Know)",
+            "Branded tape - Normal",
+            "Absorbent Pads",
+            "Fruit netting",
+            "1lb Nut bags (large)",
+            "Gold Flower Spoons",
+            "Wood Baskets"
         ]
         
         dry_df = pd.DataFrame({
-            'Packaging/Misc': dry_items,
+            'Packaging | Units': dry_items,
             'QTY': [''] * len(dry_items)
         })
         
