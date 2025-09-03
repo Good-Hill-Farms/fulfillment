@@ -4,15 +4,16 @@ import pandas as pd
 import logging
 from io import StringIO
 from datetime import datetime, timedelta
+from .coldcart_token import get_coldcart_api_token
 
 # Set up logging
 logger = logging.getLogger(__name__)
 
 def get_api_headers():
     """Get standard headers for ColdCart API requests"""
-    api_token = os.getenv('COLDCART_API_TOKEN')
+    api_token = get_coldcart_api_token()
     if not api_token:
-        raise ValueError("COLDCART_API_TOKEN not found in environment variables")
+        raise ValueError("Failed to get ColdCart API token")
     
     return {
         "Authorization": f"Bearer {api_token}",
@@ -214,9 +215,9 @@ def get_inventory_data():
     Fetch inventory data from the ColdCart API
     Returns a pandas DataFrame with the inventory data or None if the API token is missing
     """
-    api_token = os.getenv('COLDCART_API_TOKEN')
+    api_token = get_coldcart_api_token()
     if not api_token:
-        logger.warning("COLDCART_API_TOKEN not found in environment variables")
+        logger.warning("Failed to get ColdCart API token")
         return None
          
     api_url = "https://api-direct.coldcartfulfill.com/inventory/242/items/export"

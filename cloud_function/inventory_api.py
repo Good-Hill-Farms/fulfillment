@@ -6,16 +6,40 @@ import tempfile
 import pytz
 from datetime import datetime, timedelta
 import re
+import logging
+
+# Import the new token extraction module
+try:
+    # Try importing from local cloud_function directory first
+    from coldcart_token import get_coldcart_api_token
+except ImportError:
+    try:
+        # Fallback: try importing from parent directory
+        import sys
+        sys.path.append('..')
+        from utils.coldcart_token import get_coldcart_api_token
+    except ImportError:
+        # Final fallback for different environments
+        def get_coldcart_api_token():
+            """Fallback function if import fails"""
+            token = os.getenv('COLDCART_API_TOKEN')
+            if not token:
+                logging.error("ColdCart token module not available and no env token set")
+            return token
+
+logger = logging.getLogger(__name__)
 
 def get_inventory_data():
     """
     Fetch inventory data from the ColdCart API
     Returns a pandas DataFrame with the inventory data or None if the API token is missing
     """
-    api_token = os.getenv('COLDCART_API_TOKEN')
+    # Get API token using the new extraction method
+    api_token = get_coldcart_api_token()
+    
     print(f"Debug: API token exists: {bool(api_token)}")
     if not api_token:
-        print("❌ COLDCART_API_TOKEN environment variable is not set")
+        print("❌ Failed to get ColdCart API token")
         return None
         
     api_url = "https://api-direct.coldcartfulfill.com/inventory/242/items/export"

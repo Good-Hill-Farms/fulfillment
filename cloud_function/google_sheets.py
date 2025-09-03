@@ -433,17 +433,28 @@ def _safe_float_convert(value, default=0.0):
 
 
 def process_sku_data(data: List[List[Any]], center: str) -> Dict[str, Dict[str, Any]]:
-    """Process raw sheet data into the required format compatible with data_processor.py."""
+    """Process raw sheet data into the required format compatible with data_processor.py.
+    
+    Uses fixed column positions instead of headers:
+    Column 0: shopifysku2 (order SKU)
+    Column 1: picklist sku (inventory SKU)
+    Column 2: Mix Quantity (actualqty)
+    Column 10: Pick Weight LB
+    Column 12: Total Pick Weight
+    Column 6: Pick Type
+    Column 8: Pick Type Inventory
+    Column 5: Product Type
+    """
     if not data:
         logger.warning(f"No data to process for {center}")
         return {center: {"singles": {}, "bundles": {}}}
 
-    # Get headers and rows
-    headers = data[0]
-    rows = data[1:]
+    # Skip header row if it exists - start from row 1
+    rows = data[1:] if len(data) > 1 else data
     
     # Debug: Print first 5 rows to see the actual data (only in debug mode)
     if logger.isEnabledFor(logging.DEBUG):
+        logger.debug(f"Processing {len(rows)} data rows for {center}")
         for i, row in enumerate(rows[:5]):
             logger.debug(f"Row {i+2}: {row}")
     
@@ -454,15 +465,37 @@ def process_sku_data(data: List[List[Any]], center: str) -> Dict[str, Dict[str, 
     sku_groups = {}
     for row_idx, row in enumerate(rows, start=2):
         try:
-            mapping = dict(zip(headers, row))
-            if "shopifysku2" not in mapping or not mapping["shopifysku2"]:
+            # Use fixed column positions instead of header mapping
+            # Ensure row has enough columns, pad with empty strings if needed
+            if len(row) < 13:
+                row = row + [''] * (13 - len(row))
+            
+            # Extract values by position (based on actual column structure)
+            order_sku = row[0] if len(row) > 0 else ""
+            picklist_sku = row[1] if len(row) > 1 else ""
+            mix_quantity = row[2] if len(row) > 2 else "1"
+            product_type = row[5] if len(row) > 5 else ""
+            pick_type = row[6] if len(row) > 6 else ""
+            pick_type_inventory = row[8] if len(row) > 8 else ""
+            pick_weight = row[10] if len(row) > 10 else "0"
+            total_pick_weight = row[12] if len(row) > 12 else "0"
+            
+            if not order_sku:
                 continue
 
-            order_sku = mapping["shopifysku2"]
-            
             if order_sku not in sku_groups:
                 sku_groups[order_sku] = []
-            sku_groups[order_sku].append((row_idx, mapping))
+            sku_groups[order_sku].append((row_idx, {
+                "shopifysku2": order_sku,
+                "picklist sku": picklist_sku,
+                "Mix Quantity": mix_quantity,
+                "Pick Weight LB": pick_weight,
+                "Total Pick Weight": total_pick_weight,
+                "Pick Type": pick_type,
+                "Product Type": product_type,
+                "Pick Type Inventory": pick_type_inventory,
+                "actualqty": mix_quantity  # alias for backward compatibility
+            }))
         except Exception as e:
             logger.error(f"Error grouping row {row_idx}: {e}")
             continue
@@ -483,7 +516,7 @@ def process_sku_data(data: List[List[Any]], center: str) -> Dict[str, Dict[str, 
                             "actualqty": mix_qty,
                             "weight": pick_weight,
                             "pick_type": mapping.get("Pick Type", ""),
-                            "pick_type_inventory": mapping.get("Product Type", ""),
+                            "pick_type_inventory": mapping.get("Pick Type Inventory", ""),
                         }
                         components_list.append(component_data)
                     except Exception as e:
@@ -516,7 +549,7 @@ def process_sku_data(data: List[List[Any]], center: str) -> Dict[str, Dict[str, 
                         "actualqty": actualqty,
                         "total_pick_weight": total_pick_weight,
                         "pick_type": mapping.get("Pick Type", ""),
-                        "pick_type_inventory": mapping.get("Product Type", ""),
+                        "pick_type_inventory": mapping.get("Pick Type Inventory", ""),
                     }
                     
                 except Exception as e:
@@ -624,45 +657,65 @@ def get_fruit_inventory_data(sheet_name: str) -> List[List[Any]]:
         return []
 
 def load_inventory_data(sheet_name: str) -> pd.DataFrame | None:
-    """Loads inventory data from specified sheet."""
+    """Loads inventory data from specified sheet using fixed column positions.
+    
+    Expected structure (flexible - adapts to available columns):
+    - Uses all available columns from the sheet
+    - Creates generic column names: Col_0, Col_1, etc.
+    - Looks for common patterns to identify key columns
+    """
     logger.debug(f"Fetching data from {sheet_name} sheet...")
     try:
         values = get_fruit_inventory_data(sheet_name)
         if not values:
             return None
 
-        headers = values[0]
-        data = values[1:]
+        # Skip header row if it exists - start from row 1
+        rows = values[1:] if len(values) > 1 else values
         
-        # Log the column count information for debugging
-        logger.info(f"Headers contain {len(headers)} columns")
-        if data:
-            row_lengths = [len(row) for row in data[:5]]  # Check first 5 rows
+        # Determine maximum number of columns from all rows
+        max_cols = max(len(row) for row in values) if values else 0
+        logger.info(f"Detected {max_cols} columns in {sheet_name}")
+        
+        if rows:
+            row_lengths = [len(row) for row in rows[:5]]  # Check first 5 rows
             logger.info(f"First 5 data rows have lengths: {row_lengths}")
         
-        # Pad short rows with None values to match header length
+        # Pad short rows with None values to match max column count
         padded_data = []
-        for i, row in enumerate(data):
-            if len(row) < len(headers):
+        for i, row in enumerate(rows):
+            if len(row) < max_cols:
                 # Pad the row with None values
-                padded_row = row + [None] * (len(headers) - len(row))
+                padded_row = row + [None] * (max_cols - len(row))
                 if i < 3:  # Log first few padding operations for debugging
                     logger.info(f"Row {i+2} padded from {len(row)} to {len(padded_row)} columns")
                 padded_data.append(padded_row)
             else:
-                padded_data.append(row)
+                padded_data.append(row[:max_cols])  # Trim if too long
         
-        df = pd.DataFrame(padded_data, columns=headers)
+        # Create generic column names
+        column_names = [f"Col_{i}" for i in range(max_cols)]
+        
+        # If we have header information, try to use it for better naming
+        if len(values) > 0:
+            headers = values[0]
+            for i, header in enumerate(headers[:max_cols]):
+                if header and str(header).strip():
+                    column_names[i] = str(header).strip()
+        
+        df = pd.DataFrame(padded_data, columns=column_names)
         df = deduplicate_columns(df)
         
-        # Convert numeric columns
-        if 'Total Weight' in df.columns:
-            df['Total Weight'] = pd.to_numeric(df['Total Weight'], errors='coerce').fillna(0)
+        # Convert numeric columns (look for common patterns)
+        for col in df.columns:
+            col_lower = str(col).lower()
+            if any(keyword in col_lower for keyword in ['weight', 'total', 'quantity', 'qty', 'amount']):
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
         
-        # Convert date columns
-        date_cols = ['INVENTORY DATE', 'FRUIT DATE']
-        for col in date_cols:
-            if col in df.columns:
+        # Convert date columns (look for common patterns)
+        for col in df.columns:
+            col_lower = str(col).lower()
+            if any(keyword in col_lower for keyword in ['date', 'time', 'created', 'updated']):
                 df[col] = pd.to_datetime(df[col], errors='coerce')
         
         logger.info(f"Successfully created DataFrame with {len(df)} rows and {len(df.columns)} columns")
@@ -1143,7 +1196,13 @@ def load_wow_data():
         raise
 
 def load_sku_type_data() -> pd.DataFrame | None:
-    """Load SKU Type data from INPUT_SKU_TYPE sheet."""
+    """Load SKU Type data from INPUT_SKU_TYPE sheet using fixed column positions.
+    
+    Uses fixed column positions (0-based indices):
+    Column 0 (A): SKU
+    Column 1 (B): PRODUCT_TYPE  
+    Column 8 (I): SKU_Helper
+    """
     logger.debug(f"Loading SKU Type data from {INPUT_SKU_TYPE_SHEET_NAME}...")
     try:
         # Get raw data
@@ -1152,47 +1211,19 @@ def load_sku_type_data() -> pd.DataFrame | None:
             logger.warning(f"No data found in {INPUT_SKU_TYPE_SHEET_NAME}")
             return None
         
-        # Get headers
-        headers = data[0] if data else []
-        if not headers:
-            logger.warning("No headers found in SKU Type data")
-            return None
+        # Skip header row if present - start from row 1
+        rows = data[1:] if len(data) > 1 else data
         
-        # Convert column letters to indices
-        column_map = {}
-        for i, col_letter in enumerate(INPUT_SKU_TYPE_NEEDED_COLUMNS):
-            if col_letter == "A":
-                column_map[col_letter] = 0
-            elif col_letter == "B":
-                column_map[col_letter] = 1
-            elif col_letter == "I":
-                column_map[col_letter] = 8
-            else:
-                # Calculate column index for multi-letter columns
-                if len(col_letter) == 1:
-                    column_map[col_letter] = ord(col_letter) - ord('A')
-                else:
-                    # For columns like AA, AB, etc.
-                    column_map[col_letter] = (ord(col_letter[0]) - ord('A') + 1) * 26 + (ord(col_letter[1]) - ord('A'))
-        
-        # Check if needed columns exist
-        needed_indices = []
-        for col in INPUT_SKU_TYPE_NEEDED_COLUMNS:
-            if col in column_map and column_map[col] < len(headers):
-                needed_indices.append(column_map[col])
-            else:
-                logger.warning(f"Column index {column_map.get(col, 'unknown')} not found in headers")
-        
-        if not needed_indices:
-            logger.warning("No valid columns found in SKU Type data")
-            return None
+        # Fixed column indices based on INPUT_SKU_TYPE_NEEDED_COLUMNS ["A", "B", "I"]
+        needed_indices = [0, 1, 8]  # A=0, B=1, I=8
             
         # Process data rows
         selected_data = []
-        for row in data[1:]:  # Skip header row
+        for row in rows:
             # Pad row if it's shorter than needed
-            if len(row) < max(needed_indices) + 1:
-                row = row + [''] * (max(needed_indices) + 1 - len(row))
+            max_needed_idx = max(needed_indices)
+            if len(row) < max_needed_idx + 1:
+                row = row + [''] * (max_needed_idx + 1 - len(row))
             
             # Extract only needed columns
             selected_row = []
