@@ -1,3 +1,4 @@
+import logging
 import os
 
 import pandas as pd
@@ -8,10 +9,19 @@ from constants.shipping_zones import load_shipping_zones
 
 # Import utility modules
 from utils.data_processor import DataProcessor
-from utils.ui_components import render_header, render_summary_dashboard, render_inventory_analysis
+from utils.ui_components import (
+    render_header,
+    render_inventory_tab,
+    render_orders_tab,
+    render_sku_mapping_editor,
+    render_staging_tab,
+    render_workflow_status,
+    render_summary_dashboard,
+)
 
 # Load environment variables
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 # Set page configuration
 st.set_page_config(
@@ -48,231 +58,409 @@ if "processed_orders" not in st.session_state:
     st.session_state.processed_orders = None
 if "inventory_summary" not in st.session_state:
     st.session_state.inventory_summary = pd.DataFrame()
+
+# Initialize staging system and workflow - LIGHTWEIGHT INITIALIZATION
+if "staged_orders" not in st.session_state:
+    st.session_state.staged_orders = pd.DataFrame()
+if "staging_history" not in st.session_state:
+    st.session_state.staging_history = []
+if "workflow_initialized" not in st.session_state:
+    st.session_state.workflow_initialized = False
+if "staging_processor" not in st.session_state:
+    st.session_state.staging_processor = None  # Initialize lazily when needed
+if "sku_mappings" not in st.session_state:
+    st.session_state.sku_mappings = None  # Load only when SKU Mapping tab is accessed
+
 if "shortage_summary" not in st.session_state:
     st.session_state.shortage_summary = pd.DataFrame()
 if "grouped_shortage_summary" not in st.session_state:
     st.session_state.grouped_shortage_summary = pd.DataFrame()
+if "inventory_comparison" not in st.session_state:
+    st.session_state.inventory_comparison = pd.DataFrame()
+if "initial_inventory" not in st.session_state:
+    st.session_state.initial_inventory = pd.DataFrame()
+if "processing_stats" not in st.session_state:
+    st.session_state.processing_stats = {}
+if "warehouse_performance" not in st.session_state:
+    st.session_state.warehouse_performance = {}
 if "rules" not in st.session_state:
     st.session_state.rules = []
+if "temp_rules" not in st.session_state:
+    st.session_state.temp_rules = None
 if "bundles" not in st.session_state:
     st.session_state.bundles = {}
 if "override_log" not in st.session_state:
     st.session_state.override_log = []
-if "sku_mappings" not in st.session_state:
-    st.session_state.sku_mappings = None
+# SKU mappings are now initialized above with staging_processor
+
+
+def optimize_memory():
+    """Optimize memory usage and clear unnecessary data"""
+
+    # Clear large temporary DataFrames that aren't needed in session state
+    temp_keys = [
+        "temp_orders",
+        "temp_inventory",
+        "temp_processing",
+        "large_dataframes",
+        "cached_calculations",
+    ]
+
+    for key in temp_keys:
+        if key in st.session_state:
+            del st.session_state[key]
+
+    # Limit staging history to last 50 entries
+    if "staging_history" in st.session_state and len(st.session_state.staging_history) > 50:
+        st.session_state.staging_history = st.session_state.staging_history[-50:]
+
+    # Limit override log to last 100 entries
+    if "override_log" in st.session_state and len(st.session_state.override_log) > 100:
+        st.session_state.override_log = st.session_state.override_log[-100:]
+
+
+def deduplicate_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Renames duplicate columns by appending a suffix."""
+    cols = pd.Series(df.columns)
+    for dup in cols[cols.duplicated()].unique():
+        cols[cols[cols == dup].index.values.tolist()] = [
+            f"{dup}_{i}" if i != 0 else dup for i in range(sum(cols == dup))
+        ]
+    df.columns = cols
+    return df
 
 
 def main():
-    """Main application function"""
+    """Main application function - OPTIMIZED FOR FAST LOADING"""
 
-    # Render header
+    # Optimize memory usage
+    optimize_memory()
+
+    # Render header immediately
     render_header()
-    
-    # Sidebar for configuration
+
+    # Initialize data processor once and cache it
+    if "data_processor" not in st.session_state:
+        st.session_state.data_processor = DataProcessor()
+    data_processor = st.session_state.data_processor
+
+    # Sidebar for file uploads and configuration
     with st.sidebar:
-        # API key configuration
-        api_key = os.getenv("OPENROUTER_API_KEY", "")
-        if not api_key:
-            st.warning("⚠️ OpenRouter API key not found. Please add it to your .env file.")
+        st.subheader("📤 Data Sources")
 
-        # Upload section
-        st.subheader("📤 Upload Files")
-        orders_file = st.file_uploader("Upload Orders CSV", type="csv", key="orders_upload")
-        inventory_file = st.file_uploader(
-            "Upload Inventory CSV", type="csv", key="inventory_upload"
+        # File uploaders
+        orders_file = st.file_uploader(
+            "Upload Orders CSV (e.g. from Shopify)", type="csv", key="orders_upload"
         )
+        
+        # Inventory source selection
+        st.subheader("📦 Inventory Source")
+        inventory_source = st.radio(
+            "Choose inventory source:",
+            ["Upload File", "ColdCart API"],
+            key="inventory_source",
+            index=0  # Default to Upload File
+        )
+        
+        inventory_file = None
+        if inventory_source == "Upload File":
+            inventory_file = st.file_uploader(
+                "Upload Inventory CSV (from warehouse)", type="csv", key="inventory_upload"
+            )
+        else:  # ColdCart API
+            if not os.getenv('COLDCART_API_TOKEN'):
+                st.warning("⚠️ COLDCART_API_TOKEN environment variable not set")
+                st.caption("💡 Contact your admin to set up the API token for automatic inventory")
 
-        if orders_file and inventory_file:
-            if st.button("Process Files"):
-                with st.spinner("Processing files..."):
-                    # Initialize data processor
-                    data_processor = DataProcessor()
-
-                    # Load and process data
+        # Auto-process when orders are uploaded, but keep manual button option
+        can_process = orders_file and (inventory_file or inventory_source == "ColdCart API")
+        
+        # Auto-process logic
+        auto_process = False
+        if can_process:
+            # Check if this is a new orders file (different from what's already processed)
+            if (orders_file is not None and 
+                (st.session_state.get('last_processed_orders_file') != orders_file.name or
+                 st.session_state.get('orders_df') is None)):
+                auto_process = True
+        
+        # Manual process button (always show if can process)
+        manual_process = False
+        if can_process:
+            if st.button("🔄 Reprocess Data", key="manual_process_files"):
+                    manual_process = True
+        
+        # Process data (either auto or manual)
+        if auto_process or manual_process:
+            process_type = "Auto-processing" if auto_process else "Reprocessing"
+            with st.spinner(f"{process_type} data..."):
+                try:
+                    # Step 1: Load orders
                     st.session_state.orders_df = data_processor.load_orders(orders_file)
-                    st.session_state.inventory_df = data_processor.load_inventory(inventory_file)
-
-                    # Load shipping zones data from constants directory
-                    try:
-                        st.session_state.shipping_zones_df = load_shipping_zones()
-                    except Exception as e:
-                        st.error(f"Error loading shipping zones: {str(e)}")
-                        st.session_state.shipping_zones_df = pd.DataFrame(
-                            columns=["zip_prefix", "moorpark_zone", "wheeling_zip", "wheeling_zone"]
-                        )
-
-                    # Process orders if all required data is available
-                    if (
-                        st.session_state.orders_df is not None
-                        and st.session_state.inventory_df is not None
-                    ):
-                        # Load shipping zones if not already loaded
-                        if st.session_state.shipping_zones_df is None:
-                            shipping_zones_path = os.path.join(
-                                os.path.dirname(__file__), "docs", "shipping_zones.csv"
+                    
+                    # Remember this file as processed
+                    if orders_file:
+                        st.session_state.last_processed_orders_file = orders_file.name
+                    
+                    # Step 2: Load inventory based on source
+                    if inventory_source == "ColdCart API":
+                        try:
+                            st.session_state.inventory_df = data_processor.load_inventory(
+                                source="coldcart"
                             )
-                            if os.path.exists(shipping_zones_path):
-                                st.session_state.shipping_zones_df = pd.read_csv(
-                                    shipping_zones_path
-                                )
-                                st.success(
-                                    f"✅ Loaded shipping zones data: {len(st.session_state.shipping_zones_df)} zones"
-                                )
-                            else:
-                                st.warning(
-                                    "⚠️ Shipping zones data not found. Using default shipping logic."
-                                )
-
-                        # Load SKU mappings if not already loaded
-                        if st.session_state.sku_mappings is None:
-                            st.session_state.sku_mappings = data_processor.load_sku_mappings()
-                            # Only show warning if mappings couldn't be loaded
-                            if not st.session_state.sku_mappings:
-                                st.warning(
-                                    "⚠️ SKU mappings could not be loaded. Some SKUs may not be properly matched."
-                                )
-
-                        # Process orders
-                        result = data_processor.process_orders(
-                            st.session_state.orders_df,
-                            st.session_state.inventory_df,
-                            st.session_state.shipping_zones_df,
-                            st.session_state.sku_mappings,
+                            st.success("✅ Successfully fetched inventory from ColdCart API")
+                        except Exception as e:
+                            st.error(f"❌ Failed to fetch from ColdCart API: {str(e)}")
+                            st.stop()
+                    else:  # Upload File
+                        st.session_state.inventory_df = data_processor.load_inventory(
+                            inventory_file, source="file"
                         )
-                        
-                        # Store the results in session state
-                        st.session_state.processed_orders = result['orders']
-                        st.session_state.inventory_summary = result['inventory_summary']
-                        st.session_state.shortage_summary = result['shortage_summary']
-                        st.session_state.grouped_shortage_summary = result['grouped_shortage_summary']
 
-                st.success("✅ Files processed successfully!")
-                st.rerun()
+                    # Initialize staging processor only when processing files
+                    if st.session_state.staging_processor is None:
+                        st.session_state.staging_processor = DataProcessor()
+
+                    # Load shipping zones and cache them
+                    if (
+                        "shipping_zones_df" not in st.session_state
+                        or st.session_state.shipping_zones_df is None
+                    ):
+                        st.session_state.shipping_zones_df = load_shipping_zones()
+
+                    # Initialize staging workflow
+                    result = st.session_state.staging_processor.initialize_workflow(
+                        st.session_state.orders_df, st.session_state.inventory_df
+                    )
+
+                    # Store results in session state - with error checking
+                    if "orders" in result:
+                        st.session_state.processed_orders = result["orders"]
+
+                        # Initialize staged flag if not exists to ensure orders appear in processing tab
+                        if "staged" not in st.session_state.processed_orders.columns:
+                            st.session_state.processed_orders["staged"] = False
+
+                        # Update staged_orders as a filtered view of processed_orders
+                        st.session_state.staged_orders = st.session_state.processed_orders[
+                            st.session_state.processed_orders["staged"] == True
+                        ].copy()
+
+                    # Store other results - check if keys exist before accessing
+                    if "inventory_summary" in result:
+                        st.session_state.inventory_summary = result["inventory_summary"]
+
+                    if "shortage_summary" in result:
+                        st.session_state.shortage_summary = result["shortage_summary"]
+
+                    if "grouped_shortage_summary" in result:
+                        st.session_state.grouped_shortage_summary = result[
+                            "grouped_shortage_summary"
+                        ]
+
+                    if "initial_inventory" in result:
+                        st.session_state.initial_inventory = result["initial_inventory"]
+                        # Always sync to staging_processor
+                        if st.session_state.staging_processor is not None:
+                            st.session_state.staging_processor.initial_inventory = (
+                                st.session_state.initial_inventory
+                            )
+
+                    if "inventory_comparison" in result:
+                        st.session_state.inventory_comparison = result["inventory_comparison"]
+
+                    # Mark workflow as initialized
+                    st.session_state.workflow_initialized = True
+
+                    # Load SKU mappings only when workflow is initialized
+                    if st.session_state.sku_mappings is None:
+                        logger.info("Loading SKU mappings after workflow initialization...")
+                        st.session_state.staging_processor.load_sku_mappings()
+                        st.session_state.sku_mappings = (
+                            st.session_state.staging_processor.sku_mappings
+                        )
+                        if (
+                            st.session_state.sku_mappings is None
+                            or not st.session_state.sku_mappings
+                        ):
+                            logger.warning(
+                                "Failed to load SKU mappings. Using default empty structure."
+                            )
+                            st.session_state.sku_mappings = {
+                                "Oxnard": {"singles": {}, "bundles": {}},
+                                "Wheeling": {"singles": {}, "bundles": {}},
+                            }
+
+                    if inventory_source == "Upload File":
+                        if auto_process:
+                            st.success("🚀 Auto-processed files successfully!")
+                        else:
+                            st.success("✅ Files reprocessed successfully!")
+                    else:  # ColdCart API
+                        if auto_process:
+                            st.success("🚀 Auto-processed successfully with ColdCart inventory!")
+                        else:
+                            st.success("✅ Data reprocessed successfully with ColdCart inventory!")
+
+                except Exception as e:
+                    st.error(f"Error processing data: {str(e)}")
+
+    # Always show workflow status
+    # render_workflow_status()
 
     # Main content area
     if st.session_state.orders_df is not None and st.session_state.inventory_df is not None:
         # Create tabs for different sections
-        tab1, tab2, tab3, tab4 = st.tabs(["📜 Orders", "📦 Inventory", "📈 Dashboard", "⚙️ Rules"])
-
-        with tab1:
-            st.header("📜 Processed Orders")
-            if st.session_state.processed_orders is not None:
-                # Convert processed orders to CSV
-                csv = st.session_state.processed_orders.to_csv(index=False)
-
-                # Display all processed orders in an editable table
-                st.subheader("All Processed Orders (Editable)")
-
-                # Create a unique key for the edited dataframe
-                if "edited_orders" not in st.session_state:
-                    st.session_state.edited_orders = st.session_state.processed_orders.copy()
-
-                # Use the original dataframe without custom filtering
-                # Streamlit's built-in filtering will handle this
-                filtered_df = st.session_state.edited_orders.copy()
-
-                # Create column configuration for data editor with improved formatting
-                column_config = {}
-
-                # Ensure externalorderid and id are treated as string to avoid type conflicts
-                for id_col in ['externalorderid', 'id']:
-                    if id_col in filtered_df.columns:
-                        filtered_df[id_col] = filtered_df[id_col].astype(str)
-                
-                # Configure columns with appropriate types and formats
-                for col in filtered_df.columns:
-                    # Format date columns
-                    if "date" in col.lower():
-                        column_config[col] = st.column_config.DatetimeColumn(
-                            col,
-                            format="YYYY-MM-DD HH:mm",
-                            required=False,
-                            help=f"Date/time for {col}",
-                        )
-                    # Handle order ID columns as text
-                    elif col == 'externalorderid' or col == 'id':
-                        column_config[col] = st.column_config.TextColumn(
-                            col,
-                            required=False,
-                            help=f"Order ID: {col}"
-                        )
-                    # Format numeric columns
-                    elif (
-                        filtered_df[col].dtype in ["int64", "float64"] or "quantity" in col.lower()
-                    ):
-                        column_config[col] = st.column_config.NumberColumn(
-                            col,
-                            format="%d" if filtered_df[col].dtype == "int64" else "%.2f",
-                            required=False,
-                        )
-
-                # Make the dataframe editable with Streamlit's built-in column configuration
-                edited_df = st.data_editor(
-                    filtered_df,
-                    use_container_width=True,
-                    num_rows="dynamic",
-                    hide_index=False,
-                    column_config=column_config,
-                    height=500,
-                    disabled=False,
-                    key="main_table_editor",
-                )
-
-                # Save changes button
-                if st.button("Save Changes"):
-                    st.session_state.processed_orders = edited_df.copy()
-                    st.session_state.edited_orders = edited_df.copy()
-                    st.success("✅ Changes saved successfully!")
-
-        with tab2:            
-            # Move inventory shortages to the inventory tab
-            if "shortage_summary" in st.session_state and not st.session_state.shortage_summary.empty:
-                with st.expander(f"⚠️ INVENTORY SHORTAGES DETECTED: {len(st.session_state.shortage_summary)} items", expanded=True):
-                    if "grouped_shortage_summary" in st.session_state and not st.session_state.grouped_shortage_summary.empty:
-                        grouped_df = st.session_state.grouped_shortage_summary.copy()
-                        
-                        # Format the order_ids list to be more readable
-                        if 'order_ids' in grouped_df.columns:
-                            grouped_df['order_ids'] = grouped_df['order_ids'].apply(lambda x: ', '.join(map(str, x)) if isinstance(x, list) else x)
-                        
-                        if 'issue' in grouped_df.columns:
-                            # Highlight rows with issues
-                            st.markdown("**⚠️ Rows with issues are highlighted**")
-                            # Create a styled dataframe
-                            styled_df = grouped_df.style.apply(
-                                lambda row: ['background-color: #ffcccc' if row['issue'] else '' for _ in row],
-                                axis=1
-                            )
-                            st.dataframe(styled_df)
-                        else:
-                            st.dataframe(grouped_df)
-            
-            # Add inventory analysis section
-            render_inventory_analysis(
-                st.session_state.processed_orders, st.session_state.inventory_df
-            )
-            
-        with tab3:
-            
-            # Original dashboard content
-            render_summary_dashboard(
-                st.session_state.processed_orders, st.session_state.inventory_df
-            )
-    else:
-        # Welcome screen
-        st.header("🍍 Welcome to the AI-Powered Fulfillment Assistant")
-        st.write(
-            """
-        This application helps you assign customer fruit orders to fulfillment centers using:
-        - Uploaded CSVs (orders_placed.csv, inventory.csv)
-        - LLM-enhanced logic (OpenRouter: Claude, GPT)
-        - Rules (zip code → warehouse, fruit bundles, priority)
-        - Editable dashboard with explanations
-        - Final exportable CSV in structured format
-
-        To get started, please upload your order and inventory CSV files using the sidebar.
-        """
+        orders_tab, staging_tab, inventory_tab, mapping_tab, dashboard_tab = st.tabs(
+            ["📜 Orders", "📋 Staging", "📦 Inventory", "⚙️ SKU Mapping", "📊 Dashboard"]
         )
+
+        # Orders Tab
+        with orders_tab:
+            render_orders_tab(st.session_state.processed_orders, st.session_state.shortage_summary)
+
+        # Ensure staged column exists when processing files
+        if (
+            "processed_orders" in st.session_state
+            and st.session_state.processed_orders is not None
+            and not st.session_state.processed_orders.empty
+        ):
+            if "staged" not in st.session_state.processed_orders.columns:
+                st.session_state.processed_orders["staged"] = False
+                # Initial sync of staged_orders based on the staged flag
+                st.session_state.staged_orders = st.session_state.processed_orders[
+                    st.session_state.processed_orders["staged"] == True
+                ].copy()
+
+        # Initialize staged column if not present
+        if (
+            "processed_orders" in st.session_state
+            and st.session_state.processed_orders is not None
+            and not st.session_state.processed_orders.empty
+        ):
+            if "staged" not in st.session_state.processed_orders.columns:
+                st.session_state.processed_orders["staged"] = False
+
+        # Staging Tab
+        with staging_tab:
+            render_staging_tab()
+
+        # Inventory Tab
+        with inventory_tab:
+            render_inventory_tab(
+                st.session_state.shortage_summary,
+                st.session_state.grouped_shortage_summary,
+                st.session_state.initial_inventory
+                if "initial_inventory" in st.session_state
+                else None,
+                st.session_state.inventory_comparison
+                if "inventory_comparison" in st.session_state
+                else None,
+                st.session_state.processed_orders
+                if "processed_orders" in st.session_state
+                else None,
+            )
+
+        # SKU Mapping Tab
+        with mapping_tab:
+            # Load SKU mappings only when accessing this tab
+            if (
+                st.session_state.sku_mappings is None
+                and st.session_state.staging_processor is not None
+            ):
+                with st.spinner("Loading SKU mappings..."):
+                    st.session_state.staging_processor.load_sku_mappings()
+                    st.session_state.sku_mappings = st.session_state.staging_processor.sku_mappings
+                    if st.session_state.sku_mappings is None:
+                        st.session_state.sku_mappings = {
+                            "Oxnard": {"singles": {}, "bundles": {}},
+                            "Wheeling": {"singles": {}, "bundles": {}},
+                        }
+
+            render_sku_mapping_editor(st.session_state.sku_mappings, st.session_state.data_processor)
+
+        # Dashboard Tab
+        with dashboard_tab:
+            # OPTIMIZATION: Only load dashboard when user explicitly requests it
+            # This prevents expensive dashboard calculations from running on every page load
+            
+            if st.button("📊 Load Dashboard Analytics", type="primary", key="load_dashboard"):
+                st.session_state['dashboard_loaded'] = True
+            
+            if st.session_state.get('dashboard_loaded', False):
+                render_summary_dashboard(
+                    st.session_state.processed_orders,
+                    st.session_state.inventory_df,
+                    st.session_state.processing_stats if "processing_stats" in st.session_state else None,
+                    st.session_state.warehouse_performance if "warehouse_performance" in st.session_state else None,
+                )
+            else:
+                st.info("Click 'Load Dashboard Analytics' to view comprehensive order and inventory analytics.")
+                
+                # Show basic stats without expensive calculations
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    if st.session_state.processed_orders is not None:
+                        order_count = len(st.session_state.processed_orders)
+                        st.metric("📋 Processed Orders", f"{order_count:,}")
+                    else:
+                        st.metric("📋 Processed Orders", "0")
+                
+                with col2:
+                    if st.session_state.inventory_df is not None:
+                        inventory_count = len(st.session_state.inventory_df)
+                        st.metric("📦 Inventory Items", f"{inventory_count:,}")
+                    else:
+                        st.metric("📦 Inventory Items", "0")
+                
+                with col3:
+                    if st.session_state.get('shortage_summary') is not None and not st.session_state.shortage_summary.empty:
+                        shortage_count = len(st.session_state.shortage_summary)
+                        st.metric("⚠️ Shortages", f"{shortage_count:,}")
+                    else:
+                        st.metric("⚠️ Shortages", "0")
+    else:
+        # Show minimal welcome message for faster loading
+        st.info("👋 **Welcome to the AI-Powered Fulfillment Assistant!**")
+        st.warning(
+            "⚠️ **No data loaded yet**. Upload Orders and Inventory files in the sidebar - processing will happen automatically!"
+        )
+
+        # Show detailed instructions only if user clicks to expand
+        if st.button("📖 Show Getting Started Guide"):
+            st.markdown(
+                """
+            ### 🚀 Getting Started
+
+            To begin using the smart fulfillment system:
+
+            1. **📁 Upload Orders**: Use the sidebar to upload your Orders file - processing starts automatically!
+            2. **📦 Inventory Source**: File upload is selected by default - upload your inventory CSV
+            3. **🚀 Auto-Processing**: The system automatically processes your data when both files are uploaded
+            4. **📊 Explore Results**: Navigate through the tabs to see orders, staging, inventory, and analytics
+
+            ### 🎯 Key Features
+
+            - **Smart Bundle Management**: Choose bundles in orders, change components, and apply with Available for Recalculation inventory
+            - **Staging Workflow**: Stage orders to protect inventory allocations
+            - **Real-time Recalculation**: Uses Initial - Staged inventory for smart recalculation
+            - **Interactive Analytics**: Comprehensive dashboard with inventory insights
+            """
+            )
+
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("**📜 Orders File Requirements:**")
+                st.caption("• CSV format with order details")
+                st.caption("• Must include order numbers and SKUs")
+                st.caption("• Quantity and customer information")
+
+            with col2:
+                st.markdown("**📦 Inventory Source Options:**")
+                st.caption("• **File Upload**: CSV with SKU and quantity columns (Default)")
+                st.caption("• **ColdCart API**: Real-time inventory alternative option")
+                st.caption("• Automatic warehouse normalization for both sources")
+
 
 if __name__ == "__main__":
     main()
