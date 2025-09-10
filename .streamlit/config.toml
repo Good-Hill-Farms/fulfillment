@@ -1,0 +1,15 @@
+[server]
+# Server configuration
+port = 8501
+
+[browser]
+# Browser configuration
+gatherUsageStats = false
+
+[ui]
+# Hide the "Made with Streamlit" footer
+hideTopBar = false
+
+# This configuration file doesn't directly control page discovery,
+# but you can use it for other Streamlit configurations.
+# Page exclusion is better handled by renaming files.
