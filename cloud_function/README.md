@@ -2,6 +2,10 @@
 
 This Cloud Function creates fulfillment snapshots with both projection data and inventory data in a single Google Sheets spreadsheet. It's designed to run independently from the Streamlit app, solving the issue where background tasks would fail when users navigate away from the page.
 
+## GitHub
+**Main Repository**: https://github.com/Good-Hill-Farms/fulfillment  
+**Cloud Functions**: https://github.com/Good-Hill-Farms/fulfillment/tree/main/cloud_function
+
 ## How It Works
 
 The system pulls data from multiple Google Sheets, combines it with live ColdCart inventory data, and creates organized snapshots and warehouse inventory sheets:

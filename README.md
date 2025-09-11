@@ -4,6 +4,10 @@ A comprehensive batch processing fulfillment system for fruit/produce distributi
 
 ## 📚 Documentation & Quick Links
 
+### GitHub
+**Main Repository**: https://github.com/Good-Hill-Farms/fulfillment  
+**Cloud Functions**: https://github.com/Good-Hill-Farms/fulfillment/tree/main/cloud_function
+
 ### Core Documentation
 - **[📊 Snapshot Quick Reference](docs/SNAPSHOT_QUICK_REFERENCE.md)** - Fast snapshot creation guide
 - **[☁️ Cloud Function Documentation](cloud_function/README.md)** - Automated cloud processing
