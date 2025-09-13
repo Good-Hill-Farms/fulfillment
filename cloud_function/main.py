@@ -102,7 +102,7 @@ def create_snapshot(request):
 def test_inventory_emails(request):
     """
     HTTP Cloud Function for testing inventory email automation.
-    Sends test emails to olena@goodhillfarms.com instead of warehouse teams.
+    Creates real Google Sheets but sends test emails to olena@goodhillfarms.com instead of warehouse teams.
     """
     # CORS setup for preflight requests
     if request.method == 'OPTIONS':
@@ -136,7 +136,7 @@ def test_inventory_emails(request):
             }), 401, headers)
         
         # Test inventory emails in test mode (sends to olena@goodhillfarms.com)
-        logger.info("Starting test inventory email automation...")
+        logger.info("Starting TEST inventory email automation...")
         try:
             result = send_inventory_emails_now(test_mode=True)
             
@@ -159,6 +159,74 @@ def test_inventory_emails(request):
         
     except Exception as e:
         logger.exception(f"Error in test inventory email automation: {str(e)}")
+        error_traceback = traceback.format_exc()
+        return (jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': error_traceback
+        }), 500, headers)
+
+@functions_framework.http
+def send_inventory_emails(request):
+    """
+    HTTP Cloud Function for sending REAL inventory emails to warehouse teams.
+    Creates real Google Sheets and sends emails to actual warehouse teams (PRODUCTION).
+    """
+    # CORS setup for preflight requests
+    if request.method == 'OPTIONS':
+        headers = {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST',
+            'Access-Control-Allow-Headers': 'Content-Type',
+            'Access-Control-Max-Age': '3600'
+        }
+        return ('', 204, headers)
+    
+    # Set CORS headers for the main request
+    headers = {'Access-Control-Allow-Origin': '*'}
+    
+    try:
+        # Get the key from query parameters or request body
+        key = None
+        if request.method == 'GET':
+            key = request.args.get('key')
+        else:  # POST
+            request_json = request.get_json(silent=True)
+            key = request_json.get('key') if request_json else None
+        
+        # Verify the key
+        expected_key = os.environ.get('TRIGGER_SECRET_KEY', 'fulfillment_projection_snapshot_trigger')
+        if key != expected_key:
+            logger.warning("Invalid authentication key provided")
+            return (jsonify({
+                'success': False,
+                'error': 'Invalid authentication key'
+            }), 401, headers)
+        
+        # Send REAL inventory emails to warehouse teams (PRODUCTION MODE)
+        logger.info("Starting PRODUCTION inventory email automation...")
+        try:
+            result = send_inventory_emails_now(test_mode=False)  # PRODUCTION MODE
+            
+            if result and result.get('success'):
+                logger.info("Production inventory emails sent successfully to warehouse teams")
+                return (jsonify(result), 200, headers)
+            else:
+                logger.error("Production inventory email sending failed")
+                error_detail = result.get('error', 'Unknown error') if result else 'Unknown error'
+                return (jsonify({
+                    'success': False,
+                    'error': error_detail
+                }), 500, headers)
+        except Exception as e:
+            logger.exception(f"Error in production inventory email automation: {str(e)}")
+            return (jsonify({
+                'success': False,
+                'error': str(e)
+            }), 500, headers)
+        
+    except Exception as e:
+        logger.exception(f"Error in production inventory email automation: {str(e)}")
         error_traceback = traceback.format_exc()
         return (jsonify({
             'success': False,
