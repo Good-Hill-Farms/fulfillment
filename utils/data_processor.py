@@ -31,6 +31,8 @@ except ImportError as e:
         return {
             "Oxnard": {"singles": {}, "bundles": {}},
             "Wheeling": {"singles": {}, "bundles": {}},
+            "Walnut": {"singles": {}, "bundles": {}},
+            "Northlake": {"singles": {}, "bundles": {}},
         }
 
 
@@ -98,77 +100,24 @@ class DataProcessor:
         original_name = str(warehouse_name)
         normalized_input = original_name.lower().strip()
 
-        # Comprehensive mapping for Oxnard (includes legacy Moorpark references)
-        oxnard_variations = [
-            # Current Oxnard variations
-            "oxnard",
-            "ca-oxnard",
-            "oxnard-ca",
-            "california-oxnard",
-            # Legacy Moorpark variations (93021 ZIP code area now operates as Oxnard)
-            "moorpark",
-            "ca-moorpark",
-            "moorpark-ca",
-            "california-moorpark",
-            # ZIP code based variations
-            "93021",
-            "93030",
-            "ca-93021",
-            "ca-93030",
-            # Full format variations from CSV files
-            "ca-moorpark-93021",
-            "ca-oxnard-93030",
-            "ca-oxnard-93021",
-            # State-based variations
-            "california",
-            "ca",
-            "west",
-            "west-coast",
-        ]
-
-        # Comprehensive mapping for Wheeling
-        wheeling_variations = [
-            # Current Wheeling variations
-            "wheeling",
-            "il-wheeling",
-            "wheeling-il",
-            "illinois-wheeling",
-            # ZIP code based variations
-            "60090",
-            "il-60090",
-            # Full format variations from CSV files
-            "il-wheeling-60090",
-            # State-based variations
-            "illinois",
-            "il",
-            "midwest",
-            "central",
-        ]
-
-        # Check for partial matches in the normalized input
-        # This handles cases like "CA-Moorpark-93021" where we need to find substrings
-        def contains_variation(input_str, variations):
-            return any(variation in input_str for variation in variations)
-
-        # Determine standardized warehouse name
-        if contains_variation(normalized_input, oxnard_variations):
+        # Simple partial matching - check if warehouse names or ZIP codes are in the input
+        if "oxnard" in normalized_input or "moorpark" in normalized_input or "93030" in normalized_input or "93021" in normalized_input:
             standardized_name = "Oxnard"
-            if "moorpark" in normalized_input or "93021" in normalized_input:
-                reason = "legacy_moorpark_to_oxnard"
-            elif "93030" in normalized_input:
-                reason = "zip_code_93030_to_oxnard"
-            else:
-                reason = "oxnard_variation"
-        elif contains_variation(normalized_input, wheeling_variations):
+            reason = "partial_match_oxnard"
+        elif "wheeling" in normalized_input or "60090" in normalized_input:
             standardized_name = "Wheeling"
-            if "60090" in normalized_input:
-                reason = "zip_code_60090_to_wheeling"
-            else:
-                reason = "wheeling_variation"
+            reason = "partial_match_wheeling"
+        elif "walnut" in normalized_input or "91789" in normalized_input:
+            standardized_name = "Walnut"
+            reason = "partial_match_walnut"
+        elif "northlake" in normalized_input or "60164" in normalized_input:
+            standardized_name = "Northlake"
+            reason = "partial_match_northlake"
         else:
-            # If no match found, be strict - no more inference fallbacks
-            logger.warning(f"Could not determine warehouse for: {original_name}")
-            return None  # Return None instead of guessing
+            # If no match found, raise an explicit error - no fallbacks
+            error_msg = f"WAREHOUSE_MAPPING_ERROR: Could not determine warehouse for '{original_name}'. Valid warehouses are: Oxnard, Wheeling, Walnut, Northlake"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
 
         # Log transformation if requested and there was a change
         if log_transformations and original_name != standardized_name:
@@ -248,6 +197,8 @@ class DataProcessor:
             default_data = {
                 "Oxnard": {"singles": {}, "bundles": {}},
                 "Wheeling": {"singles": {}, "bundles": {}},
+                "Walnut": {"singles": {}, "bundles": {}},
+                "Northlake": {"singles": {}, "bundles": {}},
             }
 
             # Check if Airtable is enabled and schema manager exists
@@ -2366,7 +2317,7 @@ class DataProcessor:
         except Exception as e:
             logger.error(f"Error getting inventory data: {str(e)}")
             # Continue with empty inventory data
-            inventory_data = {"Oxnard": {}, "Wheeling": {}}
+            inventory_data = {"Oxnard": {}, "Wheeling": {}, "Walnut": {}, "Northlake": {}}
 
         # Process each rule
         for rule in inventory_rules:
@@ -2668,7 +2619,16 @@ class DataProcessor:
         # Check each fulfillment center for mappings
         # New Airtable format: mappings["Oxnard"]["singles"][shopify_sku] = {"picklist_sku": inventory_sku, ...}
         for fc_key in fc_keys:
-            center_name = "Oxnard" if fc_key.lower() in ["oxnard", "moorpark"] else "Wheeling"
+            if fc_key.lower() in ["oxnard", "moorpark"]:
+                center_name = "Oxnard"
+            elif fc_key.lower() == "wheeling":
+                center_name = "Wheeling"
+            elif fc_key.lower() == "walnut":
+                center_name = "Walnut"
+            elif fc_key.lower() == "northlake":
+                center_name = "Northlake"
+            else:
+                raise ValueError(f"MAPPING_ERROR: Unknown warehouse '{fc_key}' for SKU mapping lookup")
 
             # First check in singles dictionary
             if center_name in mappings and "singles" in mappings[center_name]:

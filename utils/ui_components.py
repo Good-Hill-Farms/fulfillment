@@ -2518,9 +2518,9 @@ def render_sku_mapping_editor(sku_mappings, data_processor):
         return
 
     # Create warehouse tabs
-    warehouse_names = [w for w in sku_mappings.keys() if w in ["Oxnard", "Wheeling"]]
+    warehouse_names = [w for w in sku_mappings.keys() if w in ["Oxnard", "Wheeling", "Walnut", "Northlake"]]
     if not warehouse_names:
-        st.warning("No warehouse data found (looking for 'Oxnard' and 'Wheeling').")
+        st.warning("No warehouse data found (looking for 'Oxnard', 'Wheeling', 'Walnut', and 'Northlake').")
         return
 
     # Create tabs for each warehouse

@@ -58,26 +58,42 @@ def send_weekly_inventory_emails(test_mode=False):
     try:
         # Generate and email Oxnard inventory
         logger.info("Generating Oxnard inventory sheet...")
-        oxnard_url = generate_inventory_sheet("Oxnard", OXNARD_FOLDER_ID, send_email=True, test_mode=test_mode)
+        oxnard_url = generate_inventory_sheet("Oxnard", OXNARD_FOLDER_ID)
         
         if oxnard_url:
             results['oxnard']['generated'] = True
-            results['oxnard']['emailed'] = True  # Email is sent within generate_inventory_sheet
             results['oxnard']['url'] = oxnard_url
-            logger.info(f"✅ Oxnard inventory completed: {oxnard_url}")
+            
+            # Send email after sheet generation
+            from email_service import send_warehouse_inventory_email
+            email_success = send_warehouse_inventory_email("Oxnard", oxnard_url, test_mode=test_mode)
+            results['oxnard']['emailed'] = email_success
+            
+            if email_success:
+                logger.info(f"✅ Oxnard inventory completed: {oxnard_url}")
+            else:
+                logger.error("❌ Failed to send Oxnard email")
         else:
             results['oxnard']['error'] = "Failed to generate inventory sheet"
             logger.error("❌ Failed to generate Oxnard inventory sheet")
         
         # Generate and email Wheeling inventory
         logger.info("Generating Wheeling inventory sheet...")
-        wheeling_url = generate_inventory_sheet("Wheeling", WHEELING_FOLDER_ID, send_email=True, test_mode=test_mode)
+        wheeling_url = generate_inventory_sheet("Wheeling", WHEELING_FOLDER_ID)
         
         if wheeling_url:
             results['wheeling']['generated'] = True
-            results['wheeling']['emailed'] = True  # Email is sent within generate_inventory_sheet
             results['wheeling']['url'] = wheeling_url
-            logger.info(f"✅ Wheeling inventory completed: {wheeling_url}")
+            
+            # Send email after sheet generation
+            from email_service import send_warehouse_inventory_email
+            email_success = send_warehouse_inventory_email("Wheeling", wheeling_url, test_mode=test_mode)
+            results['wheeling']['emailed'] = email_success
+            
+            if email_success:
+                logger.info(f"✅ Wheeling inventory completed: {wheeling_url}")
+            else:
+                logger.error("❌ Failed to send Wheeling email")
         else:
             results['wheeling']['error'] = "Failed to generate inventory sheet"
             logger.error("❌ Failed to generate Wheeling inventory sheet")

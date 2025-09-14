@@ -831,7 +831,7 @@ class AirtableHandler:
 
         try:
             # Get all centers or use the specified one
-            centers = [center] if center else ["Oxnard", "Wheeling"]
+            centers = [center] if center else ["Oxnard", "Wheeling", "Walnut", "Northlake"]
 
             # Process each center
             for current_center in centers:

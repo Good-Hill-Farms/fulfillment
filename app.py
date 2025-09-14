@@ -289,6 +289,8 @@ def main():
                             st.session_state.sku_mappings = {
                                 "Oxnard": {"singles": {}, "bundles": {}},
                                 "Wheeling": {"singles": {}, "bundles": {}},
+                                "Walnut": {"singles": {}, "bundles": {}},
+                                "Northlake": {"singles": {}, "bundles": {}},
                             }
 
                     if inventory_source == "Upload File":
@@ -375,6 +377,8 @@ def main():
                         st.session_state.sku_mappings = {
                             "Oxnard": {"singles": {}, "bundles": {}},
                             "Wheeling": {"singles": {}, "bundles": {}},
+                            "Walnut": {"singles": {}, "bundles": {}},
+                            "Northlake": {"singles": {}, "bundles": {}},
                         }
 
             render_sku_mapping_editor(st.session_state.sku_mappings, st.session_state.data_processor)
