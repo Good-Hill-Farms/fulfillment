@@ -375,10 +375,11 @@ def process_sku_data(data: List[List[Any]], center: str) -> Dict[str, Dict[str, 
     Column 0: shopifysku2 (order SKU)
     Column 1: picklist sku (inventory SKU)
     Column 2: Mix Quantity (actualqty)
-    Column 3: Pick Weight LB
-    Column 4: Total Pick Weight
-    Column 5: Pick Type
-    Column 6: Product Type
+    Column 5: Product Type
+    Column 6: Pick Type
+    Column 8: Pick Type Inventory
+    Column 10: Pick Weight LB
+    Column 12: Total Pick Weight
     """
     if not data:
         logger.warning(f"No data to process for {center}")
@@ -387,11 +388,22 @@ def process_sku_data(data: List[List[Any]], center: str) -> Dict[str, Dict[str, 
     # Skip header row if it exists - start from row 1
     rows = data[1:] if len(data) > 1 else data
     
-    # Debug: Print first 5 rows to see the actual data (only in debug mode)
-    if logger.isEnabledFor(logging.DEBUG):
-        logger.debug(f"Processing {len(rows)} data rows for {center}")
-        for i, row in enumerate(rows[:5]):
-            logger.debug(f"Row {i+2}: {row}")
+    # Debug: Print first 5 rows to see the actual data structure
+    logger.info(f"=== DEBUGGING {center} DATA STRUCTURE ===")
+    logger.info(f"Total data rows: {len(data)}")
+    if len(data) > 0:
+        logger.info("Headers (Row 0):")
+        for i, header in enumerate(data[0]):
+            logger.info(f"  Column {i}: {header}")
+    
+    logger.info(f"Processing {len(rows)} data rows for {center}")
+    logger.info("First 3 data rows:")
+    for i, row in enumerate(rows[:3]):
+        logger.info(f"Row {i+2} ({len(row)} columns):")
+        for j, cell in enumerate(row):
+            if j <= 12:  # Only show up to column 12
+                logger.info(f"  Column {j}: {cell}")
+    logger.info("=== END DEBUG ===\n")
     
     # Initialize result structure
     result = {center: {"singles": {}, "bundles": {}}}
@@ -402,17 +414,19 @@ def process_sku_data(data: List[List[Any]], center: str) -> Dict[str, Dict[str, 
         try:
             # Use fixed column positions instead of header mapping
             # Ensure row has enough columns, pad with empty strings if needed
-            if len(row) < 7:
-                row = row + [''] * (7 - len(row))
+            max_col_needed = 13  # We need up to column 12 (0-based indexing)
+            if len(row) < max_col_needed:
+                row = row + [''] * (max_col_needed - len(row))
             
-            # Extract values by position
+            # Extract values by correct position
             order_sku = row[0] if len(row) > 0 else ""
             picklist_sku = row[1] if len(row) > 1 else ""
             mix_quantity = row[2] if len(row) > 2 else "1"
-            pick_weight = row[3] if len(row) > 3 else "0"
-            total_pick_weight = row[4] if len(row) > 4 else "0"
-            pick_type = row[5] if len(row) > 5 else ""
-            product_type = row[6] if len(row) > 6 else ""
+            product_type = row[5] if len(row) > 5 else ""
+            pick_type = row[6] if len(row) > 6 else ""
+            pick_type_inventory = row[8] if len(row) > 8 else ""
+            pick_weight = row[10] if len(row) > 10 else "0"
+            total_pick_weight = row[12] if len(row) > 12 else "0"
             
             if not order_sku:
                 continue
@@ -426,6 +440,7 @@ def process_sku_data(data: List[List[Any]], center: str) -> Dict[str, Dict[str, 
                 "Pick Weight LB": pick_weight,
                 "Total Pick Weight": total_pick_weight,
                 "Pick Type": pick_type,
+                "Pick Type Inventory": pick_type_inventory,
                 "Product Type": product_type,
                 "actualqty": mix_quantity  # alias for backward compatibility
             }))
