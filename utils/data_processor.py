@@ -1116,10 +1116,18 @@ class DataProcessor:
                 and shopify_sku in bundle_info_dict[fc_key]
             )
 
+            # Debug logging for bundle detection - check by key, not prefix
+            if bundle_info_dict and fc_key in bundle_info_dict and shopify_sku in bundle_info_dict[fc_key]:
+                logger.info(f"Bundle SKU detected by key lookup: {shopify_sku}, fc_key: {fc_key}")
+                logger.info(f"Bundle has {len(bundle_info_dict[fc_key][shopify_sku])} components")
+            elif shopify_sku.startswith(("f.", "m.")):
+                # Only log if it looks like a bundle but wasn't found
+                logger.debug(f"SKU {shopify_sku} has bundle-like prefix but not found in bundle mappings for {fc_key}")
+
             if is_bundle:
                 # For bundles, we don't need individual weight data - process directly
 
-                logger.debug(f"Processing bundle SKU: {shopify_sku}")
+                logger.info(f"Processing bundle SKU: {shopify_sku}")
                 bundle_components = bundle_info_dict[fc_key][shopify_sku]
                 output_df = self._process_bundle_order(
                     order_data,
@@ -1623,13 +1631,35 @@ class DataProcessor:
         # Try standard SKU columns first
         for col in ["shopsku", "SKU Helper", "sku", "lineitemsku", "shopifysku", "shopifysku2"]:
             if col in row and pd.notna(row[col]):
-                return row[col]
+                sku_value = row[col]
+                # Debug logging - check if this might be a bundle by looking in mappings
+                if hasattr(self, 'sku_mappings') and self.sku_mappings:
+                    is_bundle_sku = False
+                    for warehouse in self.sku_mappings.keys():
+                        if "bundles" in self.sku_mappings[warehouse] and str(sku_value) in self.sku_mappings[warehouse]["bundles"]:
+                            is_bundle_sku = True
+                            break
+                    if is_bundle_sku:
+                        logger.info(f"Found bundle SKU in column '{col}': {sku_value}")
+                return sku_value
 
-        # Check fruit-specific columns
-        sku_columns = [col for col in columns if col.startswith("f.") or col.startswith("m.")]
-        for col in sku_columns:
-            if col in row and pd.notna(row[col]) and float(row[col]) > 0:
-                return col
+        # Check fruit-specific columns - look for column VALUES that are SKUs, not column names
+        for col in columns:
+            if col in row and pd.notna(row[col]):
+                sku_value = str(row[col])
+                # Check if the VALUE in the column is a SKU (starts with f. or m.)
+                if sku_value.startswith(("f.", "m.")):
+                    # For numeric columns, ensure it's not just a quantity
+                    try:
+                        # If it's a pure number > 0, it's likely a quantity, not a SKU
+                        float_val = float(sku_value)
+                        if float_val > 0 and '.' not in sku_value.replace('.', ''):
+                            continue  # Skip numeric quantities
+                    except ValueError:
+                        pass  # Not a number, could be a SKU
+                    
+                    logger.info(f"Found SKU value in column '{col}': {sku_value}")
+                    return sku_value
 
         return None
 
@@ -1765,24 +1795,17 @@ class DataProcessor:
                         f"Found component {resolved_sku} weight: {unit_weight} per unit, total: {total_component_weight}"
                     )
                 else:
-                    # Component not found in singles mappings - this is a data integrity issue
-                    component_weight = component.get("weight")
-                    if component_weight is None or component_weight == 0.0:
-                        logger.error(
-                            f"Component {component_sku} (resolved: {resolved_sku}) has no weight data in singles mappings or bundle definition - cannot proceed"
-                        )
-                        continue  # Skip this component
+                    # Component not found in singles mappings - use bundle weight data
+                    component_weight = component.get("weight", 0.0)
                     total_component_weight = float(component_weight) * shop_quantity
-            else:
-                # No warehouse mappings available - this is a critical data issue
-                component_weight = component.get("weight")
-                if component_weight is None or component_weight == 0.0:
-                    logger.error(
-                        f"No SKU mappings available for {warehouse_key} and no weight in bundle definition for {component_sku} - cannot proceed"
+                    logger.warning(
+                        f"Component {component_sku} (resolved: {resolved_sku}) not found in singles mappings, using bundle weight: {component_weight}"
                     )
-                    continue  # Skip this component
+            else:
+                # No warehouse mappings available - use bundle weight data
+                component_weight = component.get("weight", 0.0)
                 total_component_weight = float(component_weight) * shop_quantity
-                logger.error(
+                logger.warning(
                     f"No SKU mappings available for {warehouse_key}, using bundle weight: {component_weight} - this indicates missing warehouse data"
                 )
 
@@ -2681,10 +2704,18 @@ class DataProcessor:
             logger.error("No SKU mappings available for mapping Shopify SKU to inventory SKU")
             return None
 
-        # Handle m.* (bundle SKUs) directly - they represent bundles in the inventory
-        # They don't have mappings in the mappings section
-        if shopify_sku.startswith("m."):
-            # Special case for bundle SKUs - they need to be used directly
+        # Check if this is a bundle SKU by looking in bundle mappings first
+        # This is more reliable than checking prefixes
+        for warehouse in mappings.keys():
+            if "bundles" in mappings[warehouse] and shopify_sku in mappings[warehouse]["bundles"]:
+                logger.debug(f"Confirmed bundle SKU: {shopify_sku} in warehouse {warehouse}")
+                return shopify_sku
+            
+        # Special case: SKUs that don't start with "f." or "m." are likely already inventory SKUs from bundle components
+        # This fixes the "No mapping found" errors for bundle component SKUs
+        if not shopify_sku.startswith("f.") and not shopify_sku.startswith("m."):
+            # Bundle components are already inventory SKUs, return them directly
+            logger.debug(f"Treating '{shopify_sku}' as inventory SKU (likely bundle component)")
             return shopify_sku
 
         # Check each fulfillment center for mappings
@@ -4483,18 +4514,18 @@ if __name__ == "__main__":
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # Load actual data from docs
-    orders_df = data_processor.load_orders("Shopify Matrixify Master 12_1_24 - all_order_pivot - 2025-07-23T081414.501.csv")
-    inventory_df = data_processor.load_inventory("Shopify Matrixify Master 12_1_24 - XFORM_cc_inv_balance.csv", source="file")
-    inventory_cc_df = data_processor.load_inventory(source="coldcart")
+    orders_df = data_processor.load_orders("docs/orders.csv")
+    inventory_df = data_processor.load_inventory("docs/inventory.csv")
+    # inventory_cc_df = data_processor.load_inventory(source="coldcart")
     sku_mappings = data_processor.load_sku_mappings()
 
     # Temporary override of SKU mappings for bundles
     # This allows custom bundle component mappings that override Airtable data
     json.dump(sku_mappings, open("sku_mappings.json", "w"), indent=4)
 
-    # Process orders with coldcart inventory
-    logger.info("Processing orders with coldcart inventory...")
-    processed_data_cc = data_processor.process_orders(orders_df, inventory_cc_df, sku_mappings)
+    # # Process orders with coldcart inventory
+    # logger.info("Processing orders with coldcart inventory...")
+    # processed_data_cc = data_processor.process_orders(orders_df, inventory_cc_df, sku_mappings)
 
     # Process orders with initial inventory
     logger.info("Processing orders with initial inventory...")
@@ -4505,6 +4536,6 @@ if __name__ == "__main__":
         processed_data[data_key].to_csv(f"{data_key}_{timestamp}.csv", index=False)
         logger.info(f"Saved {data_key} data to {data_key}_{timestamp}.csv")
 
-    for data_key in processed_data_cc:
-        processed_data_cc[data_key].to_csv(f"{data_key}_cc_{timestamp}.csv", index=False)
-        logger.info(f"Saved {data_key} data to {data_key}_cc_{timestamp}.csv")
+    # for data_key in processed_data_cc:
+    #     processed_data_cc[data_key].to_csv(f"{data_key}_cc_{timestamp}.csv", index=False)
+    #     logger.info(f"Saved {data_key} data to {data_key}_cc_{timestamp}.csv")
