@@ -291,5 +291,6 @@ pyrightconfig.json
 
 *.DS_Store
 docs/*
-
+*.json
+*.idea/*
 # End of https://www.toptal.com/developers/gitignore/api/python,pycharm

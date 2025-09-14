@@ -293,6 +293,48 @@ def main():
                                 "Northlake": {"singles": {}, "bundles": {}},
                             }
 
+                    # Show warnings, errors, and skipped records if any were collected during processing
+                    processor = st.session_state.staging_processor
+                    if hasattr(processor, 'data_warnings') or hasattr(processor, 'data_errors') or hasattr(processor, 'skipped_records'):
+                        warning_count = len(processor.data_warnings) if hasattr(processor, 'data_warnings') else 0
+                        error_count = len(processor.data_errors) if hasattr(processor, 'data_errors') else 0
+                        skipped_count = len(processor.skipped_records) if hasattr(processor, 'skipped_records') else 0
+                        
+                        total_issues = warning_count + error_count + skipped_count
+                        
+                        if total_issues > 0:
+                            with st.expander(f"⚠️ {total_issues} Data Issue(s) - Click to view details", expanded=False):
+                                
+                                # Show skipped records first (most important)
+                                if skipped_count > 0:
+                                    st.error(f"🚫 {skipped_count} Records Skipped")
+                                    skipped_df = pd.DataFrame([{
+                                        'Order ID': record['record'].get('order_id', ''),
+                                        'Customer': record['record'].get('customer', ''),
+                                        'SKU': record['record'].get('sku', ''),
+                                        'Fulfillment Center': record['record'].get('fulfillment_center', ''),
+                                        'ZIP': record['record'].get('zip', ''),
+                                        'Reason': record['reason']
+                                    } for record in processor.skipped_records])
+                                    
+                                    st.dataframe(skipped_df, height=200, use_container_width=True, hide_index=True)
+                                
+                                # Show errors
+                                if error_count > 0:
+                                    st.error(f"❌ {error_count} Processing Errors")
+                                    for error in processor.data_errors:
+                                        st.error(f"• {error['error']}")
+                                        if error.get('context'):
+                                            st.caption(f"Context: {error['context']}")
+                                
+                                # Show general warnings
+                                if warning_count > 0:
+                                    st.warning(f"⚠️ {warning_count} Data Warnings")
+                                    for warning in processor.data_warnings:
+                                        st.warning(f"• {warning}")
+                                
+                                st.caption("Processing continued with the remaining valid data.")
+
                     if inventory_source == "Upload File":
                         if auto_process:
                             st.success("🚀 Auto-processed files successfully!")
@@ -305,7 +347,11 @@ def main():
                             st.success("✅ Data reprocessed successfully with ColdCart inventory!")
 
                 except Exception as e:
-                    st.error(f"Error processing data: {str(e)}")
+                    error_msg = f"Error processing data: {str(e)}"
+                    st.error(error_msg)
+                    # Also track the error if processor exists
+                    if hasattr(st.session_state, 'staging_processor') and st.session_state.staging_processor:
+                        st.session_state.staging_processor.add_data_error(error_msg, "File processing")
 
     # Always show workflow status
     # render_workflow_status()

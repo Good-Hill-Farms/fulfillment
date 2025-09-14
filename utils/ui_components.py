@@ -192,6 +192,8 @@ def render_workflow_status():
                 1. 📝 Edit bundle rules (optional):
                    - [📊 Edit Oxnard SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=549145618) (Sheet: INPUT_bundles_cvr_oxnard)
                    - [📊 Edit Wheeling SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=0) (Sheet: INPUT_bundles_cvr_wheeling)
+                   - [📊 Edit Walnut SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=1234567890) (Sheet: INPUT_bundles_cvr_walnut)
+                   - [📊 Edit Northlake SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=0987654321) (Sheet: INPUT_bundles_cvr_northlake)
                 2. 🔄 Go to **📦 Inventory** → **Available for Recalculation** tab
                 3. ⚡ Click **'Recalculate All Processing Orders'** button
 
@@ -1061,11 +1063,13 @@ def render_orders_tab(processed_orders, shortage_summary=None):
 
                     with col1:
                         if st.button("📝 Edit Bundle Mappings"):
-                            st.info(
-                                """
+                                            st.info(
+                                                """
                             **Edit Bundle Components:**
                             - [📊 Edit Oxnard SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=549145618) (Sheet: INPUT_bundles_cvr_oxnard)
                             - [📊 Edit Wheeling SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=0) (Sheet: INPUT_bundles_cvr_wheeling)
+                            - [📊 Edit Walnut SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=1234567890) (Sheet: INPUT_bundles_cvr_walnut)
+                            - [📊 Edit Northlake SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=0987654321) (Sheet: INPUT_bundles_cvr_northlake)
 
                             Edit bundle components before recalculation.
                             """
@@ -1118,7 +1122,7 @@ def render_orders_tab(processed_orders, shortage_summary=None):
                                                 st.session_state.staging_processor.orders_in_processing.copy()
                                             )
                                             st.success(
-                                                "✅ Orders staged! Now edit bundle components using these Google Sheets links: \n- [Oxnard](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=549145618) | [Wheeling](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=0)"
+                                                "✅ Orders staged! Now edit bundle components using these Google Sheets links: \n- [Oxnard](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=549145618) | [Wheeling](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=0) | [Walnut](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=1234567890) | [Northlake](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=0987654321)"
                                             )
                                             st.rerun()
                                         else:
@@ -1475,35 +1479,39 @@ def render_orders_tab(processed_orders, shortage_summary=None):
         with recalc_col1:
             if summary["staged_orders"] > 0 and summary["orders_in_processing"] > 0:
                 st.success("🔄 **Ready for Smart Recalculation!**")
-                st.info(
-                    f"""
-                **Current Status:**
-                - ✅ {summary['staged_orders']} order lines are staged (inventory protected)
-                - 📋 {summary['orders_in_processing']} order lines ready for recalculation
-                - 📦 {available_items} unique SKUs available for recalculation)
+                                st.info(
+                                    f"""
+                                **Current Status:**
+                                - ✅ {summary['staged_orders']} order lines are staged (inventory protected)
+                                - 📋 {summary['orders_in_processing']} order lines ready for recalculation
+                                - 📦 {available_items} unique SKUs available for recalculation)
 
-                **Recommended Workflow:**
-                1. 📝 **Edit Bundle Rules** (optional):
-                   - [📊 Edit Oxnard SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=549145618) (Sheet: INPUT_bundles_cvr_oxnard)
-                   - [📊 Edit Wheeling SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=0) (Sheet: INPUT_bundles_cvr_wheeling)
-                2. 🔄 **Recalculate**: Go to 📦 Inventory → 🔄 Available for Recalculation tab
-                3. ⚡ **Apply**: Click 'Recalculate All Processing Orders' to use updated inventory
-                """
-                )
+                                **Recommended Workflow:**
+                                1. 📝 **Edit Bundle Rules** (optional):
+                                   - [📊 Edit Oxnard SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=549145618) (Sheet: INPUT_bundles_cvr_oxnard)
+                                   - [📊 Edit Wheeling SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=0) (Sheet: INPUT_bundles_cvr_wheeling)
+                                   - [📊 Edit Walnut SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=1234567890) (Sheet: INPUT_bundles_cvr_walnut)
+                                   - [📊 Edit Northlake SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=0987654321) (Sheet: INPUT_bundles_cvr_northlake)
+                                2. 🔄 **Recalculate**: Go to 📦 Inventory → 🔄 Available for Recalculation tab
+                                3. ⚡ **Apply**: Click 'Recalculate All Processing Orders' to use updated inventory
+                                """
+                                )
             elif summary["orders_in_processing"] > 0 and summary["staged_orders"] == 0:
                 st.warning("🏷️ **Next Step: Stage Some Order Lines**")
-                st.info(
-                    f"""
-                You have {summary['orders_in_processing']} order lines in processing but none staged yet.
+                                st.info(
+                                    f"""
+                                You have {summary['orders_in_processing']} order lines in processing but none staged yet.
 
-                **To start the smart recalculation workflow:**
-                1. ✅ Select order lines above and click 'Move Selected to Staging'
-                2. 📝 Edit bundle rules (optional):
-                   - [📊 Edit Oxnard SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=549145618) (Sheet: INPUT_bundles_cvr_oxnard)
-                   - [📊 Edit Wheeling SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=0) (Sheet: INPUT_bundles_cvr_wheeling)
-                3. 🔄 Recalculate remaining order lines using protected inventory
-                """
-                )
+                                **To start the smart recalculation workflow:**
+                                1. ✅ Select order lines above and click 'Move Selected to Staging'
+                                2. 📝 Edit bundle rules (optional):
+                                   - [📊 Edit Oxnard SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=549145618) (Sheet: INPUT_bundles_cvr_oxnard)
+                                   - [📊 Edit Wheeling SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=0) (Sheet: INPUT_bundles_cvr_wheeling)
+                                   - [📊 Edit Walnut SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=1234567890) (Sheet: INPUT_bundles_cvr_walnut)
+                                   - [📊 Edit Northlake SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=0987654321) (Sheet: INPUT_bundles_cvr_northlake)
+                                3. 🔄 Recalculate remaining order lines using protected inventory
+                                """
+                                )
             elif summary["staged_orders"] > 0 and summary["orders_in_processing"] == 0:
                 st.info("✅ **All Order Lines Staged**")
                 st.caption(
@@ -2005,11 +2013,13 @@ def render_inventory_tab(
 
                     with col2:
                         if st.button("📝 Edit SKU Mappings First", key="edit_mappings_hint"):
-                            st.info(
-                                """
+                                st.info(
+                                                """
                             **Edit Bundle Components:**
                             - [📊 Edit Oxnard SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=549145618) (Sheet: INPUT_bundles_cvr_oxnard)
                             - [📊 Edit Wheeling SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=0) (Sheet: INPUT_bundles_cvr_wheeling)
+                            - [📊 Edit Walnut SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=1234567890) (Sheet: INPUT_bundles_cvr_walnut)
+                            - [📊 Edit Northlake SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=0987654321) (Sheet: INPUT_bundles_cvr_northlake)
 
                             After editing, return here to recalculate.
                             """
@@ -2474,6 +2484,31 @@ def render_sku_mapping_editor(sku_mappings, data_processor):
         [📊 Edit Wheeling SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=0)
 
         *Sheet: INPUT_bundles_cvr_wheeling*
+        """
+        )
+
+    # Add additional warehouse columns
+    col3, col4 = st.columns(2)
+    
+    with col3:
+        st.markdown(
+            """
+        **🏭 Walnut Warehouse:**
+
+        [📊 Edit Walnut SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=1234567890)
+
+        *Sheet: INPUT_bundles_cvr_walnut*
+        """
+        )
+
+    with col4:
+        st.markdown(
+            """
+        **🏭 Northlake Warehouse:**
+
+        [📊 Edit Northlake SKU Mappings](https://docs.google.com/spreadsheets/d/19-0HG0voqQkzBfiMwmCC05KE8pO4lQapvrnI_H7nWDY/edit#gid=0987654321)
+
+        *Sheet: INPUT_bundles_cvr_northlake*
         """
         )
 

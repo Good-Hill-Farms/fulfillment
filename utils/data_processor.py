@@ -59,6 +59,10 @@ class DataProcessor:
         self._recalculated_skus = set()
         # Track warehouse transformations for debugging
         self._warehouse_transformations = []
+        # Track data warnings and errors to show in UI
+        self.data_warnings = []
+        self.data_errors = []
+        self.skipped_records = []  # Store actual records that were skipped
         # Schema manager for Airtable integration
         self.use_airtable = use_airtable
         self.schema_manager = SchemaManager() if use_airtable else None
@@ -98,6 +102,14 @@ class DataProcessor:
 
         # Convert to string and normalize case for comparison
         original_name = str(warehouse_name)
+        
+        # Handle 'nan' string specifically (common from pandas)
+        if original_name.lower().strip() in ['nan', 'none', 'null', '']:
+            warning_msg = f"Invalid warehouse name detected: '{original_name}' - skipping"
+            logger.warning(warning_msg)
+            self.data_warnings.append(warning_msg)
+            return None
+            
         normalized_input = original_name.lower().strip()
 
         # Simple partial matching - check if warehouse names or ZIP codes are in the input
@@ -114,10 +126,11 @@ class DataProcessor:
             standardized_name = "Northlake"
             reason = "partial_match_northlake"
         else:
-            # If no match found, raise an explicit error - no fallbacks
-            error_msg = f"WAREHOUSE_MAPPING_ERROR: Could not determine warehouse for '{original_name}'. Valid warehouses are: Oxnard, Wheeling, Walnut, Northlake"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
+            # If no match found, be strict - no more inference fallbacks
+            warning_msg = f"Could not determine warehouse for: {original_name}"
+            logger.warning(warning_msg)
+            self.data_warnings.append(warning_msg)
+            return None
 
         # Log transformation if requested and there was a change
         if log_transformations and original_name != standardized_name:
@@ -132,6 +145,40 @@ class DataProcessor:
             )
 
         return standardized_name
+
+    def get_data_warnings(self):
+        """Get all data warnings collected during processing"""
+        return self.data_warnings.copy()
+    
+    def get_data_errors(self):
+        """Get all data errors collected during processing"""
+        return self.data_errors.copy()
+    
+    def get_skipped_records(self):
+        """Get all records that were skipped during processing"""
+        return self.skipped_records.copy()
+    
+    def add_skipped_record(self, record_info, reason):
+        """Add a record to the skipped records list"""
+        self.skipped_records.append({
+            'record': record_info,
+            'reason': reason,
+            'timestamp': pd.Timestamp.now()
+        })
+    
+    def add_data_error(self, error_msg, context=None):
+        """Add an error to the data errors list"""
+        self.data_errors.append({
+            'error': error_msg,
+            'context': context,
+            'timestamp': pd.Timestamp.now()
+        })
+    
+    def clear_data_warnings(self):
+        """Clear data warnings, errors, and skipped records"""
+        self.data_warnings = []
+        self.data_errors = []
+        self.skipped_records = []
 
     def get_warehouse_transformations_summary(self):
         """
@@ -164,6 +211,9 @@ class DataProcessor:
             str: Normalized key in format "SKU|NormalizedWarehouse"
         """
         normalized_warehouse = self.normalize_warehouse_name(warehouse, log_transformations=False)
+        if normalized_warehouse is None:
+            logger.warning(f"Could not normalize warehouse '{warehouse}' for SKU '{sku}' - using 'Unknown'")
+            normalized_warehouse = "Unknown"
         return f"{sku}|{normalized_warehouse}"
 
     def load_orders(self, file) -> pd.DataFrame:
@@ -1023,11 +1073,29 @@ class DataProcessor:
             # Get fulfillment center and normalize
             fulfillment_center = row.get("Fulfillment Center")
             if not fulfillment_center:
-                logger.warning(f"Order {order_id}: No fulfillment center specified, skipping")
+                warning_msg = f"Order {order_id}: No fulfillment center specified, skipping"
+                logger.warning(warning_msg)
+                # Track the skipped record
+                self.add_skipped_record({
+                    'order_id': order_id,
+                    'fulfillment_center': 'MISSING',
+                    'sku': shopify_sku,
+                    'customer': row.get('Customer: First Name', row.get('customerfirstname', '')),
+                    'zip': row.get('Shipping: Zip', row.get('shiptopostalcode', ''))
+                }, "Missing fulfillment center")
                 continue
             fc_key = self.normalize_warehouse_name(fulfillment_center, log_transformations=True)
             if fc_key is None:
-                logger.error(f"Order {order_id}: Could not normalize fulfillment center '{fulfillment_center}', skipping")
+                error_msg = f"Order {order_id}: Could not normalize fulfillment center '{fulfillment_center}', skipping"
+                logger.error(error_msg)
+                # Track the skipped record with key order details
+                self.add_skipped_record({
+                    'order_id': order_id,
+                    'fulfillment_center': fulfillment_center,
+                    'sku': shopify_sku,
+                    'customer': row.get('Customer: First Name', row.get('customerfirstname', '')),
+                    'zip': row.get('Shipping: Zip', row.get('shiptopostalcode', ''))
+                }, f"Invalid fulfillment center: '{fulfillment_center}'")
                 continue
 
             # Create base order data
@@ -1935,6 +2003,9 @@ class DataProcessor:
     ) -> None:
         """Allocate inventory and handle shortages"""
         normalized_warehouse = self.normalize_warehouse_name(fc_key, log_transformations=False)
+        if normalized_warehouse is None:
+            logger.warning(f"Could not normalize warehouse '{fc_key}' for inventory allocation - skipping")
+            return
         composite_key = f"{inventory_sku}|{normalized_warehouse}"
 
         order_data["Starting Balance"] = current_balance
