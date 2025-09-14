@@ -93,17 +93,16 @@ SKU,Available,Warehouse,Product_Type,Last_Updated
 - Available: `available`, `quantity`, `stock`, `balance`
 - Warehouse: `warehouse`, `location`, `fulfillment_center`
 
-**Processing Logic:**
-1. **SKU Normalization**: Clean and standardize SKU formats
-2. **Warehouse Mapping**: Assign inventory to fulfillment centers
-3. **Running Balance**: Track available vs. allocated inventory
-4. **Shortage Detection**: Identify insufficient inventory scenarios
+**What the System Does:**
+1. **SKU Matching**: Matches inventory SKUs with order SKUs
+2. **Warehouse Assignment**: Routes orders to appropriate fulfillment centers
+3. **Inventory Tracking**: Tracks available vs. allocated inventory
+4. **Shortage Detection**: Identifies when inventory is insufficient
 
 #### **ColdCart API Integration**
-**Real-time Inventory Sync:**
-- Automatic inventory updates every 15 minutes
-- Webhook notifications for critical stock changes
-- API token required (configured in system settings)
+**Real-time Inventory:**
+- Automatic inventory updates
+- Use when you need current stock levels
 - Fallback to CSV upload if API unavailable
 
 ### **📄 Output Files**
@@ -336,62 +335,15 @@ Note: Same total weight, different fruit mix per warehouse
 - **Scaling Logic**: Weights multiply proportionally with order quantities
 - **Precision**: Maintained to 2 decimal places for accuracy
 
-#### **Pick Type Classification**
-- **Product Categories**: "Fruit: Apple", "Vegetable: Tomato", "Nuts: Almonds"
-- **Inventory Types**: Additional classification for warehouse operations
-- **Bundle Inheritance**: Each component maintains its own classification
-- **Warehouse Operations**: Used for pick routing and storage optimization
 
-#### **Error Handling & Validation**
-- **Missing Mappings**: Flagged as mapping errors with detailed logging
-- **Component Shortages**: Tracked separately per individual component
-- **Invalid SKUs**: Logged for manual review and correction
-- **Data Consistency**: Validation checks ensure mapping integrity
 
-### **🔄 Live Updates & Cache Management**
+### **🔄 Updating Mappings**
 
-#### **Google Sheets → System Sync:**
+**How to Update SKU Mappings:**
 1. **Edit Google Sheet**: Update component quantities or add new bundles
 2. **🔄 Reload Mappings**: Click reload button in application interface
-3. **Auto-Sync**: Changes applied immediately to new order processing
-4. **Staging Protection**: Staged orders maintain their original mappings
-
-#### **Cache Management Strategy:**
-- **Memory Caching**: Mappings cached in memory for optimal performance
-- **Manual Reload**: Required after Google Sheets edits
-- **Background Sync**: Planned for future versions with automatic detection
-- **Version Control**: Mapping changes tracked with timestamps
-
-### **🐛 Advanced Troubleshooting**
-
-#### **Bundle Processing Issues**
-- ✅ **Bundle Not Breaking Down**: 
-  - Verify multiple rows exist in Google Sheet for same Shopify SKU
-  - Check all component SKUs are valid inventory items
-  - Ensure Pick List SKU column is populated for each component
-  - Reload mappings after Google Sheet edits
-
-- ✅ **Component Shortages**:
-  - Individual components tracked separately in shortage reports
-  - Partial fulfillment possible when some components available
-  - Shortage reports show specific component shortfalls with quantities
-  - Can stage partial orders to protect available components
-
-- ✅ **Weight Calculation Errors**:
-  - Verify Pick Weight LB and Total Pick Weight columns populated
-  - Check for numeric formatting issues in Google Sheets
-  - Ensure weight scaling matches quantity scaling
-
-#### **Mapping Validation**
-- ✅ **SKU Not Found**: 
-  - Check SKU exists in correct warehouse sheet
-  - Verify exact spelling and formatting
-  - Confirm warehouse assignment matches customer ZIP code region
-
-- ✅ **Inventory Mismatch**:
-  - Ensure picklist SKU exists in current inventory
-  - Check for case sensitivity in SKU matching
-  - Verify warehouse codes match between mappings and inventory
+3. **Changes Apply**: Updates apply immediately to new order processing
+4. **Staging Protection**: Staged orders keep their original mappings
 
 ---
 
@@ -494,200 +446,128 @@ Note: Same total weight, different fruit mix per warehouse
 - Maintains inventory accuracy for allocation
 - Automatic fallback to manual upload if API fails
 
-**Frequency**:
-- Manual refresh on demand
-- Automatic updates every 15 minutes (when API enabled)
-- Webhook notifications for critical stock changes
-- Emergency refresh for urgent orders
+**When to Use**:
+- Manual refresh when needed
+- Automatic updates when API enabled
+- Use before processing large order batches
 
 ---
 
 ## 🔧 Troubleshooting
 
-### **📤 Import Issues**
+### **📤 File Upload Problems**
 
-#### **No Processing After Upload**
-**Symptoms**: Files uploaded but no order processing occurs
-**Diagnosis**:
-- ✅ Verify BOTH Orders AND Inventory files uploaded
-- ✅ Check file size limits (< 50MB per file)
-- ✅ Ensure CSV format with proper encoding (UTF-8)
-- ✅ Validate required columns present in both files
+#### **Nothing Happens After Upload**
+**What to Check**:
+- ✅ Upload BOTH Orders AND Inventory files
+- ✅ Files are under 50MB each
+- ✅ Files are in CSV format
 
-**Resolution**:
-1. Re-upload missing files
-2. Check browser console for JavaScript errors
-3. Try smaller file chunks if size exceeds limits
-4. Verify network connectivity and session status
+**How to Fix**:
+1. Make sure both files are uploaded
+2. Try smaller files if too large
+3. Refresh page and try again
 
-#### **CSV Format Errors**
-**Symptoms**: Import fails with format validation errors
-**Common Issues**:
-- ✅ Extra quotes or special characters in data
-- ✅ Inconsistent delimiter usage (commas vs semicolons)
-- ✅ Missing required columns or headers
-- ✅ Encoding issues (non-UTF-8 characters)
+#### **CSV File Errors**
+**Common Problems**:
+- Extra quotes or special characters
+- Missing required columns
+- Wrong file format
 
-**Resolution**:
-1. Export fresh CSV from Shopify with standard settings
-2. Open in text editor to check for formatting issues
-3. Ensure proper comma-separated format throughout
-4. Remove any manually added quotes or special characters
+**How to Fix**:
+1. Use standard Shopify CSV export
+2. Don't edit the CSV file manually
+3. Make sure all required columns are present:
+   - **Orders**: Order ID, SKU, Quantity, Customer ZIP
+   - **Inventory**: SKU, Available Quantity, Warehouse
 
-#### **Missing Critical Columns**
-**Required for Orders**: Order ID, SKU, Quantity, Customer ZIP
-**Required for Inventory**: SKU, Available Quantity, Warehouse
+#### **API Not Working**
+**How to Fix**:
+1. Switch to "Upload File" mode instead
+2. Contact support if API is needed
 
-**Resolution**:
-1. Verify column headers match expected names
-2. Check for alternative column naming (case sensitivity)
-3. Ensure no missing headers in first row
-4. Validate data completeness (no empty required cells)
+### **🎁 Bundle Problems**
 
-#### **ColdCart API Connection Failures**
-**Symptoms**: API toggle available but connection fails
-**Diagnosis**:
-- ✅ Verify API token configured and valid
-- ✅ Check ColdCart service status
-- ✅ Test network connectivity to API endpoints
-- ✅ Review API rate limits and usage
+#### **Bundle Not Breaking Into Parts**
+**Problem**: Bundle SKU shows as one item instead of separate components
 
-**Resolution**:
-1. Update API token in system settings
-2. Switch to File Upload mode as temporary workaround
-3. Contact ColdCart support for service issues
-4. Check firewall/proxy settings blocking API calls
+**How to Fix**:
+1. Check Google Sheet has multiple rows for the same bundle SKU
+2. Make sure all components have inventory SKUs filled in
+3. Click **🔄 Reload Mappings** button
+4. Check you're using the right warehouse sheet
 
-### **🎁 SKU Bundle Problems**
+#### **Missing Parts in Bundle**
+**Problem**: Some bundle components are missing
 
-#### **Bundles Not Breaking Down**
-**Symptoms**: Bundle SKUs appear as single items instead of components
-**Diagnosis**:
-- ✅ Check Google Sheet has multiple rows for bundle SKU
-- ✅ Verify all component rows have same Shopify SKU in Column 0
-- ✅ Ensure Picklist SKU column populated for each component
-- ✅ Confirm mappings loaded after recent Google Sheet edits
+**How to Fix**:
+1. Add missing components to Google Sheet
+2. Make sure component SKUs exist in your inventory
+3. Check all quantities are numbers (not text)
+4. Fill in weight columns
 
-**Resolution**:
-1. Edit Google Sheet to add missing component rows
-2. Verify exact SKU matching (case sensitive)
-3. Click 🔄 Reload Mappings button after sheet edits
-4. Check warehouse-specific sheet selection
+#### **Orders Going to Wrong Warehouse**
+**Problem**: Orders assigned to incorrect fulfillment center
 
-#### **Missing Bundle Components**
-**Symptoms**: Some bundle components missing from breakdown
-**Diagnosis**:
-- ✅ Verify all bundle components exist in SKU mappings
-- ✅ Check component SKUs exist in current inventory
-- ✅ Ensure warehouse-specific mappings include all components
-- ✅ Validate component quantities and weights specified
+**How to Fix**:
+1. Check customer ZIP codes are complete (5 digits)
+2. Verify warehouse assignments in Google Sheets
+3. Test with known ZIP codes
 
-**Resolution**:
-1. Add missing components to Google Sheet mappings
-2. Update inventory data to include component SKUs
-3. Verify component quantities are numeric values
-4. Check Pick Weight LB and Total Pick Weight columns
+### **📊 Common Issues**
 
-#### **Wrong Warehouse Assignments**
-**Symptoms**: Orders routed to incorrect fulfillment centers
-**Diagnosis**:
-- ✅ Verify customer ZIP codes complete and valid (5-digit format)
-- ✅ Check ZIP code to warehouse mapping rules
-- ✅ Ensure bundle components mapped to correct warehouses
-- ✅ Validate warehouse-specific Google Sheet selection
+#### **Too Many Shortages**
+**Problem**: Most orders show inventory shortages
 
-**Resolution**:
-1. Update customer ZIP codes to complete 5-digit format
-2. Review ZIP code routing logic for edge cases
-3. Edit warehouse-specific mappings for consistency
-4. Test with known ZIP codes for verification
+**How to Fix**:
+1. Refresh inventory data (use **🔄 Refresh Inventory**)
+2. Check if inventory file has the right SKUs
+3. Make sure SKU names match exactly (case sensitive)
 
-### **📊 Data Quality Checks**
+#### **Wrong Weights**
+**Problem**: Pick weights look incorrect
 
-#### **High Shortage Percentages**
-**Symptoms**: Many orders showing inventory shortages
-**Investigation**:
-- ✅ Verify inventory data current and accurate
-- ✅ Check for duplicate inventory entries
-- ✅ Ensure proper SKU matching between orders and inventory
-- ✅ Review bundle component availability separately
+**How to Fix**:
+1. Check weight columns in Google Sheets
+2. Make sure weights are numbers (not text)
+3. Click **🔄 Reload Mappings** after changes
 
-**Resolution**:
-1. Refresh inventory data from ColdCart API
-2. Audit inventory file for data quality issues
-3. Check for case sensitivity in SKU matching
-4. Separate shortage analysis by individual components
+#### **Bundle Errors**
+**Problem**: Bundle SKUs flagged with errors
 
-#### **Incorrect Weight Calculations**
-**Symptoms**: Pick weights don't match expected values
-**Diagnosis**:
-- ✅ Check Pick Weight LB column in Google Sheets
-- ✅ Verify Total Pick Weight calculations
-- ✅ Ensure weight scaling matches quantity scaling
-- ✅ Validate numeric formatting in weight columns
+**How to Fix**:
+1. Make sure all bundle components exist in inventory
+2. Check component quantities are positive numbers
+3. Verify all components mapped to same warehouse
 
-**Resolution**:
-1. Update weight values in Google Sheet mappings
-2. Verify calculation formulas in spreadsheet
-3. Check for text formatting in numeric columns
-4. Reload mappings after weight corrections
+### **🚨 When Things Go Wrong**
 
-#### **Bundle Validation Errors**
-**Symptoms**: Bundle SKUs flagged with validation errors
-**Requirements**:
-- ✅ Bundle SKUs should have recognizable prefixes (f.*, m.*)
-- ✅ All components must exist in inventory
-- ✅ Component quantities should be positive numbers
-- ✅ Warehouse assignments must be consistent
+#### **System Running Slow**
+**What to Do**:
+- Process fewer orders at a time (under 1000)
+- Use staging for urgent orders first
+- Try during off-peak hours
 
-**Resolution**:
-1. Standardize bundle SKU naming conventions
-2. Validate all component inventory availability
-3. Audit component quantity and weight data
-4. Ensure consistent warehouse mappings across components
+#### **Critical Inventory Shortages**
+**What to Do**:
+1. Stage your most important orders first
+2. Contact suppliers for emergency stock
+3. Consider partial fulfillment
+4. Notify customers of delays
 
-### **🚨 Emergency Procedures**
-
-#### **System Performance Issues**
-**High Volume Processing**:
-- Process orders in smaller batches (< 1000 orders)
-- Use staging to prioritize critical orders
-- Consider off-peak processing times
-- Monitor system resource usage
-
-#### **Critical Shortage Situations**
-**Immediate Actions**:
-1. Stage highest priority orders first
-2. Contact suppliers for emergency inventory
-3. Consider partial fulfillment options
-4. Communicate delays to affected customers
-
-#### **Data Corruption Recovery**
-**Backup Procedures**:
-- Export current order processing state
-- Save staging configuration
-- Backup Google Sheets mapping data
-- Document any manual overrides applied
+#### **Need to Start Over**
+**What to Do**:
+- Export your current work before making changes
+- Save your staging setup
+- Document any manual changes you made
 
 ---
 
-## 📞 Support & Resources
+## 📞 Support
 
-### **System Administration**
-- **Production Environment**: Monitor system health and performance
-- **API Management**: Maintain ColdCart integration and tokens
-- **User Access**: Manage permissions and user accounts
-- **Data Backup**: Regular backup of critical configuration data
-
-### **Business Operations**
-- **Inventory Management**: Coordinate with warehouse teams
-- **Customer Service**: Handle fulfillment inquiries and issues
-- **Vendor Relations**: Manage supplier relationships and emergency inventory
-- **Quality Assurance**: Monitor accuracy and customer satisfaction
-
-### **Technical Support**
-- **Google Sheets**: Training on mapping management and validation
-- **Troubleshooting**: Systematic approach to common issues
-- **Process Documentation**: Maintain updated procedures and workflows
-- **System Updates**: Coordinate feature releases and improvements
+**For Help With:**
+- **SKU Mapping Issues**: Check Google Sheets setup and reload mappings
+- **Order Processing**: Verify file formats and required columns
+- **Bundle Problems**: Ensure all components exist in mappings and inventory
+- **System Issues**: Contact technical support team
 
