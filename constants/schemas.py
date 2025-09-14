@@ -102,12 +102,22 @@ class SKUMappings(BaseModel):
     wheeling_bundles: Dict[str, List[BundleComponent]] = Field(
         default_factory=dict, alias="Wheeling.bundles"
     )
+    walnut_singles: Dict[str, SKUSingle] = Field(default_factory=dict, alias="Walnut.singles")
+    walnut_bundles: Dict[str, List[BundleComponent]] = Field(
+        default_factory=dict, alias="Walnut.bundles"
+    )
+    northlake_singles: Dict[str, SKUSingle] = Field(default_factory=dict, alias="Northlake.singles")
+    northlake_bundles: Dict[str, List[BundleComponent]] = Field(
+        default_factory=dict, alias="Northlake.bundles"
+    )
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "SKUMappings":
         """Create from the actual JSON structure used in the system"""
         oxnard = data.get("Oxnard", {})
         wheeling = data.get("Wheeling", {})
+        walnut = data.get("Walnut", {})
+        northlake = data.get("Northlake", {})
 
         return cls(
             oxnard_singles={k: SKUSingle(**v) for k, v in oxnard.get("singles", {}).items()},
@@ -120,6 +130,16 @@ class SKUMappings(BaseModel):
                 k: [BundleComponent(**comp) for comp in v]
                 for k, v in wheeling.get("bundles", {}).items()
             },
+            walnut_singles={k: SKUSingle(**v) for k, v in walnut.get("singles", {}).items()},
+            walnut_bundles={
+                k: [BundleComponent(**comp) for comp in v]
+                for k, v in walnut.get("bundles", {}).items()
+            },
+            northlake_singles={k: SKUSingle(**v) for k, v in northlake.get("singles", {}).items()},
+            northlake_bundles={
+                k: [BundleComponent(**comp) for comp in v]
+                for k, v in northlake.get("bundles", {}).items()
+            },
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -131,9 +151,15 @@ class SKUMappings(BaseModel):
             },
             "Wheeling": {
                 "singles": {k: v.dict() for k, v in self.wheeling_singles.items()},
-                "bundles": {
-                    k: [comp.dict() for comp in v] for k, v in self.wheeling_bundles.items()
-                },
+                "bundles": {k: [comp.dict() for comp in v] for k, v in self.wheeling_bundles.items()},
+            },
+            "Walnut": {
+                "singles": {k: v.dict() for k, v in self.walnut_singles.items()},
+                "bundles": {k: [comp.dict() for comp in v] for k, v in self.walnut_bundles.items()},
+            },
+            "Northlake": {
+                "singles": {k: v.dict() for k, v in self.northlake_singles.items()},
+                "bundles": {k: [comp.dict() for comp in v] for k, v in self.northlake_bundles.items()},
             },
         }
 
@@ -155,7 +181,7 @@ class ShippingZone(BaseModel):
 
     zip_prefix: str
     zone: int
-    warehouse: Literal["Oxnard", "Wheeling"]
+    warehouse: Literal["Oxnard", "Wheeling", "Walnut", "Northlake"]
 
 
 class ShippingZones(BaseModel):
@@ -163,11 +189,18 @@ class ShippingZones(BaseModel):
 
     oxnard_zones: Dict[str, int] = Field(default_factory=dict)
     wheeling_zones: Dict[str, int] = Field(default_factory=dict)
+    walnut_zones: Dict[str, int] = Field(default_factory=dict)
+    northlake_zones: Dict[str, int] = Field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ShippingZones":
         """Create from the actual JSON structure used in the system"""
-        return cls(oxnard_zones=data.get("Oxnard", {}), wheeling_zones=data.get("Wheeling", {}))
+        return cls(
+            oxnard_zones=data.get("Oxnard", {}), 
+            wheeling_zones=data.get("Wheeling", {}),
+            walnut_zones=data.get("Walnut", {}),
+            northlake_zones=data.get("Northlake", {})
+        )
 
 
 class DeliveryService(BaseModel):
@@ -368,7 +401,7 @@ class FulfillmentZone(BaseModel):
 
 class FulfillmentCenter(BaseModel):
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
-    name: Literal["Oxnard", "Wheeling"]
+    name: Literal["Oxnard", "Wheeling", "Walnut", "Northlake"]
     zip_code: str
     created_at: datetime = Field(default_factory=now)
     updated_at: Optional[datetime] = None
@@ -577,7 +610,7 @@ class SchemaManager:
     def get_zip_to_zone_mapping(self) -> Dict[str, Dict[str, int]]:
         """Get zip to zone mapping organized by fulfillment center"""
         zones = self.get_fulfillment_zones()
-        mapping = {"Oxnard": {}, "Wheeling": {}}
+        mapping = {"Oxnard": {}, "Wheeling": {}, "Walnut": {}, "Northlake": {}}
 
         for zone in zones:
             for fc in zone.fulfillment_center:

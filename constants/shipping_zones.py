@@ -25,6 +25,18 @@ FULFILLMENT_CENTERS = {
         "zip": "60090",
         "default_zone": None,  # No default zone - must be determined by ZIP code
     },
+    "walnut": {
+        "name": "Walnut",
+        "state": "CA",
+        "zip": "91789",
+        "default_zone": None,  # No default zone - must be determined by ZIP code
+    },
+    "northlake": {
+        "name": "Northlake",
+        "state": "IL",
+        "zip": "60164",
+        "default_zone": None,  # No default zone - must be determined by ZIP code
+    },
 }
 
 # Default column names for shipping zones data
@@ -33,6 +45,8 @@ SHIPPING_ZONE_COLUMNS = {
     "moorpark_zone": "moorpark_zone",  # For backward compatibility
     "oxnard_zone": "oxnard_zone",  # New column name
     "wheeling_zone": "wheeling_zone",
+    "walnut_zone": "walnut_zone",
+    "northlake_zone": "northlake_zone",
 }
 
 # Default paths for shipping zones files
@@ -98,10 +112,12 @@ def load_shipping_zones_from_json(file_path):
 
     # Process the JSON data structure
     if "fulfillment_centers" in data:
-        # Extract Oxnard/Moorpark and Wheeling data
+        # Extract data for all warehouses
         oxnard_data = None
         moorpark_data = None
         wheeling_data = None
+        walnut_data = None
+        northlake_data = None
 
         for fc in data["fulfillment_centers"]:
             if fc["name"] == "Oxnard":
@@ -110,6 +126,10 @@ def load_shipping_zones_from_json(file_path):
                 moorpark_data = fc
             elif fc["name"] == "Wheeling":
                 wheeling_data = fc
+            elif fc["name"] == "Walnut":
+                walnut_data = fc
+            elif fc["name"] == "Northlake":
+                northlake_data = fc
 
         # If we found Oxnard data but not Moorpark, use Oxnard data for Moorpark
         if oxnard_data and not moorpark_data:
@@ -119,7 +139,7 @@ def load_shipping_zones_from_json(file_path):
             oxnard_data = moorpark_data
 
         # Process the data if we have the required information
-        if (oxnard_data or moorpark_data) and wheeling_data:
+        if (oxnard_data or moorpark_data) and wheeling_data and walnut_data and northlake_data:
             # Create a mapping of ZIP prefixes to zones
             zip_to_oxnard_zone = (
                 {item["zip_prefix"]: item["zone"] for item in oxnard_data["zones"]}
@@ -134,12 +154,20 @@ def load_shipping_zones_from_json(file_path):
             zip_to_wheeling_zone = {
                 item["zip_prefix"]: item["zone"] for item in wheeling_data["zones"]
             }
+            zip_to_walnut_zone = {
+                item["zip_prefix"]: item["zone"] for item in walnut_data["zones"]
+            }
+            zip_to_northlake_zone = {
+                item["zip_prefix"]: item["zone"] for item in northlake_data["zones"]
+            }
 
             # Get all unique ZIP prefixes
             all_zips = set(
                 list(zip_to_oxnard_zone.keys())
                 + list(zip_to_moorpark_zone.keys())
                 + list(zip_to_wheeling_zone.keys())
+                + list(zip_to_walnut_zone.keys())
+                + list(zip_to_northlake_zone.keys())
             )
 
             # Create result data
@@ -159,6 +187,16 @@ def load_shipping_zones_from_json(file_path):
                     if zip_prefix in zip_to_wheeling_zone
                     else None
                 )
+                walnut_zone = (
+                    zip_to_walnut_zone.get(zip_prefix, "0")
+                    if zip_prefix in zip_to_walnut_zone
+                    else None
+                )
+                northlake_zone = (
+                    zip_to_northlake_zone.get(zip_prefix, "0")
+                    if zip_prefix in zip_to_northlake_zone
+                    else None
+                )
 
                 # If we have Oxnard data but not Moorpark, use Oxnard for Moorpark
                 if oxnard_zone is not None and moorpark_zone is None:
@@ -173,6 +211,8 @@ def load_shipping_zones_from_json(file_path):
                         "oxnard_zone": oxnard_zone,
                         "moorpark_zone": moorpark_zone,
                         "wheeling_zone": wheeling_zone,
+                        "walnut_zone": walnut_zone,
+                        "northlake_zone": northlake_zone,
                     }
                 )
 

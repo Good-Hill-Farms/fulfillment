@@ -517,7 +517,7 @@ def load_sku_mappings_from_sheets(center=None):
 
     try:
         # Get all centers or use the specified one
-        centers = [center] if center else ["Oxnard", "Wheeling"]
+        centers = [center] if center else ["Oxnard", "Wheeling", "Walnut", "Northlake"]
 
         # Process each center
         for current_center in centers:
@@ -547,10 +547,12 @@ def load_sku_mappings_from_sheets(center=None):
             result = {
                 "Wheeling": {"singles": {}, "bundles": {}},
                 "Oxnard": {"singles": {}, "bundles": {}},
+                "Walnut": {"singles": {}, "bundles": {}},
+                "Northlake": {"singles": {}, "bundles": {}},
             }
 
     # Validate the result structure
-    for warehouse_name in ["Oxnard", "Wheeling"]:
+    for warehouse_name in ["Oxnard", "Wheeling", "Walnut", "Northlake"]:
         if warehouse_name not in result:
             result[warehouse_name] = {"singles": {}, "bundles": {}}
         if "singles" not in result[warehouse_name]:

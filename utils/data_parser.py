@@ -78,6 +78,8 @@ class DataParser:
         # Calculate minimum balances by warehouse
         wheeling_min = balance_df[balance_df['WarehouseName'] == 'IL-Wheeling-60090'].groupby('Sku')['Balance'].min()
         oxnard_min = balance_df[balance_df['WarehouseName'] == 'CA-Oxnard-93030'].groupby('Sku')['Balance'].min()
+        walnut_min = balance_df[balance_df['WarehouseName'] == 'CA-Walnut-91789'].groupby('Sku')['Balance'].min()
+        northlake_min = balance_df[balance_df['WarehouseName'] == 'IL-Northlake-60164'].groupby('Sku')['Balance'].min()
 
         # Create the final dataframe by merging back with original data
         result_df = pd.merge(
@@ -101,11 +103,25 @@ class DataParser:
             on='Sku',
             how='left'
         )
+        
+        result_df = pd.merge(
+            result_df,
+            walnut_min.reset_index().rename(columns={'Balance': 'Walnut_Min'}),
+            on='Sku',
+            how='left'
+        )
+        
+        result_df = pd.merge(
+            result_df,
+            northlake_min.reset_index().rename(columns={'Balance': 'Northlake_Min'}),
+            on='Sku',
+            how='left'
+        )
 
         # Ensure columns are in the right order
         columns = [
             'WarehouseName', 'ItemId', 'Sku', 'Name', 'Type', 'BatchCode',
-            'AvailableQty', 'DaysOnHand', 'Balance', 'Oxnard_Min', 'Wheeling_Min'
+            'AvailableQty', 'DaysOnHand', 'Balance', 'Oxnard_Min', 'Wheeling_Min', 'Walnut_Min', 'Northlake_Min'
         ]
         result_df = result_df[columns]
 
