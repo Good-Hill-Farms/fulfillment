@@ -53,19 +53,13 @@ def extract_coldcart_token() -> Optional[str]:
 
 def get_coldcart_api_token() -> Optional[str]:
     """
-    Get ColdCart API token - tries environment variable first, then extraction API
+    Get ColdCart API token - always uses the automatic token extraction API
     
     Returns:
         str: The API token, or None if not available
     """
-    # Try environment variable first
-    env_token = os.getenv('COLDCART_API_TOKEN')
-    if env_token:
-        logger.info("Using ColdCart token from environment variable")
-        return env_token
-    
-    # Fall back to token extraction API
-    logger.info("Extracting fresh ColdCart token from API...")
+    # Always use the automatic token extraction API
+    logger.info("Getting fresh ColdCart token from automatic token extractor API...")
     return extract_coldcart_token()
 
 if __name__ == "__main__":

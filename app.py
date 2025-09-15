@@ -168,9 +168,8 @@ def main():
                 "Upload Inventory CSV (from warehouse)", type="csv", key="inventory_upload"
             )
         else:  # ColdCart API
-            if not os.getenv('COLDCART_API_TOKEN'):
-                st.warning("⚠️ COLDCART_API_TOKEN environment variable not set")
-                st.caption("💡 Contact your admin to set up the API token for automatic inventory")
+            st.info("✅ Using automatic token extractor for real-time inventory")
+            st.caption("🔄 Token automatically refreshed every 4 days")
 
         # Auto-process when orders are uploaded, but keep manual button option
         can_process = orders_file and (inventory_file or inventory_source == "ColdCart API")

@@ -388,22 +388,10 @@ def process_sku_data(data: List[List[Any]], center: str) -> Dict[str, Dict[str, 
     # Skip header row if it exists - start from row 1
     rows = data[1:] if len(data) > 1 else data
     
-    # Debug: Print first 5 rows to see the actual data structure
-    logger.info(f"=== DEBUGGING {center} DATA STRUCTURE ===")
-    logger.info(f"Total data rows: {len(data)}")
-    if len(data) > 0:
-        logger.info("Headers (Row 0):")
-        for i, header in enumerate(data[0]):
-            logger.info(f"  Column {i}: {header}")
-    
-    logger.info(f"Processing {len(rows)} data rows for {center}")
-    logger.info("First 3 data rows:")
-    for i, row in enumerate(rows[:3]):
-        logger.info(f"Row {i+2} ({len(row)} columns):")
-        for j, cell in enumerate(row):
-            if j <= 12:  # Only show up to column 12
-                logger.info(f"  Column {j}: {cell}")
-    logger.info("=== END DEBUG ===\n")
+    # Debug: Print first 5 rows to see the actual data (only in debug mode)
+    if logger.isEnabledFor(logging.DEBUG):
+        for i, row in enumerate(rows[:5]):
+            logger.debug(f"Row {i+2}: {row}")
     
     # Initialize result structure
     result = {center: {"singles": {}, "bundles": {}}}
@@ -418,15 +406,14 @@ def process_sku_data(data: List[List[Any]], center: str) -> Dict[str, Dict[str, 
             if len(row) < max_col_needed:
                 row = row + [''] * (max_col_needed - len(row))
             
-            # Extract values by correct position
-            order_sku = row[0] if len(row) > 0 else ""
-            picklist_sku = row[1] if len(row) > 1 else ""
-            mix_quantity = row[2] if len(row) > 2 else "1"
-            product_type = row[5] if len(row) > 5 else ""
-            pick_type = row[6] if len(row) > 6 else ""
-            pick_type_inventory = row[8] if len(row) > 8 else ""
-            pick_weight = row[10] if len(row) > 10 else "0"
-            total_pick_weight = row[12] if len(row) > 12 else "0"
+            # Extract values by correct position (based on actual Google Sheets structure)
+            order_sku = row[0] if len(row) > 0 else ""            # shopifysku2 (Column A)
+            picklist_sku = row[1] if len(row) > 1 else ""         # picklist sku (Column B)  
+            product_type = row[5] if len(row) > 5 else ""         # Product Type (Column F)
+            pick_type = row[6] if len(row) > 6 else ""            # Pick Type (Column G)
+            mix_quantity = row[9] if len(row) > 9 else "1"        # actualqty (Column J)
+            pick_weight = row[10] if len(row) > 10 else "0"       # Pick Weight LB (Column K)
+            total_pick_weight = row[12] if len(row) > 12 else "0" # Total Pick Weight (Column M)
             
             if not order_sku:
                 continue
@@ -440,7 +427,6 @@ def process_sku_data(data: List[List[Any]], center: str) -> Dict[str, Dict[str, 
                 "Pick Weight LB": pick_weight,
                 "Total Pick Weight": total_pick_weight,
                 "Pick Type": pick_type,
-                "Pick Type Inventory": pick_type_inventory,
                 "Product Type": product_type,
                 "actualqty": mix_quantity  # alias for backward compatibility
             }))

@@ -22,10 +22,8 @@ except ImportError:
         # Final fallback for different environments
         def get_coldcart_api_token():
             """Fallback function if import fails"""
-            token = os.getenv('COLDCART_API_TOKEN')
-            if not token:
-                logging.error("ColdCart token module not available and no env token set")
-            return token
+            logging.error("ColdCart token module not available - cannot get automatic token")
+            return None
 
 logger = logging.getLogger(__name__)
 
